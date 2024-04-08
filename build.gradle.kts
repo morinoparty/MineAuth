@@ -65,7 +65,7 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
     implementation("io.ktor:ktor-server-velocity:$ktorVersion")
 
-    library("org.bouncycastle:bcpkix-jdk18on:1.77")
+    library("org.bouncycastle:bcpkix-jdk18on:1.78")
     library("org.bouncycastle:bcprov-jdk18on:1.77")
 
     library("com.nimbusds:nimbus-jose-jwt:9.38-rc3")
