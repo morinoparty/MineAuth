@@ -2,7 +2,7 @@
 paper = "1.20.4-R0.1-SNAPSHOT"
 mccoroutine = "2.15.0"
 lamp = "3.1.9"
-koinVersion = "3.5.3"
+koinVersion = "3.5.4"
 coroutine = "1.8.0"
 serialization = "1.6.3"
 ktor = "2.3.9"
