@@ -45,7 +45,7 @@ exposed-java-time = { group = "org.jetbrains.exposed", name = "exposed-java-time
 koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinVersion" }
 
 [plugins]
-run-paper = { id = "xyz.jpenilla.run-paper", version = "2.2.3" }
+run-paper = { id = "xyz.jpenilla.run-paper", version = "2.2.4" }
 plugin-yml = { id = "net.minecrell.plugin-yml.bukkit", version = "0.6.0" }
 shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "1.9.23" }
