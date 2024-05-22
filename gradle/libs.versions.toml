@@ -47,7 +47,7 @@ koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinV
 vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7" }
 
 [plugins]
-run-paper = { id = "xyz.jpenilla.run-paper", version = "2.2.3" }
+run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.0" }
 resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.1.1" }
 shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "1.9.24" }
