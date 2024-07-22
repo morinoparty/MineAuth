@@ -48,7 +48,7 @@ vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1
 
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.0" }
-resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.1.1" }
+resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.1.2" }
 shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.0.0" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.0.0" }
