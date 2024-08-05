@@ -6,7 +6,7 @@ koinVersion = "3.5.6"
 coroutine = "1.8.1"
 serialization = "1.7.1"
 ktor = "2.3.12"
-exposed = "0.52.0"
+exposed = "0.53.0"
 password4j = "1.8.2"
 nimbus = "9.40"
 logback = "1.5.6"
@@ -46,7 +46,7 @@ exposed-java-time = { group = "org.jetbrains.exposed", name = "exposed-java-time
 koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinVersion" }
 
 vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1" }
-quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.5" }
+quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.6" }
 
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.0" }
