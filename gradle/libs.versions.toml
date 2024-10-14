@@ -1,15 +1,15 @@
 [versions]
 paper = "1.21.1-R0.1-SNAPSHOT"
-mccoroutine = "2.19.0"
-lamp = "3.2.1"
+mccoroutine = "2.20.0"
+lamp = "3.3.0"
 koinVersion = "4.0.0"
 coroutine = "1.9.0"
 serialization = "1.7.3"
-ktor = "2.3.12"
-exposed = "0.54.0"
+ktor = "3.0.0"
+exposed = "0.55.0"
 password4j = "1.8.2"
-nimbus = "9.41.1"
-logback = "1.5.8"
+nimbus = "9.41.2"
+logback = "1.5.10"
 bouncycastle = "1.78.1"
 
 [libraries]
@@ -52,8 +52,8 @@ quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2
 run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.1" }
 resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.2.0" }
 shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.0.20" }
-kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.0.20" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.0.21" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.0.21" }
 dokka = { id = "org.jetbrains.dokka", version = "1.9.20" }
 
 [bundles]
