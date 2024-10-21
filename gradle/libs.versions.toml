@@ -1,7 +1,7 @@
 [versions]
 paper = "1.21.1-R0.1-SNAPSHOT"
 mccoroutine = "2.20.0"
-lamp = "3.3.0"
+lamp = "4.0.0-beta.19"
 koinVersion = "4.0.0"
 coroutine = "1.9.0"
 serialization = "1.7.3"
@@ -14,8 +14,8 @@ bouncycastle = "1.78.1"
 
 [libraries]
 paper-api = { group = "io.papermc.paper", name = "paper-api", version.ref = "paper" }
-lamp-common = { group = "com.github.Revxrsal.Lamp", name = "common", version.ref = "lamp" }
-lamp-bukkit = { group = "com.github.Revxrsal.Lamp", name = "bukkit", version.ref = "lamp" }
+lamp-common = { group = "io.github.revxrsal", name = "lamp.common", version.ref = "lamp" }
+lamp-bukkit = { group = "io.github.revxrsal", name = "lamp.bukkit", version.ref = "lamp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutine" }
 mccoroutine-bukkit-api = { group = "com.github.shynixn.mccoroutine", name = "mccoroutine-bukkit-api", version.ref = "mccoroutine" }
