@@ -1,12 +1,17 @@
 $dokka.format:html-v1
 $dokka.linkExtension:html
 $dokka.location:party.morino.mineauth.api.annotations////PointingToDeclaration/api/party.morino.mineauth.api.annotations/index.html
+$dokka.location:party.morino.mineauth.api.annotations/AccessUser///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-access-user/index.html
+$dokka.location:party.morino.mineauth.api.annotations/AuthedAccessUser///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-authed-access-user/index.html
+$dokka.location:party.morino.mineauth.api.annotations/GetMapping///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-get-mapping/index.html
+$dokka.location:party.morino.mineauth.api.annotations/GetMapping/value/#/PointingToDeclaration/api/party.morino.mineauth.api.annotations/-get-mapping/value.html
 $dokka.location:party.morino.mineauth.api.annotations/Params///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-params/index.html
 $dokka.location:party.morino.mineauth.api.annotations/Params/value/#/PointingToDeclaration/api/party.morino.mineauth.api.annotations/-params/value.html
-$dokka.location:party.morino.mineauth.api.annotations/Path///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-path/index.html
-$dokka.location:party.morino.mineauth.api.annotations/Path/value/#/PointingToDeclaration/api/party.morino.mineauth.api.annotations/-path/value.html
 $dokka.location:party.morino.mineauth.api.annotations/Permission///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-permission/index.html
 $dokka.location:party.morino.mineauth.api.annotations/Permission/value/#/PointingToDeclaration/api/party.morino.mineauth.api.annotations/-permission/value.html
+$dokka.location:party.morino.mineauth.api.annotations/PostMapping///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-post-mapping/index.html
+$dokka.location:party.morino.mineauth.api.annotations/PostMapping/value/#/PointingToDeclaration/api/party.morino.mineauth.api.annotations/-post-mapping/value.html
+$dokka.location:party.morino.mineauth.api.annotations/RequestParams///PointingToDeclaration/api/party.morino.mineauth.api.annotations/-request-params/index.html
 $dokka.location:party.morino.mineauth.api////PointingToDeclaration/api/party.morino.mineauth.api/index.html
 $dokka.location:party.morino.mineauth.api/MineAuthAPI///PointingToDeclaration/api/party.morino.mineauth.api/-mine-auth-a-p-i/index.html
 $dokka.location:party.morino.mineauth.api/MineAuthAPI/createHandler/#org.bukkit.plugin.java.JavaPlugin/PointingToDeclaration/api/party.morino.mineauth.api/-mine-auth-a-p-i/create-handler.html
