@@ -2,43 +2,43 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
     <url>
         <loc>None./</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="None"/>
     </url>
     <url>
         <loc>Noneconfig/</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="Noneconfig/"/>
     </url>
     <url>
         <loc>Nonedevelopers/endpoint/</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="Nonedevelopers/endpoint/"/>
     </url>
     <url>
         <loc>Nonedevelopers/reference/</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="Nonedevelopers/reference/"/>
     </url>
     <url>
         <loc>Nonedevelopers/record/db/</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="Nonedevelopers/record/db/"/>
     </url>
     <url>
         <loc>Nonedevelopers/record/file/</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="Nonedevelopers/record/file/"/>
     </url>
     <url>
         <loc>Noneswagger/</loc>
-        <lastmod>2025-02-03</lastmod>
+        <lastmod>2025-02-10</lastmod>
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="Noneswagger/"/>
     </url>
