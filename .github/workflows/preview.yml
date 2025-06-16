@@ -101,7 +101,7 @@ jobs:
       - name: Get limit time
         id: limit-time
         run: |
-          limit_time=$(date -d "3 days" +%s)
+          limit_time=$(date -d "3 days" +%Y-%m-%d)
           echo "LIMIT_TIME=$limit_time" >> $GITHUB_ENV
 
       - name: Create comment file
