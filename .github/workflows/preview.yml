@@ -70,6 +70,10 @@ jobs:
       - name: Generate Dokka API documentation
         run: ./gradlew dokkaGenerate
 
+      - name: TypeSpec
+        working-directory: typespec
+        run: tsp compile .
+
       - name: Build Docusaurus
         working-directory: docs
         run: pnpm run build
