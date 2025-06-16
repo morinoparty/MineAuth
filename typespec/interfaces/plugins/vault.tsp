@@ -33,5 +33,11 @@ interface Vault {
   @route("/send")
   @post
   @useAuth(AllAuth)
-  sendMoney(@body body: RemittanceData): SendMoneyResponse | ErrorResponse;
+  op sendMoney(@body body: RemittanceData): {
+      @statusCode statusCode: 200;
+      @body body: SendMoneyResponse;
+  } | {
+   @statusCode statusCode: 400;
+      @body body: ErrorResponse;
+  };
 }

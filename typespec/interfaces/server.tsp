@@ -23,7 +23,7 @@ interface Server {
   @get
   getPlayers(): {
     /** プレイヤーID */
-    id: UUID;
+    ...UUID;
 
     /** プレイヤー名 */
     @example("Notch")

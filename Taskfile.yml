@@ -41,4 +41,8 @@ tasks:
     cmds:
       - tsp compile .
     silent: true
-
+  check:
+    cmds:
+      - task format
+      - task build
+    silent: false

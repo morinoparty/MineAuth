@@ -2,9 +2,9 @@
 
 ## 👤 UserAuthData
 
-| UUID        | Password    | Temporary |
-|-------------|-------------|-----------|
-| Player UUID | bcrypt data | Boolean   |
+| UUID        | Password      | Temporary |
+|-------------|---------------|-----------|
+| Player UUID | argon2 hashed | Boolean   |
 
 ## 🔑 RevokeTokenData
 
