@@ -85,8 +85,6 @@ jobs:
           # bukkitとapiのjarファイルをアップロード用にリネーム
           mv ./core/build/libs/core-*-all.jar ./upload/jars/MineAuth-bukkit-${{ env.COMMIT_SHORT_SHA }}.jar
           mv ./api/build/libs/api-*.jar ./upload/jars/MineAuth-api-${{ env.COMMIT_SHORT_SHA }}.jar
-          mkdir -p ./upload/junit
-          cp -r ./bukkit/build/reports/tests/test/* ./upload/junit/
           mkdir -p ./upload/detekt
           cp -r ./build/reports/detekt/* ./upload/detekt/
           mkdir -p ./upload/docs
@@ -94,19 +92,11 @@ jobs:
           # CRC32チェックサムアルゴリズムを使用してS3互換エンドポイントとの互換性を確保
           aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
 
-      - name: Publish test results
-        id: publish-test-results
-        uses: mikepenz/action-junit-report@cf701569b05ccdd861a76b8607a66d76f6fd4857 # v5.5.1
-        if: success() || failure()
-        with:
-          report_paths: './**/build/test-results/test/TEST-*.xml'
-
       - name: Create comment file
         id: create-comment-file
         env:
           ARTIFACT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/jars/MineAuth-bukkit-${{ env.COMMIT_SHORT_SHA }}.jar"
           ARTIFACT_URL_API: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/jars/MineAuth-api-${{ env.COMMIT_SHORT_SHA }}.jar"
-          JUNIT_REPORT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
           DETEKT_REPORT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
           DOKKA_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
@@ -136,33 +126,10 @@ jobs:
               <td><a href="$OPENAPI_URL">$OPENAPI_URL</a></td>
             </tr>
             <tr>
-              <th scope="row">🧪 JUnit Report</th>
-              <td><a href="$JUNIT_REPORT_URL">$JUNIT_REPORT_URL</a></td>
-            </tr>
-            <tr>
               <th scope="row">🔍 Detekt Report</th>
               <td><a href="$DETEKT_REPORT_URL">$DETEKT_REPORT_URL</a></td>
             </tr>
           </table>
-
-          ## Test summary
-
-          <table>
-              <tr>
-              <th>
-                <th>Tests 💯</th>
-                <th>Passed ✅</th>
-                <th>Skipped ⏭️</th>
-                <th>Failed ❌</th>
-              </tr>
-              <tr>
-                <td>JUnit Test Report</td>
-                <td>${{ steps.publish-test-results.outputs.total }} ran</td>
-                <td>${{ steps.publish-test-results.outputs.passed }} passed</td>
-                <td>${{ steps.publish-test-results.outputs.skipped }} skipped</td>
-                <td>${{ steps.publish-test-results.outputs.failed }} failed</td>
-              </tr>
-            </table>
           EOF
       - name: Create PR comment
         if: ${{ job.status == 'success' && (github.event.action == 'opened' || github.event.action == 'synchronize') }}
