@@ -100,15 +100,11 @@ jobs:
           DETEKT_REPORT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
           DOKKA_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
-          OPENAPI_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/oprnapi/index.html"
+          OPENAPI_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/openapi/index.html"
         run: |
           cat  << EOF > comment.md
           ## 🚀 Preview of ${{ github.event.repository.name }}
           <table>
-            <tr>
-              <th scope="row">📖 Documentation Preview</th>
-              <td><a href="$DOCS_PREVIEW_URL">$DOCS_PREVIEW_URL</a></td>
-            </tr>
             <tr>
               <th scope="row">📦 Preview Jars Bukkit</th>
               <td><a href="$ARTIFACT_URL">$ARTIFACT_URL</a></td>
@@ -116,6 +112,10 @@ jobs:
             <tr>
               <th scope="row">🔌 Preview Jars API</th>
               <td><a href="$ARTIFACT_URL_API">$ARTIFACT_URL_API</a></td>
+            </tr>
+            <tr>
+              <th scope="row">📖 Documentation Preview</th>
+              <td><a href="$DOCS_PREVIEW_URL">$DOCS_PREVIEW_URL</a></td>
             </tr>
             <tr>
               <th scope="row">📖 Dokka API Documentation</th>
