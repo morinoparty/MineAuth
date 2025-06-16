@@ -40,14 +40,12 @@ jobs:
         working-directory: docs
         run: |
           pnpm install
-
+          
       - name: Generate OpenAPI
         working-directory: typespec
         run: |
           pnpm install
-          pnpm i -g @typespec/compiler
-          tsp compile .
-          cat ../docs/static/redoc/openapi-mineauth.yaml
+          pnpm compile
 
       - name: Build
         working-directory: docs
