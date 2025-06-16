@@ -74,7 +74,7 @@ jobs:
         working-directory: typespec
         run: |
           pnpm install
-          tsp compile .
+          pnpm compile
 
       - name: Build Docusaurus
         working-directory: docs
