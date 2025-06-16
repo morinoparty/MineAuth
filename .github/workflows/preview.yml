@@ -98,6 +98,12 @@ jobs:
           # CRC32チェックサムアルゴリズムを使用してS3互換エンドポイントとの互換性を確保
           aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
 
+      - name: Get limit time
+        id: limit-time
+        run: |
+          limit_time=$(date -d "3 days" +%s)
+          echo "LIMIT_TIME=$limit_time" >> $GITHUB_ENV
+
       - name: Create comment file
         id: create-comment-file
         env:
@@ -107,9 +113,11 @@ jobs:
           DOCS_PREVIEW_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
           DOKKA_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
           OPENAPI_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/openapi/index.html"
+          LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
           cat  << EOF > comment.md
           ## 🚀 Preview of ${{ github.event.repository.name }}
+          This preview file are availalble for 3days. (until $LIMIT_TIME)
           <table>
             <tr>
               <th scope="row">📦 Preview Jars Bukkit</th>
