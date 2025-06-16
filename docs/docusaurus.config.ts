@@ -78,9 +78,9 @@ const config: Config = {
                     position: "right",
                 },
                 {
-                    label: "Redoc",
+                    label: "OpenAPI",
                     position: "left",
-                    to: "/redoc/",
+                    to: "/openapi/",
                     target: "_blank",
                 },
                 {

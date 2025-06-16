@@ -1,0 +1,273 @@
+openapi: 3.0.0
+info:
+  title: MineAuth
+  version: 1.0.0
+  license:
+    name: CC0-1.0
+    url: https://creativecommons.org/publicdomain/zero/1.0/
+  description: |-
+    MineAuth API
+    Minecraft用認証プラグインのAPI仕様
+tags:
+  - name: Vault
+  - name: Quickshop Hikari
+  - name: oauth2
+  - name: Server
+  - name: Plugins
+paths:
+  /api/v1/commons/server/players:
+    get:
+      operationId: Server_getPlayers
+      description: |-
+        オンラインプレイヤー一覧取得
+        現在サーバーに接続しているプレイヤーの一覧を取得
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    value:
+                      type: string
+                      pattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+                      example: 123e4567-e89b-12d3-a456-426614174000
+                    name:
+                      type: string
+                      description: プレイヤー名
+                      example: Notch
+                  required:
+                    - value
+                    - name
+      tags:
+        - Server
+  /api/v1/plugins/availableIntegrations:
+    get:
+      operationId: Plugins_getAvailableIntegrations
+      description: |-
+        利用可能プラグイン一覧取得
+        統合可能なプラグインの一覧を取得
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+      tags:
+        - Plugins
+  /api/v1/plugins/quickshop-hikari/users/{uuid}/shops:
+    get:
+      operationId: QuickShopHikari_getShops
+      description: |-
+        ショップ一覧取得
+        指定したプレイヤーのショップ一覧を取得
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: プレイヤーのUUID。"me"の場合は認証ユーザー自身のショップ
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+                  format: int64
+      tags:
+        - Quickshop Hikari
+  /api/v1/plugins/vault/balance/me:
+    get:
+      operationId: Vault_getBalance
+      description: |-
+        残高確認
+        認証ユーザーの残高情報を取得
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Models.Plugins.BalanceResponse'
+      tags:
+        - Vault
+      security:
+        - AllAuth: []
+  /api/v1/plugins/vault/send:
+    post:
+      operationId: Vault_sendMoney
+      description: |-
+        送金処理
+        指定したプレイヤーに対して送金を行う
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Models.Plugins.SendMoneyResponse'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Models.Plugins.ErrorResponse'
+      tags:
+        - Vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Models.Plugins.RemittanceData'
+      security:
+        - AllAuth: []
+  /oauth2/introspect:
+    post:
+      operationId: OAuth2_introspectToken
+      description: |-
+        アクセストークン検証
+        指定されたトークンの情報を検証する
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+      tags:
+        - oauth2
+  /oauth2/revoke:
+    post:
+      operationId: OAuth2_revokeToken
+      description: |-
+        アクセストークン無効化
+        指定されたトークンを無効化する
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+      tags:
+        - oauth2
+  /oauth2/userinfo:
+    get:
+      operationId: OAuth2_getUserInfo
+      description: |-
+        ユーザー情報取得
+        認証されたユーザーのプロフィール情報を取得
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Models.ProfileData'
+      tags:
+        - oauth2
+      security:
+        - ProfileAuth: []
+components:
+  schemas:
+    Models.Plugins.BalanceResponse:
+      type: object
+      required:
+        - balance
+      properties:
+        balance:
+          type: number
+          format: double
+          description: 現在の残高
+          example: 1000
+      description: 残高レスポンスモデル
+    Models.Plugins.ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: エラーメッセージ
+          example: Not enough money
+      description: エラーレスポンスモデル
+    Models.Plugins.RemittanceData:
+      type: object
+      required:
+        - target
+        - amount
+      properties:
+        target:
+          type: string
+          description: 送金先のプレイヤー名
+          example: Notch
+        amount:
+          type: number
+          format: double
+          description: 送金額
+          example: 250
+      description: 送金データモデル
+    Models.Plugins.SendMoneyResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: 送金完了メッセージ
+          example: Successfully sent 250 to Notch. Your balance is 750
+      description: 送金レスポンスモデル
+    Models.ProfileData:
+      type: object
+      required:
+        - username
+        - id
+      properties:
+        username:
+          type: string
+          description: ユーザー名
+          example: Notch
+        id:
+          allOf:
+            - $ref: '#/components/schemas/Models.UUID'
+          description: プレイヤーUUID
+      description: プロフィールデータモデル
+    Models.UUID:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          pattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+          example: 123e4567-e89b-12d3-a456-426614174000
+      description: UUIDモデル
+servers:
+  - url: https://api.example.com
+    description: Production server
+    variables: {}
+  - url: http://localhost:8080
+    description: Local server
+    variables: {}

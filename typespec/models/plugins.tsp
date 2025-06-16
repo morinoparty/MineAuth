@@ -13,9 +13,11 @@ namespace MineAuth.Models.Plugins;
 @doc("送金データモデル")
 model RemittanceData {
   /** 送金先のプレイヤー名 */
+  @example("Notch")
   target: string;
 
   /** 送金額 */
+  @example(250.0)
   amount: float64;
 }
 
@@ -26,7 +28,7 @@ model RemittanceData {
 @doc("残高レスポンスモデル")
 model BalanceResponse {
   /** 現在の残高 */
-  @example(1000)
+  @example(1000.0)
   balance: float64;
 }
 

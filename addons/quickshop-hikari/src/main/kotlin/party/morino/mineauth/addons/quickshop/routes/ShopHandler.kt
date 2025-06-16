@@ -16,7 +16,7 @@ import party.morino.mineauth.api.model.bukkit.ItemStackData
 import party.morino.mineauth.api.model.bukkit.LocationData
 
 // plugin名がmineauth-api-quickshop-hikari-addonなので plugins/mineauth-api-quickshop-hikari-addon/shopsにアクセスするとここに飛ぶ
-class ShopRoute : KoinComponent {
+class ShopHandler : KoinComponent {
     val quickShopAPI: QuickShopAPI by inject()
 
     @GetMapping("/id/:id")

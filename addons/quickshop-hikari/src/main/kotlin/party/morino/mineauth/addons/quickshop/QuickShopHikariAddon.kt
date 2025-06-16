@@ -1,7 +1,7 @@
 package party.morino.mineauth.addons.quickshop
 
 import org.bukkit.plugin.java.JavaPlugin
-import party.morino.mineauth.addons.quickshop.routes.ShopRoute
+import party.morino.mineauth.addons.quickshop.routes.ShopHandler
 import party.morino.mineauth.api.MineAuthAPI
 
 class QuickShopHikariAddon : JavaPlugin() {
@@ -24,7 +24,7 @@ class QuickShopHikariAddon : JavaPlugin() {
         val handler = mineAuthAPI.createHandler(this)
 
         handler.register(
-            ShopRoute()
+            ShopHandler()
         )
     }
 

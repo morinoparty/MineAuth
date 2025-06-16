@@ -1,8 +1,8 @@
 package party.morino.mineauth.addons.quickshop.utils.coroutines
 
-import org.bukkit.plugin.java.JavaPlugin
-import party.morino.mineauth.core.MineAuth
 import kotlin.coroutines.CoroutineContext
+import org.bukkit.plugin.java.JavaPlugin
+import party.morino.mineauth.addons.quickshop.QuickShopHikariAddon
 
 object DispatcherContainer {
 
@@ -15,7 +15,7 @@ object DispatcherContainer {
     val async: CoroutineContext
         get() {
             if (asyncCoroutine == null) {
-                asyncCoroutine = AsyncCoroutineDispatcher(JavaPlugin.getPlugin(MineAuth::class.java))
+                asyncCoroutine = AsyncCoroutineDispatcher(JavaPlugin.getPlugin(QuickShopHikariAddon::class.java))
             }
             return asyncCoroutine!!
         }
@@ -26,7 +26,7 @@ object DispatcherContainer {
     val sync: CoroutineContext
         get() {
             if (syncCoroutine == null) {
-                syncCoroutine = MinecraftCoroutineDispatcher(JavaPlugin.getPlugin(MineAuth::class.java))
+                syncCoroutine = MinecraftCoroutineDispatcher(JavaPlugin.getPlugin(QuickShopHikariAddon::class.java))
             }
 
             return syncCoroutine!!

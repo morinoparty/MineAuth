@@ -7,18 +7,38 @@ permissions:
   pull-requests: write
   contents: write
 
+
 jobs:
   build:
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_EC2_METADATA_DISABLED: true
+      AWS_REGION: auto
+      AWS_CLI_FILE_ENCODING: UTF-8
+      AWS_DEFAULT_S3_SIGNATURE_VERSION: s3v4
+      S3_UPLOAD_BUCKET: ${{ secrets.S3_UPLOAD_BUCKET }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: 'temurin'
           java-version: '21'
           cache: 'gradle'
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        name: Install pnpm
+        with:
+          version: 10
+          run_install: false
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -26,7 +46,7 @@ jobs:
       - name: Set short git commit SHA
         id: vars
         run: |
-          calculatedSha=$(git rev-parse --short ${{ github.sha }})
+          calculatedSha=$(git rev-parse --short HEAD)
           echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
 
       - name: change plugin.yml version
@@ -35,35 +55,114 @@ jobs:
           after="${before//v/}"
           sed -i 's/VersionPlaceholder/$after/' ./gradle.properties
 
-      - name: Build with Gradle
-        run: ./gradlew build -x test
-
-      - name: Move build artifacts
+      - name: Configure Docusaurus for preview
         run: |
-          mkdir -p ./dist
-          mv ./core/build/libs/core-*-all.jar ./dist/${{ github.event.repository.name }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
-          mv ./api/build/libs/api-*.jar ./dist/${{ github.event.repository.name }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
+          cd docs
+          # baseUrlを一時的に変更
+          sed -i 's#baseUrl: "/"#baseUrl: "/${{ env.COMMIT_SHORT_SHA }}/docs/"#g' docusaurus.config.ts
+          # urlを一時的に変更
+          sed -i 's#url: "https://fishing.plugin.morino.party"#url: "https://mf-ci.nikomaru.dev"#g' docusaurus.config.ts
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: pnpm install
+
+      - name: Generate Dokka API documentation
+        run: ./gradlew dokkaGenerate
+
+      - name: Build Docusaurus
+        working-directory: docs
+        run: pnpm run build
+
+      - name: Build with Gradle
+        run: ./gradlew build
 
       - name: Upload build artifacts
         id: upload-artifacts
-        uses: actions/upload-artifact@v4
+        run: |
+          mkdir -p ./upload
+          mkdir -p ./upload/jars
+          # bukkitとapiのjarファイルをアップロード用にリネーム
+          mv ./core/build/libs/core-*-all.jar ./upload/jars/MineAuth-bukkit-${{ env.COMMIT_SHORT_SHA }}.jar
+          mv ./api/build/libs/api-*.jar ./upload/jars/MineAuth-api-${{ env.COMMIT_SHORT_SHA }}.jar
+          mkdir -p ./upload/junit
+          cp -r ./bukkit/build/reports/tests/test/* ./upload/junit/
+          mkdir -p ./upload/detekt
+          cp -r ./build/reports/detekt/* ./upload/detekt/
+          mkdir -p ./upload/docs
+          cp -r ./docs/build/* ./upload/docs/
+          # CRC32チェックサムアルゴリズムを使用してS3互換エンドポイントとの互換性を確保
+          aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
+
+      - name: Publish test results
+        id: publish-test-results
+        uses: mikepenz/action-junit-report@cf701569b05ccdd861a76b8607a66d76f6fd4857 # v5.5.1
+        if: success() || failure()
         with:
-          name: build-artifacts
-          path: dist/**
+          report_paths: './**/build/test-results/test/TEST-*.xml'
 
       - name: Create comment file
         id: create-comment-file
         env:
-          ARTIFACT_URL: ${{ steps.upload-artifacts.outputs.artifact-url }}
+          ARTIFACT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/jars/MineAuth-bukkit-${{ env.COMMIT_SHORT_SHA }}.jar"
+          ARTIFACT_URL_API: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/jars/MineAuth-api-${{ env.COMMIT_SHORT_SHA }}.jar"
+          JUNIT_REPORT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
+          DETEKT_REPORT_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
+          DOCS_PREVIEW_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
+          DOKKA_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
+          OPENAPI_URL: "https://ma-ci.nikomaru.dev/${{ env.COMMIT_SHORT_SHA }}/docs/oprnapi/index.html"
         run: |
           cat  << EOF > comment.md
-          ## 🚀 Preview jars of ${{ github.event.repository.name }}
+          ## 🚀 Preview of ${{ github.event.repository.name }}
           <table>
             <tr>
-              <th scope="row">Preview Jars(Zip) URL</th>
+              <th scope="row">📖 Documentation Preview</th>
+              <td><a href="$DOCS_PREVIEW_URL">$DOCS_PREVIEW_URL</a></td>
+            </tr>
+            <tr>
+              <th scope="row">📦 Preview Jars Bukkit</th>
               <td><a href="$ARTIFACT_URL">$ARTIFACT_URL</a></td>
             </tr>
+            <tr>
+              <th scope="row">🔌 Preview Jars API</th>
+              <td><a href="$ARTIFACT_URL_API">$ARTIFACT_URL_API</a></td>
+            </tr>
+            <tr>
+              <th scope="row">📖 Dokka API Documentation</th>
+              <td><a href="$DOKKA_URL">$DOKKA_URL</a></td>
+            </tr>
+            <tr>
+              <th scope="row">📖 OpenAPI Documentation</th>
+              <td><a href="$OPENAPI_URL">$OPENAPI_URL</a></td>
+            </tr>
+            <tr>
+              <th scope="row">🧪 JUnit Report</th>
+              <td><a href="$JUNIT_REPORT_URL">$JUNIT_REPORT_URL</a></td>
+            </tr>
+            <tr>
+              <th scope="row">🔍 Detekt Report</th>
+              <td><a href="$DETEKT_REPORT_URL">$DETEKT_REPORT_URL</a></td>
+            </tr>
           </table>
+
+          ## Test summary
+
+          <table>
+              <tr>
+              <th>
+                <th>Tests 💯</th>
+                <th>Passed ✅</th>
+                <th>Skipped ⏭️</th>
+                <th>Failed ❌</th>
+              </tr>
+              <tr>
+                <td>JUnit Test Report</td>
+                <td>${{ steps.publish-test-results.outputs.total }} ran</td>
+                <td>${{ steps.publish-test-results.outputs.passed }} passed</td>
+                <td>${{ steps.publish-test-results.outputs.skipped }} skipped</td>
+                <td>${{ steps.publish-test-results.outputs.failed }} failed</td>
+              </tr>
+            </table>
           EOF
       - name: Create PR comment
         if: ${{ job.status == 'success' && (github.event.action == 'opened' || github.event.action == 'synchronize') }}

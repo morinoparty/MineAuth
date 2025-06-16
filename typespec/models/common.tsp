@@ -13,8 +13,8 @@ namespace MineAuth.Models;
 @doc("UUIDモデル")
 model UUID {
   @pattern("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-  @example("123e4567-e89b-12d3-a456-426614174000")
-  value: string;
+  @example("069a79f4-44e9-4726-a5be-fca90e38aaf5")
+  id: string;
 }
 
 /**
@@ -28,5 +28,5 @@ model ProfileData {
   username: string;
 
   /** プレイヤーUUID */
-  id: UUID;
+  ...UUID;
 }
