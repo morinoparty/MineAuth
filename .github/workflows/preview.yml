@@ -73,9 +73,9 @@ jobs:
       - name: TypeSpec
         working-directory: typespec
         run: |
-          npm install -g @typespec/compiler
+          pnpm install
           tsp compile .
-          
+
       - name: Build Docusaurus
         working-directory: docs
         run: pnpm run build
