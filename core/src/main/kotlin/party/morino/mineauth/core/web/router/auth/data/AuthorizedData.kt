@@ -1,7 +1,7 @@
 package party.morino.mineauth.core.web.router.auth.data
 
 import kotlinx.serialization.Serializable
-import party.morino.mineauth.core.utils.UUIDSerializer
+import party.morino.mineauth.api.utils.UUIDSerializer
 import java.util.*
 
 @Serializable

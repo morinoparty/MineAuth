@@ -16,7 +16,7 @@ import party.morino.mineauth.core.web.components.auth.ClientData
 import party.morino.mineauth.core.web.components.auth.TokenData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
-import java.security.MessageDigest
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.util.*
@@ -100,10 +100,7 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
 
-                val hash = MessageDigest.getInstance("SHA-256").digest(codeVerifier.toByteArray())
-                val base64 = Base64.getUrlEncoder().encodeToString(hash).replace("=", "")
-
-                if (data.codeChallenge != base64) {
+                if (!validateCodeVerifier(data.codeChallenge, codeVerifier)) {
                     call.respond(HttpStatusCode.BadRequest, "Invalid code_verifier")
                     return@post
                 }

@@ -8,7 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
-import party.morino.mineauth.core.utils.json
+import party.morino.mineauth.api.utils.json
 
 @Serializable(with = ClientDataSerializer::class)
 sealed class ClientData: KoinComponent {

@@ -19,7 +19,7 @@ import org.koin.core.context.loadKoinModules
 import org.koin.dsl.module
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
-import party.morino.mineauth.core.utils.json
+import party.morino.mineauth.api.utils.json
 import java.io.File
 import java.math.BigInteger
 import java.security.*
