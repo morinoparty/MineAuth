@@ -59,7 +59,7 @@ exposed-java-time = { group = "org.jetbrains.exposed", name = "exposed-java-time
 koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinVersion" }
 
 vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1" }
-quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.9-RELEASE-1" }
+quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.10" }
 
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.1" }
