@@ -44,7 +44,7 @@ object TokenRouter: KoinComponent {
                         return@post
                     }
                     val data = ClientData.getClientData(clientId) as ClientData.ConfidentialClientData
-                    if (data.clientSecret != clientSecret) {
+                    if (data.hashedClientSecret != clientSecret) {
                         call.respond(HttpStatusCode.BadRequest, "Invalid client_secret")
                         return@post
                     }
@@ -89,7 +89,7 @@ object TokenRouter: KoinComponent {
                 if(clientSecret != null){
                     //ConfidentialClientDataの場合
                     val clientData = ClientData.getClientData(clientId) as ClientData.ConfidentialClientData
-                    if (clientData.clientSecret != clientSecret) {
+                    if (clientData.hashedClientSecret != clientSecret) {
                         call.respond(HttpStatusCode.BadRequest, "Invalid client_secret")
                         return@post
                     }

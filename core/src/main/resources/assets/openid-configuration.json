@@ -6,7 +6,7 @@
   "revocation_endpoint": "$URL/oauth2/revoke",
   "introspection_endpoint": "$URL/oauth2/introspect",
   "jwks_uri": "$URL/.well-known/jwks.json",
-  "end_session_endpoint": "$URL/oauth2/logout",
+  "end_session_endpoint": "$URL/oauth2/end_session",
   "scopes_supported": [
     "openid",
     "profile",
@@ -16,7 +16,7 @@
     "code"
   ],
   "response_modes_supported": [
-    "form_post"
+    "query"
   ],
   "grant_types_supported": [
     "authorization_code",

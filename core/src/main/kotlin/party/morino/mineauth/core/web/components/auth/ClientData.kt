@@ -23,7 +23,7 @@ sealed class ClientData: KoinComponent {
 
     @Serializable
     data class ConfidentialClientData(
-        override val clientId: String, override val clientName: String, override val redirectUri: String, val clientSecret: String
+        override val clientId: String, override val clientName: String, override val redirectUri: String, val hashedClientSecret: String
     ): ClientData()
 
     companion object : KoinComponent{
