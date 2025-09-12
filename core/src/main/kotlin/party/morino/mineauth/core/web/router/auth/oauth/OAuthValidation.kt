@@ -21,21 +21,30 @@ object OAuthValidation : KoinComponent {
         return json.decodeFromString(clientDataFile.readText())
     }
 
-    fun validateRedirectUri(clientData: ClientData, redirectUri: String?): Boolean {
-        if (redirectUri == null) return false
-        
+    /**
+     * Validate the redirect URI.
+     * The redirect URI must start with the registered redirect URI.
+     * If the registered redirect URI ends with a slash, it is considered as a directory.
+     * If the registered redirect URI does not end with a slash, it is considered as a file.
+     *
+     * @param clientData The client data.
+     * @sample clientData.redirectUri = "https://\\w{6}-example.com/callback/"
+     * @param redirectUri The redirect URI to validate.
+     * @sample redirectUri = "https://hash-example.com"
+     * @return True if the redirect URI is valid, false otherwise.
+     */
+    fun validateRedirectUri(clientData: ClientData, redirectUri: String): Boolean {
         val recordRedirectUri = if (clientData.redirectUri.endsWith("/")) {
             clientData.redirectUri
         } else {
             clientData.redirectUri + "/"
-        }
+        } + ".*"
         
-        return redirectUri.startsWith(recordRedirectUri)
+        return Regex(recordRedirectUri).matches(redirectUri)
     }
 
     fun validatePKCE(codeChallenge: String?, codeChallengeMethod: String?): Boolean {
-        if (codeChallenge == null || codeChallengeMethod != "S256") return false
-        return true
+        return !(codeChallenge == null || codeChallengeMethod != "S256")
     }
 
     fun validateCodeVerifier(codeChallenge: String, codeVerifier: String): Boolean {

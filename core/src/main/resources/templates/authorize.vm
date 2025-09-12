@@ -16,28 +16,6 @@
                 display: flex;
                 flex-direction: column;
             }
-            .input-container {
-                position: relative;
-                border: 1px solid #d7d7d7;
-                border-radius: 5px;
-                transition: all 0.3s ease;
-            }
-            .input-container:focus-within {
-                border-color: #41765d;
-                box-shadow: 0 0 0 2px rgba(65, 118, 93, 0.1);
-            }
-            .password-toggle {
-                position: absolute;
-                right: 10px;
-                top: 50%;
-                transform: translateY(-50%);
-                cursor: pointer;
-                color: #41765d;
-                transition: color 0.3s ease;
-            }
-            .password-toggle:hover {
-                color: #2d4f3d;
-            }
             .submit-button {
                 transition: all 0.3s ease;
             }
@@ -61,7 +39,7 @@
             <div class="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)]">
                 <div class="flex items-center mb-6 text-2xl font-semibold text-[#41765d]">
                     <img class="w-8 h-8 mr-2" src="$logoUrl" id="logoUrl" alt="logo" />
-                    $ApplicationName
+                    $applicationName
                 </div>
                 <div class="w-full max-w-md bg-white rounded-lg shadow-lg border border-[#d7d7d7]">
                     <div class="p-6 space-y-4">
@@ -77,15 +55,13 @@
                             <input type="hidden" name="code_challenge_method" value="S256" />
                             <div>
                                 <label for="username" class="block mb-2 text-sm font-medium text-[#41765d]" id="usernameLabel"></label>
-                                <div class="input-container">
-                                    <input type="text" name="username" id="username" class="bg-gray-50 text-[#41765d] text-sm rounded-lg focus:ring-[#41765d] focus:border-[#41765d] block w-full p-2.5 border-none" placeholder="username" required />
-                                </div>
+                                <input type="text" name="username" id="username" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="username" required />
                             </div>
                             <div>
                                 <label for="password" class="block mb-2 text-sm font-medium text-[#41765d]" id="passwordLabel"></label>
-                                <div class="input-container">
-                                    <input type="password" name="password" id="password" class="bg-gray-50 text-[#41765d] text-sm rounded-lg focus:ring-[#41765d] focus:border-[#41765d] block w-full p-2.5 border-none" placeholder="••••••••" required />
-                                    <i id="toggle-password" class="fas fa-eye password-toggle"></i>
+                                <div class="relative">
+                                    <input type="password" name="password" id="password" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 pr-10 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="••••••••" required />
+                                    <i id="toggle-password" class="fas fa-eye absolute right-3 top-1/2 -translate-y-1/2 text-[#41765d] hover:text-[#2d4f3d] cursor-pointer"></i>
                                 </div>
                             </div>
                             <div>
@@ -107,7 +83,7 @@
                     togglePassword.classList.add("fa-eye-slash");
                 } else {
                     passwordInput.type = "password";
-                    togglePassword.classList.remove("fa-eye-sl-slash");
+                    togglePassword.classList.remove("fa-eye-slash");
                     togglePassword.classList.add("fa-eye");
                 }
             });
@@ -138,7 +114,7 @@
                         ja: {
                             translation: {
                                 greeting: "こんにちは",
-                                signIn: "もりぱアカウントでサインイン",
+                                signIn: "アカウントでサインイン",
                                 usernameLabel: "ユーザー名",
                                 passwordLabel: "パスワード",
                                 authorize: "認証",
