@@ -11,7 +11,7 @@ const config: Config = {
     trailingSlash: true,
 
     // Set the production url of your site here
-    url: "https://mineauth.docs.morino.party",
+    url: "https://mineauth.plugin.morino.party",
     // Set the /<baseUrl>/ pathname under which your site is served
     // For GitHub pages deployment, it is often '/<projectName>/'
     baseUrl: "/",

@@ -42,6 +42,8 @@ object AuthorizeRouter: KoinComponent {
             val state = call.parameters["state"]
             val codeChallenge = call.parameters["code_challenge"]
             val codeChallengeMethod = call.parameters["code_challenge_method"]
+            // OIDC nonce: リプレイ攻撃防止用（任意パラメータ）
+            val nonce = call.parameters["nonce"]
 
             // 必須パラメータのバリデーション
             if (clientId == null || redirectUri == null || scope == null || responseType != "code" || state == null) {
@@ -68,7 +70,7 @@ object AuthorizeRouter: KoinComponent {
             }
 
             // 認可画面に表示するデータの準備
-            val model = mapOf(
+            val model = mutableMapOf(
                 "clientId" to clientData.clientId,
                 "clientName" to clientData.clientName,
                 "redirectUri" to redirectUri,
@@ -76,10 +78,12 @@ object AuthorizeRouter: KoinComponent {
                 "state" to state,
                 "scope" to scope,
                 "codeChallenge" to codeChallenge,
-                "codeChallengeMethod" to codeChallengeMethod,
+                "codeChallengeMethod" to (codeChallengeMethod ?: "S256"),
                 "logoUrl" to oauthConfig.logoUrl,
                 "applicationName" to oauthConfig.applicationName,
             )
+            // nonceが存在する場合はモデルに追加（OIDC対応）
+            nonce?.let { model["nonce"] = it }
 
             // Velocityテンプレートを使用して認可画面を表示
             call.respond(VelocityContent("authorize.vm", model as Map<String, Any>))
@@ -97,6 +101,9 @@ object AuthorizeRouter: KoinComponent {
             val scope = formParameters["scope"]
             val state = formParameters["state"]
             val codeChallenge = formParameters["code_challenge"]
+            val codeChallengeMethod = formParameters["code_challenge_method"] ?: "S256"
+            // OIDC nonce: リプレイ攻撃防止用（任意パラメータ）
+            val nonce = formParameters["nonce"]
 
             // パラメータのバリデーション
             if (username == null || password == null || responseType != "code" || clientId == null || redirectUri == null || scope == null || state == null || codeChallenge == null) {
@@ -122,8 +129,20 @@ object AuthorizeRouter: KoinComponent {
             }
 
             // 認可コードの生成と保存
+            // 認証時刻を記録（ID Tokenのauth_timeクレームに使用）
+            val authTime = System.currentTimeMillis()
             val code = RandomStringUtils.randomAlphanumeric(16)
-            authorizedData[code] = AuthorizedData(clientId, redirectUri, scope, state, codeChallenge!!, uniqueId)
+            authorizedData[code] = AuthorizedData(
+                clientId = clientId,
+                redirectUri = redirectUri,
+                scope = scope,
+                state = state,
+                codeChallenge = codeChallenge!!,
+                codeChallengeMethod = codeChallengeMethod,
+                uniqueId = uniqueId,
+                nonce = nonce,
+                authTime = authTime
+            )
 
             // 認可コードをリダイレクトURIに付加してリダイレクト
             val successUri = buildSuccessRedirectUri(redirectUri, code, state)

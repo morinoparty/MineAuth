@@ -52,7 +52,8 @@
                             <input type="hidden" name="state" value="$state" />
                             <input type="hidden" name="scope" value="$scope" />
                             <input type="hidden" name="code_challenge" value="$codeChallenge" />
-                            <input type="hidden" name="code_challenge_method" value="S256" />
+                            <input type="hidden" name="code_challenge_method" value="$codeChallengeMethod" />
+                            #if($nonce)<input type="hidden" name="nonce" value="$nonce" />#end
                             <div>
                                 <label for="username" class="block mb-2 text-sm font-medium text-[#41765d]" id="usernameLabel"></label>
                                 <input type="text" name="username" id="username" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="username" required />

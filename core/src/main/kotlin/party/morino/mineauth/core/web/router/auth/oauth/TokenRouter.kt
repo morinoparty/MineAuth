@@ -17,6 +17,7 @@ import party.morino.mineauth.core.web.components.auth.TokenData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
+import java.security.MessageDigest
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.util.*
@@ -48,8 +49,16 @@ object TokenRouter: KoinComponent {
                         call.respond(HttpStatusCode.BadRequest, "Invalid client_secret")
                         return@post
                     }
-                    val (token , state) = issueTokenWithRefreshToken(refreshToken)
-                    call.respond(HttpStatusCode.OK, TokenData(token, "Bearer", EXPIRES_IN, state, refreshToken))
+                    val token = issueTokenWithRefreshToken(refreshToken)
+                    // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
+                    // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
+                    call.respond(HttpStatusCode.OK, TokenData(
+                        accessToken = token,
+                        tokenType = "Bearer",
+                        expiresIn = EXPIRES_IN,
+                        refreshToken = refreshToken,
+                        idToken = null
+                    ))
 
                 }else{
                     //PublicClientDataの場合
@@ -64,8 +73,15 @@ object TokenRouter: KoinComponent {
                         call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
                         return@post
                     }
-                    val (token , state) = issueTokenWithRefreshToken(refreshToken)
-                    call.respond(HttpStatusCode.OK, TokenData(token, "Bearer", EXPIRES_IN, state, refreshToken))
+                    val token = issueTokenWithRefreshToken(refreshToken)
+                    // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
+                    call.respond(HttpStatusCode.OK, TokenData(
+                        accessToken = token,
+                        tokenType = "Bearer",
+                        expiresIn = EXPIRES_IN,
+                        refreshToken = refreshToken,
+                        idToken = null
+                    ))
                 }
             }else if (grantType == "authorization_code") {
                 //authorization_codeの処理 https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
@@ -107,10 +123,18 @@ object TokenRouter: KoinComponent {
 
                 val token = issueToken(data, clientId)
                 val refreshToken = issueRefreshToken(data, clientId)
+                // scopeに"openid"が含まれる場合のみID Tokenを発行（OIDC準拠）
+                val idToken = if (data.scope.contains("openid")) {
+                    issueIdToken(data, clientId, token)
+                } else null
 
                 call.respond(
                     HttpStatusCode.OK, TokenData(
-                        token, "Bearer", EXPIRES_IN, data.state, refreshToken
+                        accessToken = token,
+                        tokenType = "Bearer",
+                        expiresIn = EXPIRES_IN,
+                        refreshToken = refreshToken,
+                        idToken = idToken
                     )
                 )
             }else{
@@ -152,13 +176,79 @@ object TokenRouter: KoinComponent {
             )
         )
 
-    private fun issueTokenWithRefreshToken(refreshToken: String) : Pair<String, String> {
+    /**
+     * リフレッシュトークンからアクセストークンを再発行する
+     */
+    private fun issueTokenWithRefreshToken(refreshToken: String): String {
         val jwt = JWT.decode(refreshToken)
         val clientId = jwt.getClaim("client_id").asString()
         val playerUniqueId = jwt.getClaim("playerUniqueId").asString()
         val scope = jwt.getClaim("scope").asString()
         val state = jwt.getClaim("state").asString()
-        val token = issueToken(AuthorizedData(clientId, "", scope, state, "", UUID.fromString(playerUniqueId)), clientId)
-        return Pair(token, state)
+        val data = AuthorizedData(
+            clientId = clientId,
+            redirectUri = "",
+            scope = scope,
+            state = state,
+            codeChallenge = "",
+            codeChallengeMethod = "S256",
+            uniqueId = UUID.fromString(playerUniqueId)
+        )
+        return issueToken(data, clientId)
+    }
+
+    /**
+     * access_tokenからat_hashを計算する
+     * OIDC Core Section 3.1.3.6 準拠
+     * SHA-256でハッシュし、左半分（128ビット）をBase64URLエンコード
+     */
+    private fun calculateAtHash(accessToken: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hash = digest.digest(accessToken.toByteArray(Charsets.US_ASCII))
+        val leftHalf = hash.copyOf(16) // 左128ビット
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(leftHalf)
+    }
+
+    /**
+     * OpenID Connect ID Tokenを発行する
+     * OIDC Core Section 2, 3.1.3.7 準拠
+     *
+     * @param data 認可データ
+     * @param clientId クライアントID
+     * @param accessToken アクセストークン（at_hash計算用）
+     * @return ID Token（JWT形式）
+     */
+    private fun issueIdToken(
+        data: AuthorizedData,
+        clientId: String?,
+        accessToken: String
+    ): String {
+        val configData = get<JWTConfigData>()
+        val now = Date()
+
+        return JWT.create()
+            // JWTヘッダー
+            .withKeyId(configData.keyId.toString())
+            // 必須クレーム（OIDC Core Section 2）
+            .withIssuer(configData.issuer)                           // iss: Issuer Identifier
+            .withSubject(data.uniqueId.toString())                   // sub: Subject Identifier
+            .withAudience(clientId ?: data.clientId)                 // aud: Audience
+            .withExpiresAt(Date(now.time + 3600 * 1000))             // exp: 1時間後
+            .withIssuedAt(now)                                        // iat: 発行時刻
+            // 条件付きクレーム
+            .withClaim("auth_time", data.authTime / 1000)            // auth_time: 認証時刻（秒単位）
+            .apply {
+                // nonceが存在する場合のみ含める（リプレイ攻撃防止用）
+                data.nonce?.let { withClaim("nonce", it) }
+            }
+            // 任意クレーム（Authorization Code Flowでは任意だが、検証に有用）
+            .withClaim("at_hash", calculateAtHash(accessToken))      // at_hash: Access Token hash
+            // 署名（RS256）
+            .sign(
+                Algorithm.RSA256(
+                    getKeys().second as RSAPublicKey,
+                    getKeys().first as RSAPrivateKey
+                )
+            )
     }
 }
