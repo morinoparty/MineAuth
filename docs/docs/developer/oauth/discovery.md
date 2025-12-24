@@ -1,0 +1,84 @@
+---
+sidebar_position: 1
+---
+
+# 🔍 OIDC Discovery
+
+MineAuthは、[OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)に準拠したDiscoveryエンドポイントを提供します。
+
+## 📍 エンドポイント
+
+```
+GET /.well-known/openid-configuration
+```
+
+## 📋 レスポンス例
+
+```json
+{
+  "issuer": "https://api.example.com",
+  "authorization_endpoint": "https://api.example.com/oauth2/authorize",
+  "token_endpoint": "https://api.example.com/oauth2/token",
+  "userinfo_endpoint": "https://api.example.com/oauth2/userinfo",
+  "jwks_uri": "https://api.example.com/.well-known/jwks.json",
+  "response_types_supported": ["code"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "scopes_supported": ["openid", "profile"],
+  "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+  "claims_supported": [
+    "sub",
+    "name",
+    "nickname",
+    "picture",
+    "iss",
+    "aud",
+    "exp",
+    "iat",
+    "auth_time",
+    "nonce",
+    "at_hash"
+  ],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"]
+}
+```
+
+## 🔑 メタデータの説明
+
+| フィールド | 説明 |
+|------------|------|
+| `issuer` | トークンの発行者識別子 |
+| `authorization_endpoint` | 認可エンドポイントのURL |
+| `token_endpoint` | トークンエンドポイントのURL |
+| `userinfo_endpoint` | UserInfoエンドポイントのURL |
+| `jwks_uri` | JWK SetのURL（公開鍵の取得先） |
+| `response_types_supported` | サポートするレスポンスタイプ |
+| `subject_types_supported` | サポートするサブジェクトタイプ |
+| `id_token_signing_alg_values_supported` | IDトークンの署名アルゴリズム |
+| `scopes_supported` | サポートするスコープ |
+| `token_endpoint_auth_methods_supported` | トークンエンドポイントの認証方法 |
+| `claims_supported` | サポートするクレーム |
+| `grant_types_supported` | サポートするグラントタイプ |
+| `code_challenge_methods_supported` | PKCEで使用可能なコードチャレンジメソッド |
+
+## ⚙️ 設定
+
+Discoveryで公開されるURLは、`config.json`の`server.baseUrl`から生成されます。
+
+```json
+{
+  "server": {
+    "baseUrl": "https://api.example.com"
+  }
+}
+```
+
+リバースプロキシを使用している場合は、プロキシのURLを設定してください。
+
+## 🔗 関連エンドポイント
+
+- **JWKs**: `/.well-known/jwks.json` - 公開鍵の取得
+- **Authorization**: `/oauth2/authorize` - 認可リクエスト
+- **Token**: `/oauth2/token` - トークン発行
+- **UserInfo**: `/oauth2/userinfo` - ユーザー情報の取得
