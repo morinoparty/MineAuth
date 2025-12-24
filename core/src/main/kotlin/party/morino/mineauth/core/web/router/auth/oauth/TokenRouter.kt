@@ -17,6 +17,8 @@ import party.morino.mineauth.core.web.components.auth.TokenData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthErrorCode
+import party.morino.mineauth.core.web.router.auth.oauth.respondOAuthError
 import java.security.MessageDigest
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
@@ -34,19 +36,19 @@ object TokenRouter: KoinComponent {
                 val clientId = formParameters["client_id"]
                 val clientSecret = formParameters["client_secret"]
                 if (clientId == null) {
-                    call.respond(HttpStatusCode.BadRequest, "Invalid request")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_id")
                     return@post
                 }
 
                 if(clientSecret != null){
                     val refreshToken = formParameters["refresh_token"]
                     if (refreshToken == null) {
-                        call.respond(HttpStatusCode.BadRequest, "Invalid request")
+                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
                         return@post
                     }
                     val data = ClientData.getClientData(clientId) as ClientData.ConfidentialClientData
                     if (data.hashedClientSecret != clientSecret) {
-                        call.respond(HttpStatusCode.BadRequest, "Invalid client_secret")
+                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }
                     val token = issueTokenWithRefreshToken(refreshToken)
@@ -65,12 +67,12 @@ object TokenRouter: KoinComponent {
                     val refreshToken = formParameters["refresh_token"]
                     val redirectUri = formParameters["redirect_uri"]
                     if (refreshToken == null || redirectUri == null) {
-                        call.respond(HttpStatusCode.BadRequest, "Invalid request")
+                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters: refresh_token, redirect_uri")
                         return@post
                     }
                     val data = ClientData.getClientData(clientId)
                     if (data.redirectUri != redirectUri) {
-                        call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
+                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "The redirect_uri does not match")
                         return@post
                     }
                     val token = issueTokenWithRefreshToken(refreshToken)
@@ -93,31 +95,31 @@ object TokenRouter: KoinComponent {
                 val clientSecret = formParameters["client_secret"] //client_secret_post
                 val data = authorizedData[code] ?: run {
                     authorizedData.remove(code)
-                    call.respond(HttpStatusCode.BadRequest, "Invalid code")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The authorization code is invalid or expired")
                     return@post
                 }
                 authorizedData.remove(code)
 
                 if (code == null || redirectUri == null || clientId == null || codeVerifier == null) {
-                    call.respond(HttpStatusCode.BadRequest, "Invalid request")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters")
                     return@post
                 }
                 if(clientSecret != null){
                     //ConfidentialClientDataの場合
                     val clientData = ClientData.getClientData(clientId) as ClientData.ConfidentialClientData
                     if (clientData.hashedClientSecret != clientSecret) {
-                        call.respond(HttpStatusCode.BadRequest, "Invalid client_secret")
+                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }
                 }
 
                 if (data.clientId != clientId || data.redirectUri != redirectUri) {
-                    call.respond(HttpStatusCode.BadRequest, "Invalid client_id or redirect_uri")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid client_id or redirect_uri")
                     return@post
                 }
 
                 if (!validateCodeVerifier(data.codeChallenge, codeVerifier)) {
-                    call.respond(HttpStatusCode.BadRequest, "Invalid code_verifier")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The code_verifier is invalid")
                     return@post
                 }
 
@@ -138,7 +140,7 @@ object TokenRouter: KoinComponent {
                     )
                 )
             }else{
-                call.respond(HttpStatusCode.BadRequest, "Invalid grant_type")
+                call.respondOAuthError(OAuthErrorCode.UNSUPPORTED_GRANT_TYPE, "The grant_type is not supported")
             }
         }
     }

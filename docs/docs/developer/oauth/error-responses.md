@@ -1,0 +1,76 @@
+---
+sidebar_position: 2
+---
+
+# ⚠️ エラーレスポンス
+
+トークンエンドポイントのエラーレスポンスは、RFC 6749 Section 5.2 に準拠しています。
+
+## エラーレスポンス形式
+
+```json
+{
+  "error": "error_code",
+  "error_description": "Human-readable error description"
+}
+```
+
+## エラーコード一覧
+
+| エラーコード | HTTP ステータス | 説明 |
+|-------------|---------------|------|
+| `invalid_request` | 400 | 必須パラメータが不足、無効なパラメータ値、重複パラメータなど |
+| `invalid_client` | 401 | クライアント認証に失敗（client_id不明、client_secret不正など） |
+| `invalid_grant` | 400 | 認可コード無効、期限切れ、code_verifier不正など |
+| `unauthorized_client` | 400 | クライアントがこのグラントタイプを使用する権限がない |
+| `unsupported_grant_type` | 400 | サーバーがこの grant_type をサポートしていない |
+| `invalid_scope` | 400 | リクエストされたスコープが無効、不明、または不正 |
+
+## エラー例
+
+### パラメータ不足
+
+```http
+POST /oauth2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=abc123
+```
+
+```json
+{
+  "error": "invalid_request",
+  "error_description": "Missing required parameters"
+}
+```
+
+### 認可コード無効
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "The authorization code is invalid or expired"
+}
+```
+
+### クライアント認証失敗
+
+```json
+{
+  "error": "invalid_client",
+  "error_description": "Client authentication failed"
+}
+```
+
+### サポートされていない grant_type
+
+```json
+{
+  "error": "unsupported_grant_type",
+  "error_description": "The grant_type is not supported"
+}
+```
+
+## 参考
+
+- [RFC 6749 - Error Response](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2)
