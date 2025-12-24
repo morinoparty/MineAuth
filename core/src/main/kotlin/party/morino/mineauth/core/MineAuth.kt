@@ -11,8 +11,11 @@ import org.incendo.cloud.kotlin.coroutines.annotations.installCoroutineSupport
 import org.incendo.cloud.paper.LegacyPaperCommandManager
 import org.incendo.cloud.setting.ManagerSetting
 import org.koin.core.context.GlobalContext
+import org.koin.core.context.GlobalContext.getOrNull
 import org.koin.dsl.module
 import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.config.PluginDirectory
+import party.morino.mineauth.core.config.PluginDirectoryImpl
 import party.morino.mineauth.api.RegisterHandler
 import party.morino.mineauth.core.commands.RegisterCommand
 import party.morino.mineauth.core.commands.ReloadCommand
@@ -37,11 +40,17 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
 
 
     private fun setupKoin() {
-        val appModule = module {
-            single<MineAuth> { this@MineAuth }
+        // テスト環境では既にKoinが初期化されている場合があるのでチェック
+        if (getOrNull() != null) {
+            return
         }
 
-        GlobalContext.getOrNull() ?: GlobalContext.startKoin {
+        val appModule = module {
+            single<MineAuth> { this@MineAuth }
+            single<PluginDirectory> { PluginDirectoryImpl() }
+        }
+
+        getOrNull() ?: GlobalContext.startKoin {
             modules(appModule)
         }
     }

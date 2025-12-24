@@ -33,6 +33,13 @@ dependencies {
 
     compileOnly(libs.vault.api)
     compileOnly(libs.quickshop.api)
+
+    // テスト依存関係
+    testImplementation(libs.bundles.junit.jupiter)
+    testImplementation(libs.bundles.koin.test)
+    testImplementation(libs.mockk)
+    testImplementation(libs.mock.bukkit)
+    testImplementation(libs.ktor.server.test.host)
 }
 
 
@@ -52,6 +59,14 @@ tasks {
         dependsOn("shadowJar")
     }
     shadowJar
+    test {
+        useJUnitPlatform()
+        testLogging {
+            showStandardStreams = true
+            events("passed", "skipped", "failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+    }
     runServer {
         minecraftVersion("1.21.4")
         val plugins = runPaper.downloadPluginsSpec {

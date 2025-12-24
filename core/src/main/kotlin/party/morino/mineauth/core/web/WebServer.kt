@@ -65,7 +65,7 @@ object WebServer : KoinComponent {
     }
 }
 
-private fun Application.module() {
+internal fun Application.module() {
     val plugin: MineAuth by inject(MineAuth::class.java)
     val jwtConfigData: JWTConfigData = get(JWTConfigData::class.java)
     install(ContentNegotiation) {
@@ -103,7 +103,7 @@ private fun Application.module() {
     routing {
         route("/") {
             get {
-                call.respondText("Hello World!")
+                call.respondText("Hello MineAuth!")
             }
         }
         staticFiles("assets", plugin.dataFolder.resolve("assets"))

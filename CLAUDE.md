@@ -79,6 +79,11 @@ OAuth2, OpenID Connectを使用した認証システムを提供し、他のプ�
 
 # Gitのルール
 
+- ブランチを切る際は、masterブランチから切ること
+- プルリクエストは必ずmasterブランチに対して行うこと
+- ブランチを切ってから、作業を始める前に、masterブランチの最新の状態を取り込むこと
+- ブランチを切って作業をすること
+
 ## Repository
 - [MoripaFishing](https://github.com/morinoparty/MoripaFishing)
 
@@ -109,6 +114,21 @@ commitの絵文字などに関しては、changelog.config.jsを参考にして�
 - app/src/main/kotlin/party/morino/moripafishing/ にプラグインのメインクラスを配置します。
 - api/src/main/kotlin/party/morino/moripafishing/api/ にAPIのインターフェースを配置します。
 - data classはそれぞれのmodelに配置します。
+
+
+# 推奨される書き方
+
+
+## DI
+- DIを使う際には、コンストラクタインジェクションではなく、Koinの`by inject()`を使うことが推奨されます。
+
+## Test
+- core/pluginにあるUseCaseに関してはテストを記述するようにしてください。
+- テストの数については、あまり大量にせず、メソッドの主要な分岐点をカバーする程度に留めることが推奨されます。
+- また、@DisplayNameアノテーションを使用して、テストケースの説明を明確にすることが推奨されます。これは、英語で短く記述してください。
+
+## Minecraft
+- player | senderにメッセージを送る際には、sender.sendMessageではなく、sender.sendRichMessage(minimessage : string)を使うことが推奨されます。
 
 
 ## 人格

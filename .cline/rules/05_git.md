@@ -1,5 +1,10 @@
 # Gitのルール
 
+- ブランチを切る際は、masterブランチから切ること
+- プルリクエストは必ずmasterブランチに対して行うこと
+- ブランチを切ってから、作業を始める前に、masterブランチの最新の状態を取り込むこと
+- ブランチを切って作業をすること
+
 ## Repository
 - [MoripaFishing](https://github.com/morinoparty/MoripaFishing)
 
