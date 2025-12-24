@@ -2,6 +2,10 @@ package party.morino.mineauth.core
 
 import io.mockk.every
 import io.mockk.mockk
+import java.io.File
+import java.util.UUID
+import java.util.logging.Logger
+import kotlin.jvm.java
 import org.junit.jupiter.api.extension.AfterAllCallback
 import org.junit.jupiter.api.extension.BeforeAllCallback
 import org.junit.jupiter.api.extension.ExtensionContext
@@ -14,9 +18,7 @@ import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.mocks.config.PluginDirectoryMock
-import java.io.File
-import java.util.UUID
-import java.util.logging.Logger
+import party.morino.mineauth.core.web.router.auth.oauth.TokenRouter.plugin
 
 /**
  * MineAuthのテスト用拡張機能

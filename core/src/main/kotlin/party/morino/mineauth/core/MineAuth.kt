@@ -26,6 +26,7 @@ import party.morino.mineauth.core.web.WebServer
 open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
     private lateinit var plugin: MineAuth
     override suspend fun onEnableAsync() {
+        println("MineAuth is enabling...")
         plugin = this
         setCommand()
         setupKoin()
@@ -33,6 +34,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
         FileUtils.settingDatabase()
         IntegrationInitializer.initialize()
         Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+            logger.info("MineAuth is enabled!")
             WebServer.settingServer()
             WebServer.startServer()
         })
