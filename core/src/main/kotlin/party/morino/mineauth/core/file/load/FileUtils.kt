@@ -7,29 +7,39 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.database.UserAuthData
-import party.morino.mineauth.core.file.load.config.OAuthConfigLoader
-import party.morino.mineauth.core.file.load.config.WebConfigLoader
+import party.morino.mineauth.core.file.load.config.ConfigLoader
 import party.morino.mineauth.core.file.load.resources.AssetsResourceLoader
 import party.morino.mineauth.core.file.load.resources.TemplatePageResourceLoader
 import party.morino.mineauth.core.file.utils.KeyUtils
 import java.io.File
 
-object FileUtils: KoinComponent {
+object FileUtils : KoinComponent {
     private val plugin: MineAuth by inject()
+
     fun loadFiles() {
+        // 1. 統合設定ファイルを最初に読み込む
+        //    これにより JWTConfigData, OAuthConfigData, WebServerConfigData が Koin に登録される
+        ConfigLoader().load()
+
+        // 2. 鍵の生成とJWKsの読み込み
+        //    ConfigLoader で登録された JWTConfigData を使用する
         KeyUtils.init()
+
+        // 3. リソースファイルの読み込み
         val loaders = listOf<FileLoaderInterface>(
-            WebConfigLoader(), OAuthConfigLoader(), AssetsResourceLoader(), TemplatePageResourceLoader()
+            AssetsResourceLoader(),
+            TemplatePageResourceLoader()
         )
 
-        loaders.stream().forEach {
+        loaders.forEach {
             it.load()
         }
     }
 
     fun settingDatabase() {
         Database.connect(
-            url = "jdbc:sqlite:${plugin.dataFolder}${File.separator}MineAuth.db", driver = "org.sqlite.JDBC"
+            url = "jdbc:sqlite:${plugin.dataFolder}${File.separator}MineAuth.db",
+            driver = "org.sqlite.JDBC"
         )
 
         transaction {

@@ -1,7 +1,6 @@
 package party.morino.mineauth.core.file.utils
 
 import com.nimbusds.jose.jwk.JWKSet
-import kotlinx.serialization.encodeToString
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.X509v3CertificateBuilder
@@ -14,32 +13,48 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.util.io.pem.PemObject
 import org.bouncycastle.util.io.pem.PemWriter
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
-import org.koin.core.context.loadKoinModules
-import org.koin.dsl.module
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
-import party.morino.mineauth.api.utils.json
 import java.io.File
 import java.math.BigInteger
-import java.security.*
+import java.security.KeyFactory
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.PublicKey
+import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.*
 
-object KeyUtils: KoinComponent {
+/**
+ * RSA鍵ペアとJWKsの管理ユーティリティ
+ * 鍵の生成、証明書の作成、JWKsの生成を行う
+ *
+ * 生成されるファイルは plugins/MineAuth/generated/ に配置される
+ */
+object KeyUtils : KoinComponent {
     private val plugin: MineAuth by inject()
 
+    // 生成ファイル用ディレクトリ
+    val generatedDir: File
+        get() = plugin.dataFolder.resolve("generated")
+
     fun init() {
+        // generated ディレクトリを作成
+        generatedDir.mkdirs()
+
         generateKeyPair()
         generateCertificate(getKeys().first, getKeys().second)
         loadJWKs()
     }
 
     private fun generateKeyPair() {
-        val privateKeyFile = plugin.dataFolder.resolve("privateKey.pem")
-        val publicKeyFile = plugin.dataFolder.resolve("publicKey.pem")
+        val privateKeyFile = generatedDir.resolve("privateKey.pem")
+        val publicKeyFile = generatedDir.resolve("publicKey.pem")
         if (privateKeyFile.exists() || publicKeyFile.exists()) {
             plugin.logger.warning("Key files already exist.")
             return
@@ -63,11 +78,14 @@ object KeyUtils: KoinComponent {
                 PemObject("PUBLIC KEY", keyPair.public.encoded)
             )
         }
-
     }
 
-
     private fun generateCertificate(privateKey: PrivateKey, publicKey: PublicKey) {
+        val certFile = generatedDir.resolve("certificate.pem")
+        if (certFile.exists()) {
+            return
+        }
+
         val startDate = Date()
         val endDate = Date(System.currentTimeMillis() + 365L * 24L * 60L * 60L * 1000L) // 1 year validity
         val serialNumber = BigInteger.valueOf(System.currentTimeMillis())
@@ -84,74 +102,64 @@ object KeyUtils: KoinComponent {
         val cert = JcaX509CertificateConverter().setProvider(BouncyCastleProvider()).getCertificate(certHolder)
 
         val pemObject = PemObject("CERTIFICATE", cert.encoded)
-        val file = plugin.dataFolder.resolve("certificate.pem")
-        val writer = file.writer()
+        val writer = certFile.writer()
         PemWriter(writer).use { pemWriter ->
             pemWriter.writeObject(pemObject)
         }
     }
 
     private fun loadJWKs() {
-        val certificateFile = plugin.dataFolder.resolve("certificate.pem")
+        val certificateFile = generatedDir.resolve("certificate.pem")
         if (!certificateFile.exists()) {
             plugin.logger.warning("cert file not found.")
             return
         }
-        val jwksFile = plugin.dataFolder.resolve("jwks.json")
-        val randomKeyAlias = UUID.randomUUID()
+
+        val jwksFile = generatedDir.resolve("jwks.json")
+
+        // JWTConfigData は ConfigLoader で既に登録済み
+        val jwtConfigData: JWTConfigData = get()
+        val keyId = jwtConfigData.keyId
+
         if (!jwksFile.exists()) {
-            plugin.logger.warning("jwks file not found.")
-            generateJWKs(jwksFile, randomKeyAlias)
+            plugin.logger.info("jwks file not found. Generating...")
+            generateJWKs(jwksFile, keyId)
         }
-        val jwtConfigFile = plugin.dataFolder.resolve("load").resolve("jwt.json")
-        if (!jwtConfigFile.exists()) {
-            plugin.logger.warning("jwtConfig file not found.")
-            generateJWTConfig(jwtConfigFile, randomKeyAlias)
-        }
-        val jwtConfigData: JWTConfigData = json.decodeFromString(jwtConfigFile.readText())
-        loadKoinModules(module {
-            single { jwtConfigData }
-        })
-
     }
 
-    private fun generateJWTConfig(jwtConfigFile: File, randomKeyAlias: UUID) {
-        jwtConfigFile.parentFile.mkdirs()
-        jwtConfigFile.createNewFile()
-        val jwtConfigData = JWTConfigData(
-            "https://api.example.com", "example.com", "privateKey.pem", randomKeyAlias
-        )
-        jwtConfigFile.writeText(json.encodeToString(jwtConfigData))
-    }
-
-    private fun generateJWKs(jwksFile: File, randomKeyAlias: UUID) {
-        val certificateFile = plugin.dataFolder.resolve("certificate.pem")
+    private fun generateJWKs(jwksFile: File, keyId: UUID) {
+        val certificateFile = generatedDir.resolve("certificate.pem")
         val (privateKey, _) = getKeys()
 
         val randomPassword = RandomStringUtils.randomAlphabetic(16)
         val keyStore = KeyStore.getInstance("JKS")
         keyStore.load(null, null)
         keyStore.setKeyEntry(
-            randomKeyAlias.toString(), privateKey, randomPassword.toCharArray(), arrayOf(
+            keyId.toString(),
+            privateKey,
+            randomPassword.toCharArray(),
+            arrayOf(
                 CertificateFactory.getInstance("X.509").generateCertificate(certificateFile.inputStream())
             )
         )
 
-        val rsaKey =
-            com.nimbusds.jose.jwk.RSAKey.load(keyStore, randomKeyAlias.toString(), randomPassword.toCharArray())
+        val rsaKey = com.nimbusds.jose.jwk.RSAKey.load(keyStore, keyId.toString(), randomPassword.toCharArray())
         val jwkSet = JWKSet(rsaKey)
 
-        jwksFile.writeText( jwkSet.toString(true))
+        jwksFile.writeText(jwkSet.toString(true))
     }
 
     fun getKeys(): Pair<PrivateKey, PublicKey> {
-        val privateKeyFile = plugin.dataFolder.resolve("privateKey.pem")
-        val publicKeyFile = plugin.dataFolder.resolve("publicKey.pem")
-        val privateKeyContent = privateKeyFile.readText().replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "").replace("\\s+".toRegex(), "")
-        val publicKeyContent =
-            publicKeyFile.readText().replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "")
-                .replace("\\s+".toRegex(), "")
+        val privateKeyFile = generatedDir.resolve("privateKey.pem")
+        val publicKeyFile = generatedDir.resolve("publicKey.pem")
+        val privateKeyContent = privateKeyFile.readText()
+            .replace("-----BEGIN PRIVATE KEY-----", "")
+            .replace("-----END PRIVATE KEY-----", "")
+            .replace("\\s+".toRegex(), "")
+        val publicKeyContent = publicKeyFile.readText()
+            .replace("-----BEGIN PUBLIC KEY-----", "")
+            .replace("-----END PUBLIC KEY-----", "")
+            .replace("\\s+".toRegex(), "")
         val keyFactory = KeyFactory.getInstance("RSA")
         val privateKey = keyFactory.generatePrivate(PKCS8EncodedKeySpec(Base64.getDecoder().decode(privateKeyContent)))
         val publicKey = keyFactory.generatePublic(
@@ -161,5 +169,4 @@ object KeyUtils: KoinComponent {
         )
         return Pair(privateKey, publicKey)
     }
-
 }
