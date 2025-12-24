@@ -41,17 +41,38 @@ object TokenRouter: KoinComponent {
                 }
 
                 if(clientSecret != null){
+                    // Confidentialクライアントの場合
                     val refreshToken = formParameters["refresh_token"]
                     if (refreshToken == null) {
                         call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
                         return@post
                     }
-                    val data = ClientData.getClientData(clientId) as ClientData.ConfidentialClientData
-                    if (data.hashedClientSecret != clientSecret) {
+
+                    // クライアントデータの取得と型チェック
+                    val clientData = ClientData.getClientData(clientId)
+                    if (clientData !is ClientData.ConfidentialClientData) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
+                        return@post
+                    }
+                    if (clientData.hashedClientSecret != clientSecret) {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }
-                    val token = issueTokenWithRefreshToken(refreshToken)
+
+                    // リフレッシュトークンの検証（署名・有効期限・token_type）
+                    val authorizedData = verifyAndDecodeRefreshToken(refreshToken)
+                    if (authorizedData == null) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
+                        return@post
+                    }
+
+                    // クライアントIDの一致を確認
+                    if (authorizedData.clientId != clientId) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
+                        return@post
+                    }
+
+                    val token = issueToken(authorizedData, clientId)
                     // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
                     // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
                     call.respond(HttpStatusCode.OK, TokenData(
@@ -63,19 +84,28 @@ object TokenRouter: KoinComponent {
                     ))
 
                 }else{
-                    //PublicClientDataの場合
+                    // Publicクライアントの場合
+                    // RFC 6749 Section 6: refresh_tokenリクエストにredirect_uriは必須ではない
                     val refreshToken = formParameters["refresh_token"]
-                    val redirectUri = formParameters["redirect_uri"]
-                    if (refreshToken == null || redirectUri == null) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters: refresh_token, redirect_uri")
+                    if (refreshToken == null) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
                         return@post
                     }
-                    val data = ClientData.getClientData(clientId)
-                    if (data.redirectUri != redirectUri) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "The redirect_uri does not match")
+
+                    // リフレッシュトークンの検証（署名・有効期限・token_type）
+                    val authorizedData = verifyAndDecodeRefreshToken(refreshToken)
+                    if (authorizedData == null) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
                         return@post
                     }
-                    val token = issueTokenWithRefreshToken(refreshToken)
+
+                    // クライアントIDの一致を確認
+                    if (authorizedData.clientId != clientId) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
+                        return@post
+                    }
+
+                    val token = issueToken(authorizedData, clientId)
                     // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
                     call.respond(HttpStatusCode.OK, TokenData(
                         accessToken = token,
@@ -105,8 +135,12 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
                 if(clientSecret != null){
-                    //ConfidentialClientDataの場合
-                    val clientData = ClientData.getClientData(clientId) as ClientData.ConfidentialClientData
+                    // Confidentialクライアントの場合：クライアント認証を実行
+                    val clientData = ClientData.getClientData(clientId)
+                    if (clientData !is ClientData.ConfidentialClientData) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
+                        return@post
+                    }
                     if (clientData.hashedClientSecret != clientSecret) {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
@@ -180,23 +214,49 @@ object TokenRouter: KoinComponent {
 
     /**
      * リフレッシュトークンからアクセストークンを再発行する
+     *
+     * @param refreshToken リフレッシュトークン（JWT形式）
+     * @return 成功時は新しいアクセストークン、失敗時はnull
      */
-    private fun issueTokenWithRefreshToken(refreshToken: String): String {
-        val jwt = JWT.decode(refreshToken)
-        val clientId = jwt.getClaim("client_id").asString()
-        val playerUniqueId = jwt.getClaim("playerUniqueId").asString()
-        val scope = jwt.getClaim("scope").asString()
-        val state = jwt.getClaim("state").asString()
-        val data = AuthorizedData(
-            clientId = clientId,
-            redirectUri = "",
-            scope = scope,
-            state = state,
-            codeChallenge = "",
-            codeChallengeMethod = "S256",
-            uniqueId = UUID.fromString(playerUniqueId)
-        )
-        return issueToken(data, clientId)
+    private fun verifyAndDecodeRefreshToken(refreshToken: String): AuthorizedData? {
+        return try {
+            // JWT署名と有効期限を検証（RFC 6749準拠のセキュリティ要件）
+            val algorithm = Algorithm.RSA256(
+                getKeys().second as RSAPublicKey,
+                getKeys().first as RSAPrivateKey
+            )
+            val verifier = JWT.require(algorithm)
+                .withIssuer(get<JWTConfigData>().issuer)
+                .build()
+
+            // 署名検証・有効期限検証を実行（無効な場合は例外がスローされる）
+            val jwt = verifier.verify(refreshToken)
+
+            // token_typeがrefresh_tokenであることを確認
+            val tokenType = jwt.getClaim("token_type").asString()
+            if (tokenType != "refresh_token") {
+                return null
+            }
+
+            // クレームを取得してAuthorizedDataを構築
+            val clientId = jwt.getClaim("client_id").asString()
+            val playerUniqueId = jwt.getClaim("playerUniqueId").asString()
+            val scope = jwt.getClaim("scope").asString()
+            val state = jwt.getClaim("state").asString()
+
+            AuthorizedData(
+                clientId = clientId,
+                redirectUri = "",
+                scope = scope,
+                state = state,
+                codeChallenge = "",
+                codeChallengeMethod = "S256",
+                uniqueId = UUID.fromString(playerUniqueId)
+            )
+        } catch (e: Exception) {
+            // 署名無効、有効期限切れ、その他のJWTエラー
+            null
+        }
     }
 
     /**
