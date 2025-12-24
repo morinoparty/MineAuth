@@ -59,10 +59,10 @@ This is an endpoint list for OAuth2.0 and OpenID Connect (OIDC) for Moripa API.
   </thead>
   <tbody>
     <tr>
-      <td>❌</td>
+      <td>✅</td>
       <td>Discovery</td>
       <td><code>/.well-known/openid-configuration</code></td>
-      <td>-</td>
+      <td><a href="https://openid.net/specs/openid-connect-discovery-1_0.html">OIDC Discovery 1.0</a></td>
     </tr>
     <tr>
       <td>✅</td>
