@@ -1,0 +1,6 @@
+{
+    "issuer": "https://test.example.com",
+    "realm": "test-realm",
+    "privateKeyFile": "privateKey.pem",
+    "keyId": "00000000-0000-0000-0000-000000000000"
+}

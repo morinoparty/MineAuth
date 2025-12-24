@@ -1,0 +1,5 @@
+{
+    "clientId": "test-client",
+    "clientName": "Test Client",
+    "redirectUri": "https://example.com/callback"
+}
