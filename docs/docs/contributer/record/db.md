@@ -38,3 +38,40 @@
 - `client_secret_hash`: Argon2idでハッシュ化。Publicクライアントの場合はNULL
 - `redirect_uri`: 正規表現パターンをサポート（例: `https://example\.com/callback.*`）
 - `issuer_account_id`: Accountsテーブルへの外部キー
+
+---
+
+## 📊 ER Diagram
+
+```mermaid
+erDiagram
+    UserAuthData {
+        VARCHAR(36) uuid PK
+        VARCHAR(255) password
+    }
+
+    RevokeTokenData {
+        VARCHAR(200) token_id PK
+        TIMESTAMP exp_data
+    }
+
+    Accounts {
+        VARCHAR(36) account_id PK "UUIDv7"
+        VARCHAR(20) account_type "player/service"
+        VARCHAR(64) identifier
+        TIMESTAMP created_at
+    }
+
+    OAuthClients {
+        VARCHAR(36) client_id PK "UUIDv7"
+        VARCHAR(255) client_name
+        VARCHAR(20) client_type "public/confidential"
+        VARCHAR(255) client_secret_hash "nullable, Argon2id"
+        VARCHAR(2048) redirect_uri
+        VARCHAR(36) issuer_account_id FK
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    Accounts ||--o{ OAuthClients : "issues"
+```

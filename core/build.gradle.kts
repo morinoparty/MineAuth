@@ -25,6 +25,8 @@ dependencies {
     implementation(libs.bundles.ktor.client)
 
     implementation(libs.bundles.securities)
+    implementation(libs.java.uuid.generator)
+    implementation(libs.arrow.core)
 
     implementation(libs.bundles.exposed)
 

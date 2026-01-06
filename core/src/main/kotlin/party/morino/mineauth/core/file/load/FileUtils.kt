@@ -6,6 +6,8 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
+import party.morino.mineauth.core.database.Accounts
+import party.morino.mineauth.core.database.OAuthClients
 import party.morino.mineauth.core.database.UserAuthData
 import party.morino.mineauth.core.file.load.config.ConfigLoader
 import party.morino.mineauth.core.file.load.resources.AssetsResourceLoader
@@ -43,7 +45,8 @@ object FileUtils : KoinComponent {
         )
 
         transaction {
-            SchemaUtils.create(UserAuthData)
+            // テーブルを作成（Accountsを先に作成する必要がある - OAuthClientsが参照するため）
+            SchemaUtils.create(UserAuthData, Accounts, OAuthClients)
         }
         plugin.logger.info("Database connected")
     }
