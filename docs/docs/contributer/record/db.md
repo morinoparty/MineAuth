@@ -1,6 +1,6 @@
 # 💾 Database Record Data Reference
 
-import { UUIDV4, UUIDV7 } from '@site/src/components/UUID';
+import { UUIDV4, UUIDV7 } from '@site/src/components/uuid-examples';
 
 ## 👤 UserAuthData
 

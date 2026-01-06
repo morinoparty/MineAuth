@@ -54,7 +54,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           github-draft: false
           files: |
-            ./core/build/libs/MineAuth-core_${{ github.event.release.tag_name }}.jar
+            ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
           loaders: |
             paper
             purpur

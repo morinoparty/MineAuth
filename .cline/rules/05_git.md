@@ -1,12 +1,11 @@
 # Gitのルール
 
-- ブランチを切る際は、masterブランチから切ること
-- プルリクエストは必ずmasterブランチに対して行うこと
-- ブランチを切ってから、作業を始める前に、masterブランチの最新の状態を取り込むこと
-- ブランチを切って作業をすること
+- ブランチを切る際は、masterブランチから切り、プルリクエストは必ず masterブランチに対して行うこと
+- ブランチを切ってから、作業を始める前に、masterブランチの最新の状態を取り込み、ブランチを切って作業をすること
+- また、pushやprを作成する前に確認すること
 
 ## Repository
-- [MoripaFishing](https://github.com/morinoparty/MoripaFishing)
+- [MineAuth](https://github.com/morinoparty/MineAuth)
 
 ## コミットメッセージ
 - コミットメッセージは英語で書き、以下のような形式で書く。

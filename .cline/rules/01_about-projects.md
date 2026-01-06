@@ -1,5 +1,5 @@
 ## このアプリケーションの概要
-「MoripaAuth」という、Minecraftのプラグインです。  
+「MineAuth」という、Minecraftのプラグインです。  
 OAuth2, OpenID Connectを使用した認証システムを提供し、他のプラグインの保存データを安全にHTTP経由で取得することができるようにするプラグインです。
 
 ## 主な技術スタック
