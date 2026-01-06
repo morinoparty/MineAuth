@@ -8,9 +8,6 @@ import kotlinx.serialization.json.JsonContentPolymorphicSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
-import party.morino.mineauth.api.utils.json
-import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
@@ -64,8 +61,6 @@ sealed class ClientData : KoinComponent {
     }
 
     companion object : KoinComponent {
-        private val plugin by inject<MineAuth>()
-
         /**
          * クライアントIDでクライアントデータを取得する（データベースから）
          *
@@ -106,26 +101,14 @@ sealed class ClientData : KoinComponent {
 
         /**
          * クライアントIDでクライアントデータを取得する
-         * データベースから取得を試み、失敗した場合はファイルにフォールバック
          *
          * @param clientId クライアントID
          * @return クライアントデータ
          * @throws IllegalStateException クライアントが見つからない場合
          */
         fun getClientData(clientId: String): ClientData {
-            // まずデータベースから取得を試みる
-            val dbResult = runBlocking { getClientDataFromDb(clientId) }
-            if (dbResult != null) {
-                return dbResult
-            }
-
-            // フォールバック: ファイルから取得（後方互換性）
-            val file = plugin.dataFolder.resolve("clients").resolve(clientId).resolve("data.json")
-            if (file.exists()) {
-                return json.decodeFromString(file.readText())
-            }
-
-            throw IllegalStateException("Client not found: $clientId")
+            return runBlocking { getClientDataFromDb(clientId) }
+                ?: throw IllegalStateException("Client not found: $clientId")
         }
 
         /**
