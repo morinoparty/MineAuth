@@ -53,6 +53,31 @@
       "name": "not-reviewed",
       "color": "#F9C1CF",
       "description": "未レビュー"
+    },
+    {
+      "name": "priority: critical",
+      "color": "#B60205",
+      "description": "重要度: 緊急（セキュリティ問題など）"
+    },
+    {
+      "name": "priority: high",
+      "color": "#D93F0B",
+      "description": "重要度: 高"
+    },
+    {
+      "name": "priority: medium",
+      "color": "#FBCA04",
+      "description": "重要度: 中"
+    },
+    {
+      "name": "priority: low",
+      "color": "#0E8A16",
+      "description": "重要度: 低"
+    },
+    {
+      "name": "security",
+      "color": "#EE0701",
+      "description": "種別: セキュリティ関連"
     }
 ]
   
