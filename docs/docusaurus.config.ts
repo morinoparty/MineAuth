@@ -26,7 +26,8 @@ const config: Config = {
     markdown: {
         hooks: {
             onBrokenMarkdownLinks: "warn"
-        }
+        },
+        mermaid: true,
     },
 
     // Even if you don't use internationalization, you can use this field to set
@@ -37,6 +38,7 @@ const config: Config = {
         locales: ["en"],
     },
     themes: ["@docusaurus/theme-mermaid"],
+
     presets: [
         [
             "classic",

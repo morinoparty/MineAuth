@@ -25,6 +25,8 @@ dependencies {
     implementation(libs.bundles.ktor.client)
 
     implementation(libs.bundles.securities)
+    implementation(libs.java.uuid.generator)
+    implementation(libs.arrow.core)
 
     implementation(libs.bundles.exposed)
 
@@ -68,7 +70,7 @@ tasks {
         }
     }
     runServer {
-        minecraftVersion("1.21.4")
+        minecraftVersion("1.21.8")
         val plugins = runPaper.downloadPluginsSpec {
             //Vault
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")

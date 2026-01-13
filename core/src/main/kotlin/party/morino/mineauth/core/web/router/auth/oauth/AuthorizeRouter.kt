@@ -137,7 +137,7 @@ object AuthorizeRouter: KoinComponent {
                 redirectUri = redirectUri,
                 scope = scope,
                 state = state,
-                codeChallenge = codeChallenge!!,
+                codeChallenge = codeChallenge,
                 codeChallengeMethod = codeChallengeMethod,
                 uniqueId = uniqueId,
                 nonce = nonce,

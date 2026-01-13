@@ -54,7 +54,8 @@ object TokenRouter: KoinComponent {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
                         return@post
                     }
-                    if (clientData.hashedClientSecret != clientSecret) {
+                    // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
+                    if (!clientData.verifySecret(clientSecret)) {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }
@@ -141,7 +142,8 @@ object TokenRouter: KoinComponent {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
                         return@post
                     }
-                    if (clientData.hashedClientSecret != clientSecret) {
+                    // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
+                    if (!clientData.verifySecret(clientSecret)) {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }

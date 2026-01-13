@@ -18,7 +18,7 @@
 
 
 ## このアプリケーションの概要
-「MoripaAuth」という、Minecraftのプラグインです。  
+「MineAuth」という、Minecraftのプラグインです。  
 OAuth2, OpenID Connectを使用した認証システムを提供し、他のプラグインの保存データを安全にHTTP経由で取得することができるようにするプラグインです。
 
 ## 主な技術スタック
@@ -80,12 +80,12 @@ OAuth2, OpenID Connectを使用した認証システムを提供し、他のプ�
 # Gitのルール
 
 - ブランチを切る際は、masterブランチから切ること
-- プルリクエストは必ずmasterブランチに対して行うこと
+- プルリクエストは必ず masterブランチに対して行うこと
 - ブランチを切ってから、作業を始める前に、masterブランチの最新の状態を取り込むこと
 - ブランチを切って作業をすること
 
 ## Repository
-- [MoripaFishing](https://github.com/morinoparty/MoripaFishing)
+- [MineAuth](https://github.com/morinoparty/MineAuth)
 
 ## コミットメッセージ
 - コミットメッセージは英語で書き、以下のような形式で書く。
@@ -111,8 +111,8 @@ commitの絵文字などに関しては、changelog.config.jsを参考にして�
 ## ディレクトリ配置規則
 
 - docs/docs/ にドキュメントを配置します。
-- app/src/main/kotlin/party/morino/moripafishing/ にプラグインのメインクラスを配置します。
-- api/src/main/kotlin/party/morino/moripafishing/api/ にAPIのインターフェースを配置します。
+- core/src/main/kotlin/party/morino/mineauth/ にプラグインのメインクラスを配置します。
+- api/src/main/kotlin/party/morino/mineauth/api/ にAPIのインターフェースを配置します。
 - data classはそれぞれのmodelに配置します。
 
 
