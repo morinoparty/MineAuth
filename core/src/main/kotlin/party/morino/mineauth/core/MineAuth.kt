@@ -17,6 +17,9 @@ import party.morino.mineauth.api.MineAuthAPI
 import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.config.PluginDirectoryImpl
 import party.morino.mineauth.api.RegisterHandler
+import party.morino.mineauth.core.plugin.PluginContext
+import party.morino.mineauth.core.plugin.pluginModule
+import party.morino.mineauth.core.plugin.RegisterHandlerImpl
 import party.morino.mineauth.core.commands.OAuthClientCommand
 import party.morino.mineauth.core.commands.RegisterCommand
 import party.morino.mineauth.core.commands.ReloadCommand
@@ -55,7 +58,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
         }
 
         getOrNull() ?: GlobalContext.startKoin {
-            modules(appModule)
+            modules(appModule, pluginModule)
         }
     }
 
@@ -90,8 +93,16 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
         }
     }
 
+    /**
+     * 外部プラグイン用のRegisterHandlerを作成する
+     * プラグイン名から基本パスを生成し、エンドポイント登録を可能にする
+     *
+     * @param plugin ハンドラーを作成するプラグインのインスタンス
+     * @return 作成されたRegisterHandler
+     */
     override fun createHandler(plugin: JavaPlugin): RegisterHandler {
-        TODO("Not yet implemented")
+        val context = PluginContext.from(plugin)
+        return RegisterHandlerImpl(context)
     }
 
 }

@@ -18,6 +18,7 @@ import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.mocks.config.PluginDirectoryMock
+import party.morino.mineauth.core.plugin.pluginModule
 import party.morino.mineauth.core.web.router.auth.oauth.TokenRouter.plugin
 
 /**
@@ -68,9 +69,9 @@ class MineAuthTest :
             single<ServerMock> { server }
         }
 
-        // Koinを初期化
+        // Koinを初期化（appModuleとpluginModuleを読み込む）
         getOrNull() ?: GlobalContext.startKoin {
-            modules(appModule)
+            modules(appModule, pluginModule)
         }
     }
 

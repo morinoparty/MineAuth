@@ -28,6 +28,7 @@ import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
+import party.morino.mineauth.core.plugin.PluginRouteRegistry
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 
@@ -115,6 +116,10 @@ internal fun Application.module() {
         route("/api/v1/plugins") {
             pluginRouter()
         }
+
+        // 外部プラグインから登録されたルートを適用
+        val routeRegistry: PluginRouteRegistry = get(PluginRouteRegistry::class.java)
+        routeRegistry.applyAll(this)
 
         authenticate("user-oauth-token") {
             get("/hello") {
