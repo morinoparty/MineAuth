@@ -4,8 +4,10 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import com.fasterxml.uuid.Generators
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
@@ -302,6 +304,64 @@ object OAuthClientRepository {
                 OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
             }
         }
+
+    /**
+     * クライアントを削除する
+     *
+     * @param clientId クライアントID
+     * @return 成功時はUnit、失敗時はエラー
+     */
+    suspend fun delete(clientId: String): Either<OAuthClientError, Unit> = newSuspendedTransaction {
+        try {
+            // 存在確認
+            val existing = OAuthClients.selectAll()
+                .where { OAuthClients.clientId eq clientId }
+                .firstOrNull()
+
+            if (existing == null) {
+                return@newSuspendedTransaction OAuthClientError.NotFound.left()
+            }
+
+            // 削除実行
+            OAuthClients.deleteWhere { OAuthClients.clientId eq clientId }
+            Unit.right()
+        } catch (e: Exception) {
+            OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
+        }
+    }
+
+    /**
+     * 全てのクライアントを取得する
+     *
+     * @return クライアントデータのリスト
+     */
+    suspend fun findAll(): Either<OAuthClientError, List<OAuthClientData>> = newSuspendedTransaction {
+        try {
+            val clients = OAuthClients.selectAll()
+                .map { it.toOAuthClientData() }
+
+            clients.right()
+        } catch (e: Exception) {
+            OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
+        }
+    }
+
+    /**
+     * 全てのクライアントIDを取得する（Suggestion用）
+     * ブロッキング呼び出し用のヘルパーメソッド
+     *
+     * @return クライアントIDのリスト
+     */
+    fun getAllClientIdsBlocking(): List<String> = runBlocking {
+        try {
+            newSuspendedTransaction {
+                OAuthClients.selectAll()
+                    .map { it[OAuthClients.clientId] }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
     /**
      * ResultRowからOAuthClientDataに変換する
