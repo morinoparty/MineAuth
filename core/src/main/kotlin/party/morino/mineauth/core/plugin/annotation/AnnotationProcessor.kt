@@ -9,8 +9,8 @@ import party.morino.mineauth.api.http.HttpMethod
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KParameter
+import kotlin.reflect.full.declaredMemberFunctions
 import kotlin.reflect.full.findAnnotation
-import kotlin.reflect.full.functions
 import kotlin.reflect.full.hasAnnotation
 import kotlin.reflect.jvm.jvmErasure
 
@@ -33,8 +33,8 @@ class AnnotationProcessor : KoinComponent {
         // クラスレベルの@Permissionアノテーションを取得
         val classPermission = handlerClass.findAnnotation<Permission>()?.value
 
-        // 全メソッドをイテレート
-        for (method in handlerClass.functions) {
+        // 宣言されたメンバー関数のみをイテレート（継承メソッドは除外）
+        for (method in handlerClass.declaredMemberFunctions) {
             // HTTPマッピングアノテーションを持つメソッドのみ処理
             val httpMapping = extractHttpMapping(method) ?: continue
 
@@ -152,7 +152,8 @@ class AnnotationProcessor : KoinComponent {
 
         // アノテーションの数をカウント（複数付与されていないか確認）
         val annotationCount = listOf(
-            param.hasAnnotation<Params>(),
+            param.hasAnnotation<Param>(),
+            param.hasAnnotation<PathParams>(),
             param.hasAnnotation<RequestParams>(),
             param.hasAnnotation<RequestBody>(),
             param.hasAnnotation<AuthedAccessUser>(),
@@ -167,9 +168,15 @@ class AnnotationProcessor : KoinComponent {
 
         // 各アノテーションに対応したParameterInfoを返す
         when {
-            param.hasAnnotation<Params>() -> {
-                val paramsAnnotation = param.findAnnotation<Params>()!!
-                ParameterInfo.PathParam(paramsAnnotation.value.toList(), paramType)
+            param.hasAnnotation<Param>() -> {
+                // 単一パスパラメータ
+                val paramAnnotation = param.findAnnotation<Param>()!!
+                ParameterInfo.PathParam(listOf(paramAnnotation.value), paramType)
+            }
+            param.hasAnnotation<PathParams>() -> {
+                // 複数パスパラメータ
+                val pathParamsAnnotation = param.findAnnotation<PathParams>()!!
+                ParameterInfo.PathParam(pathParamsAnnotation.value.toList(), paramType)
             }
             param.hasAnnotation<RequestParams>() -> {
                 ParameterInfo.QueryParams(paramType)

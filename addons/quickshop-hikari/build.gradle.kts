@@ -12,7 +12,7 @@ version = project.version.toString()
 val addonName = "quickshop-hikari-addon"
 
 dependencies {
-    implementation(project(":api"))
+    compileOnly(project(":api"))
     compileOnly(libs.paper.api)
 
     implementation(libs.bundles.commands)
@@ -35,7 +35,7 @@ tasks {
     }
     shadowJar
     runServer {
-        minecraftVersion("1.21")
+        minecraftVersion("1.21.8")
         val plugins = runPaper.downloadPluginsSpec {
             //Vault
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")
@@ -60,7 +60,7 @@ sourceSets.main {
             main = "$group.mineauth.addons.quickshop.QuickShopHikariAddon"
             apiVersion = "1.20"
             libraries = libs.bundles.coroutines.asString()
-            softDepend = listOf("Vault", "QuickShop-Hikari", "MineAuth")
+            depend = listOf("MineAuth", "QuickShop-Hikari")
         }
     }
 }

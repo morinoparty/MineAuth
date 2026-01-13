@@ -35,7 +35,6 @@ dependencies {
     implementation(libs.bundles.ktor.client)
 
     compileOnly(libs.vault.api)
-    compileOnly(libs.quickshop.api)
 
     // テスト依存関係
     testImplementation(libs.bundles.junit.jupiter)

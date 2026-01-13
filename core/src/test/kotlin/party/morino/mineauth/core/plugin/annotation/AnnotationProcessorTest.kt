@@ -24,21 +24,21 @@ class AnnotationProcessorTest {
     // テスト用のサンプルハンドラークラス
     class SimpleHandler {
         @GetMapping("/test")
-        suspend fun getTest(@Params(["id"]) id: String): String = id
+        suspend fun getTest(@Param("id") id: String): String = id
     }
 
     class MultiMethodHandler {
         @GetMapping("/get")
-        suspend fun get(@Params(["id"]) id: String): String = id
+        suspend fun get(@Param("id") id: String): String = id
 
         @PostMapping("/post")
         suspend fun post(@RequestBody body: String): String = body
 
         @PutMapping("/put")
-        suspend fun put(@Params(["id"]) id: String, @RequestBody body: String): String = "$id:$body"
+        suspend fun put(@Param("id") id: String, @RequestBody body: String): String = "$id:$body"
 
         @DeleteMapping("/delete")
-        suspend fun delete(@Params(["id"]) id: String): Unit {}
+        suspend fun delete(@Param("id") id: String): Unit {}
     }
 
     class AuthenticatedHandler {
@@ -49,11 +49,11 @@ class AnnotationProcessorTest {
     @Permission("global.permission")
     class PermissionHandler {
         @GetMapping("/global")
-        suspend fun globalPermission(@Params(["id"]) id: String): String = id
+        suspend fun globalPermission(@Param("id") id: String): String = id
 
         @GetMapping("/override")
         @Permission("method.permission")
-        suspend fun overridePermission(@Params(["id"]) id: String): String = id
+        suspend fun overridePermission(@Param("id") id: String): String = id
     }
 
     class NoMappingHandler {
@@ -178,8 +178,8 @@ class AnnotationProcessorTest {
     inner class ParameterHandling {
 
         @Test
-        @DisplayName("@Params creates PathParam info")
-        fun paramsCreatesPathParam() {
+        @DisplayName("@Param creates PathParam info")
+        fun paramCreatesPathParam() {
             val handler = SimpleHandler()
             val result = processor.process(handler)
 

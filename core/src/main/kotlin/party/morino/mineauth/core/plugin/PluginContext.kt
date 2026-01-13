@@ -16,17 +16,15 @@ data class PluginContext(
     companion object {
         /**
          * プラグインからコンテキストを作成する
-         * プラグイン名をケバブケースに変換してパスに使用する
+         * プラグイン名を小文字に変換してパスに使用する
          *
          * @param plugin 登録元のJavaPluginインスタンス
          * @return 作成されたPluginContext
          */
         fun from(plugin: JavaPlugin): PluginContext {
-            // プラグイン名をケバブケースに正規化
-            // 例: QuickShopHikari -> quickshop-hikari
-            val pluginName = plugin.name
-                .replace(Regex("([a-z])([A-Z])"), "$1-$2")
-                .lowercase()
+            // プラグイン名を小文字に正規化（ハイフンは入れない）
+            // 例: QuickShopHikari -> quickshophikari, MineAuth -> mineauth
+            val pluginName = plugin.name.lowercase()
             return PluginContext(
                 plugin = plugin,
                 basePath = "/api/v1/plugins/$pluginName"

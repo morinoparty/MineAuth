@@ -28,6 +28,13 @@ tasks:
     cmds:
       - ./gradlew clean runServer
     silent: true
+  "run:shop":
+    cmds:
+      - ./gradlew clean :core:build --no-build-cache --rerun-tasks
+      - cp ./core/build/libs/core-*-all.jar ./addons/quickshop-hikari/run/plugins/
+      - sleep 5 && echo "starting server..."
+      - ./gradlew clean :addons:quickshop-hikari:runServer
+    silent: true
   commit:
     cmds:
       - task format
@@ -46,3 +53,4 @@ tasks:
       - task format
       - task build
     silent: false
+

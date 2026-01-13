@@ -2,7 +2,8 @@ package party.morino.mineauth.addons.quickshop
 
 import com.ghostchu.quickshop.api.QuickShopAPI
 import org.bukkit.plugin.java.JavaPlugin
-import org.koin.core.context.GlobalContext
+import org.koin.core.context.loadKoinModules
+import org.koin.core.context.startKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.quickshop.routes.ShopHandler
 import party.morino.mineauth.api.MineAuthAPI
@@ -19,8 +20,8 @@ class QuickShopHikariAddon : JavaPlugin() {
         logger.info("QuickShop Hikari Addon enabling...")
 
         // MineAuthAPIの取得
-        mineAuthAPI = server.servicesManager.getRegistration(MineAuthAPI::class.java)?.provider
-            ?: throw IllegalStateException("MineAuthAPI not found. Is MineAuth installed?")
+        mineAuthAPI = server.pluginManager.getPlugin("MineAuth") as MineAuthAPI?
+            ?: throw IllegalStateException("MineAuth plugin not found")
 
         // Koinモジュールの設定
         setupKoin()
@@ -37,7 +38,7 @@ class QuickShopHikariAddon : JavaPlugin() {
 
     /**
      * Koinの設定
-     * QuickShopAPIをシングルトンとして登録する
+     * MineAuthが起動したKoinコンテキストにQuickShopAPIモジュールを追加する
      */
     private fun setupKoin() {
         val quickShopModule = module {
@@ -45,9 +46,10 @@ class QuickShopHikariAddon : JavaPlugin() {
             single<QuickShopAPI> { QuickShopAPI.getInstance() }
         }
 
-        // 既存のKoinコンテキストにモジュールを追加
-        GlobalContext.getOrNull()?.loadModules(listOf(quickShopModule))
-            ?: throw IllegalStateException("Koin is not initialized. Is MineAuth loaded?")
+        // Addonは新たにKoinを起動
+        startKoin {
+            modules(quickShopModule)
+        }
     }
 
     /**
@@ -60,12 +62,5 @@ class QuickShopHikariAddon : JavaPlugin() {
         handler.register(
             ShopHandler()
         )
-
-        logger.info("Registered ShopHandler endpoints:")
-        logger.info("  - GET /shops/{shopId}")
-        logger.info("  - GET /users/{uuid}/shops")
-        logger.info("  - GET /users/me/shops (auth required)")
-        logger.info("  - GET /shops/{shopId}/setting (auth required, owner only)")
-        logger.info("  - POST /shops/{shopId}/setting (auth required, owner only)")
-    }
+}
 }

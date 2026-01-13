@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bukkit.Material
 import org.bukkit.OfflinePlayer
-import org.bukkit.entity.Player
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.addons.quickshop.data.ShopData
@@ -37,7 +36,7 @@ class ShopHandler : KoinComponent {
      * GET /shops/{shopId}
      */
     @GetMapping("/shops/{shopId}")
-    suspend fun getShop(@Params(["shopId"]) shopId: String): ShopData {
+    suspend fun getShop(@Param("shopId") shopId: String): ShopData {
         val id = shopId.toLongOrNull()
             ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
 
@@ -52,7 +51,7 @@ class ShopHandler : KoinComponent {
      * GET /users/{uuid}/shops
      */
     @GetMapping("/users/{uuid}/shops")
-    suspend fun getUserShops(@Params(["uuid"]) uuid: String): List<Long> {
+    suspend fun getUserShops(@Param("uuid") uuid: String): List<Long> {
         val playerUuid = try {
             UUID.fromString(uuid)
         } catch (e: IllegalArgumentException) {
@@ -86,7 +85,7 @@ class ShopHandler : KoinComponent {
     @GetMapping("/shops/{shopId}/setting")
     suspend fun getShopSetting(
         @AuthedAccessUser player: OfflinePlayer,
-        @Params(["shopId"]) shopId: String
+        @Param("shopId") shopId: String
     ): ShopSetting {
         val id = shopId.toLongOrNull()
             ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
@@ -113,7 +112,7 @@ class ShopHandler : KoinComponent {
     @PostMapping("/shops/{shopId}/setting")
     suspend fun updateShopSetting(
         @AuthedAccessUser player: OfflinePlayer,
-        @Params(["shopId"]) shopId: String,
+        @Param("shopId") shopId: String,
         @RequestBody setting: ShopSetting
     ) {
         val id = shopId.toLongOrNull()
