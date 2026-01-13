@@ -15,7 +15,7 @@ class OAuthConfigLoader: AbstractConfigLoader() {
             plugin.logger.info("${configFile.name} not found. Creating new one.")
             configFile.parentFile.mkdirs()
             configFile.createNewFile()
-            val configData = OAuthConfigData("Moripa-API", "/assets/lock.svg")
+            val configData = OAuthConfigData("MineAuth", "/assets/lock.svg")
             configFile.writeText(json.encodeToString(configData))
         }
         val configData: OAuthConfigData = json.decodeFromString(configFile.readText())

@@ -59,11 +59,10 @@ jobs:
             paper
             purpur
           game-versions: |
-            >=1.21
+            >=1.21.8
           game-version-filter: releases
           modrinth-dependencies: |
             LuckPerms(require){modrinth:Vebnzrzj}
             QuickShop-Hikari(optional){modrinth:ijC5dDkD}
           java: |
             21
-

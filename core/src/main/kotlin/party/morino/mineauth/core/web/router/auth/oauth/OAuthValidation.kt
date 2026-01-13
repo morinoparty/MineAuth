@@ -1,46 +1,56 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
 import io.ktor.http.*
+import kotlinx.coroutines.runBlocking
 import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
-import party.morino.mineauth.core.MineAuth
-import party.morino.mineauth.api.utils.json
 import party.morino.mineauth.core.web.components.auth.ClientData
 import java.security.MessageDigest
 import java.util.*
 
 object OAuthValidation : KoinComponent {
-    private val plugin: MineAuth by inject()
 
+    /**
+     * クライアントIDでクライアントデータを取得・検証する
+     * DBからクライアント情報を取得
+     *
+     * @param clientId クライアントID
+     * @return クライアントデータ、見つからない場合はnull
+     */
     fun validateAndGetClientData(clientId: String?): ClientData? {
         if (clientId == null) return null
-        
-        val clientDataFile = plugin.dataFolder.resolve("clients").resolve(clientId).resolve("data.json")
-        if (!clientDataFile.exists()) return null
-        
-        return json.decodeFromString(clientDataFile.readText())
+        return runBlocking { ClientData.getClientDataFromDb(clientId) }
     }
 
     /**
      * Validate the redirect URI.
-     * The redirect URI must start with the registered redirect URI.
-     * If the registered redirect URI ends with a slash, it is considered as a directory.
-     * If the registered redirect URI does not end with a slash, it is considered as a file.
+     * 登録されたredirect_uriを正規表現パターンとして使用して検証する
+     * 末尾に/.*を追加してサブパスもマッチさせる
      *
-     * @param clientData The client data.
-     * @sample clientData.redirectUri = "https://\\w{6}-example.com/callback/"
-     * @param redirectUri The redirect URI to validate.
-     * @sample redirectUri = "https://hash-example.com"
-     * @return True if the redirect URI is valid, false otherwise.
+     * @param clientData クライアントデータ
+     * @param redirectUri 検証するリダイレクトURI
+     * @return 有効な場合true
      */
     fun validateRedirectUri(clientData: ClientData, redirectUri: String): Boolean {
-        val recordRedirectUri = if (clientData.redirectUri.endsWith("/")) {
-            clientData.redirectUri
+        val registeredUri = clientData.redirectUri
+
+        // 完全一致チェック（最も一般的なケース）
+        if (registeredUri == redirectUri) {
+            return true
+        }
+
+        // 登録URIを正規表現パターンに変換
+        // 末尾に/がなければ追加し、.*を付けてサブパスを許可
+        val pattern = if (registeredUri.endsWith("/")) {
+            registeredUri + ".*"
         } else {
-            clientData.redirectUri + "/"
-        } + ".*"
-        
-        return Regex(recordRedirectUri).matches(redirectUri)
+            registeredUri + "/.*"
+        }
+
+        return try {
+            Regex(pattern).matches(redirectUri)
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun validatePKCE(codeChallenge: String?, codeChallengeMethod: String?): Boolean {
