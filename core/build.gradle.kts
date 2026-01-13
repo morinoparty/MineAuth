@@ -70,7 +70,7 @@ tasks {
         }
     }
     runServer {
-        minecraftVersion("1.21.4")
+        minecraftVersion("1.21.8")
         val plugins = runPaper.downloadPluginsSpec {
             //Vault
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")

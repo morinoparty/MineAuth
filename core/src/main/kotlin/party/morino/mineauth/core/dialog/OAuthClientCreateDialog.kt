@@ -10,6 +10,7 @@ import io.papermc.paper.registry.data.dialog.input.SingleOptionDialogInput
 import io.papermc.paper.registry.data.dialog.type.DialogType
 import net.kyori.adventure.text.event.ClickCallback
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.entity.Player
 
 /**
@@ -26,11 +27,11 @@ object OAuthClientCreateDialog {
     // 入力フィールドの幅
     private const val INPUT_WIDTH_NAME = 300
     private const val INPUT_WIDTH_TYPE = 300
-    private const val INPUT_WIDTH_URI = 400
+    private const val INPUT_WIDTH_URI = 300
 
     // 入力フィールドの最大長
-    private const val MAX_LENGTH_NAME = 255
-    private const val MAX_LENGTH_URI = 2048
+    private const val MAX_LENGTH_NAME = 64
+    private const val MAX_LENGTH_URI = 255
 
     /**
      * ダイアログを表示する
@@ -45,7 +46,7 @@ object OAuthClientCreateDialog {
                         .body(
                             listOf(
                                 DialogBody.plainMessage(
-                                    Component.text("新しいOAuthクライアントを作成します。必要な情報を入力してください。")
+                                        MiniMessage.miniMessage().deserialize("新しいOAuthクライアントを作成します。 <newline>必要な情報を入力してください。")
                                 )
                             )
                         )
