@@ -53,9 +53,7 @@ jobs:
 
       - name: change plugin.yml version
         run: |
-          before="$GITHUB_ENV"
-          after="${before//v/}"
-          sed -i "s/VersionPlaceholder/${after}/" ./gradle.properties
+          sed -i "s/VersionPlaceholder/${{ env.COMMIT_SHORT_SHA }}/" ./gradle.properties
 
       - name: Configure Docusaurus for preview
         run: |
