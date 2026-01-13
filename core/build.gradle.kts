@@ -17,21 +17,22 @@ dependencies {
 
     implementation(libs.bundles.commands)
 
-    implementation(libs.kotlinx.serialization.json)
+    // Paperのlibraries機能でダウンロードさせるライブラリ（compileOnly）
+    compileOnly(libs.kotlinx.serialization.json)
+    compileOnly(libs.bundles.coroutines)
+    compileOnly(libs.bundles.exposed)
+    compileOnly(libs.arrow.core)
+    compileOnly(libs.nimbus.jose.jwt)
+    compileOnly(libs.bcpkix.jdk18on)
+    compileOnly(libs.java.uuid.generator)
+    compileOnly(kotlin("stdlib-jdk8"))
 
-    implementation(libs.bundles.coroutines)
-
+    // JARにバンドル（Paperのlibrariesでは動かない）
+    // password4jはpsw4j.propertiesを読み込むためJARにバンドル
+    implementation(libs.password4j)
+    implementation(libs.koin.core)
     implementation(libs.bundles.ktor.server)
     implementation(libs.bundles.ktor.client)
-
-    implementation(libs.bundles.securities)
-    implementation(libs.java.uuid.generator)
-    implementation(libs.arrow.core)
-
-    implementation(libs.bundles.exposed)
-
-    implementation(libs.koin.core)
-    implementation(kotlin("stdlib-jdk8"))
 
     compileOnly(libs.vault.api)
     compileOnly(libs.quickshop.api)
@@ -42,6 +43,18 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.mock.bukkit)
     testImplementation(libs.ktor.server.test.host)
+    // compileOnlyのライブラリをテストでも使えるようにする
+    testImplementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.bundles.coroutines)
+    testImplementation(libs.bundles.exposed)
+    testImplementation(libs.koin.core)
+    testImplementation(libs.arrow.core)
+    testImplementation(libs.bundles.ktor.server)
+    testImplementation(libs.bundles.ktor.client)
+    testImplementation(libs.nimbus.jose.jwt)
+    testImplementation(libs.bcpkix.jdk18on)
+    testImplementation(libs.java.uuid.generator)
+    testImplementation(kotlin("stdlib-jdk8"))
 }
 
 
@@ -60,7 +73,22 @@ tasks {
     build {
         dependsOn("shadowJar")
     }
-    shadowJar
+    shadowJar {
+        // Paperのlibrariesでダウンロードするので除外
+        dependencies {
+            exclude(dependency("org.jetbrains.kotlin:.*:.*"))
+            // kotlinx-ioはKtorが必要なので除外しない
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-.*:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*:.*"))
+            exclude(dependency("org.jetbrains.exposed:.*:.*"))
+            exclude(dependency("io.arrow-kt:.*:.*"))
+            // Ktor、Koinは除外しない（Paperのlibrariesで動かない）
+            // password4jはpsw4j.propertiesを読み込むためJARにバンドル
+            exclude(dependency("com.nimbusds:.*:.*"))
+            exclude(dependency("org.bouncycastle:.*:.*"))
+            exclude(dependency("com.fasterxml.uuid:.*:.*"))
+        }
+    }
     test {
         useJUnitPlatform()
         testLogging {
@@ -91,10 +119,22 @@ sourceSets.main {
         bukkitPluginYaml {
             name = rootProject.name
             version = project.version.toString()
-            website = "https://github.com/morinoparty/Moripa-API"
+            website = "https://github.com/morinoparty/MineAuth"
             main = "$group.mineauth.core.MineAuth"
             apiVersion = "1.20"
-            libraries = libs.bundles.coroutines.asString()
+            libraries = buildList {
+                // Paperが起動時にダウンロードするライブラリ
+                // Kotlin標準ライブラリ（shadowJarで除外しているため必須）
+                add("org.jetbrains.kotlin:kotlin-stdlib:${libs.plugins.kotlin.jvm.get().version}")
+                addAll(libs.bundles.coroutines.asString())
+                addAll(libs.bundles.exposed.asString())
+                // password4jはpsw4j.propertiesを読み込むためJARにバンドル（librariesに含めない）
+                add(libs.nimbus.jose.jwt.asString())
+                add(libs.bcpkix.jdk18on.asString())
+                add(libs.arrow.core.asString())
+                add(libs.kotlinx.serialization.json.asString())
+                add(libs.java.uuid.generator.asString())
+            }
             softDepend = listOf("Vault", "QuickShop-Hikari")
         }
     }

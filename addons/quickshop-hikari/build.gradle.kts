@@ -56,7 +56,7 @@ sourceSets.main {
         bukkitPluginYaml {
             name = rootProject.name + "-" + addonName // "mineauth-api-quickshop-hikari-addon"
             version = project.version.toString()
-            website = "https://github.com/morinoparty/Moripa-API"
+            website = "https://github.com/morinoparty/MineAuth"
             main = "$group.mineauth.addons.quickshop.QuickShopHikariAddon"
             apiVersion = "1.20"
             libraries = libs.bundles.coroutines.asString()
