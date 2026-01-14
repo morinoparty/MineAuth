@@ -18,6 +18,8 @@ ktlint = "13.1.0"
 mockk = "1.14.5"
 junit = "5.12.1"
 mockBukkit = "4.68.0"
+hikari = "6.2.1"
+mysql = "9.2.0"
 
 [libraries]
 arrow-core = { group = "io.arrow-kt", name = "arrow-core", version.ref = "arrow" }
@@ -65,6 +67,8 @@ exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version
 exposed-java-time = { group = "org.jetbrains.exposed", name = "exposed-java-time", version.ref = "exposed" }
 
 koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinVersion" }
+hikari = { group = "com.zaxxer", name = "HikariCP", version.ref = "hikari" }
+mysql-connector = { group = "com.mysql", name = "mysql-connector-j", version.ref = "mysql" }
 
 vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1" }
 quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.10" }

@@ -24,21 +24,21 @@ class AnnotationProcessorTest {
     // テスト用のサンプルハンドラークラス
     class SimpleHandler {
         @GetMapping("/test")
-        suspend fun getTest(@Param("id") id: String): String = id
+        suspend fun getTest(@PathParam("id") id: String): String = id
     }
 
     class MultiMethodHandler {
         @GetMapping("/get")
-        suspend fun get(@Param("id") id: String): String = id
+        suspend fun get(@PathParam("id") id: String): String = id
 
         @PostMapping("/post")
         suspend fun post(@RequestBody body: String): String = body
 
         @PutMapping("/put")
-        suspend fun put(@Param("id") id: String, @RequestBody body: String): String = "$id:$body"
+        suspend fun put(@PathParam("id") id: String, @RequestBody body: String): String = "$id:$body"
 
         @DeleteMapping("/delete")
-        suspend fun delete(@Param("id") id: String): Unit {}
+        suspend fun delete(@PathParam("id") id: String): Unit {}
     }
 
     class AuthenticatedHandler {
@@ -49,11 +49,11 @@ class AnnotationProcessorTest {
     @Permission("global.permission")
     class PermissionHandler {
         @GetMapping("/global")
-        suspend fun globalPermission(@Param("id") id: String): String = id
+        suspend fun globalPermission(@PathParam("id") id: String): String = id
 
         @GetMapping("/override")
         @Permission("method.permission")
-        suspend fun overridePermission(@Param("id") id: String): String = id
+        suspend fun overridePermission(@PathParam("id") id: String): String = id
     }
 
     class NoMappingHandler {
@@ -178,7 +178,7 @@ class AnnotationProcessorTest {
     inner class ParameterHandling {
 
         @Test
-        @DisplayName("@Param creates PathParam info")
+        @DisplayName("@PathParam creates PathParam info")
         fun paramCreatesPathParam() {
             val handler = SimpleHandler()
             val result = processor.process(handler)
@@ -190,7 +190,7 @@ class AnnotationProcessorTest {
             assertEquals(1, endpoint.parameters.size)
             val param = endpoint.parameters.first()
             assertTrue(param is ParameterInfo.PathParam)
-            assertEquals(listOf("id"), (param as ParameterInfo.PathParam).names)
+            assertEquals("id", (param as ParameterInfo.PathParam).name)
         }
 
         @Test

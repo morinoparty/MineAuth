@@ -17,10 +17,10 @@ enum class HttpMethodType {
 sealed class ParameterInfo {
     /**
      * パスパラメータ（例: /shops/{id} の id）
-     * @property names パラメータ名のリスト
+     * @property name パラメータ名
      * @property type パラメータの型
      */
-    data class PathParam(val names: List<String>, val type: KType) : ParameterInfo()
+    data class PathParam(val name: String, val type: KType) : ParameterInfo()
 
     /**
      * クエリパラメータ

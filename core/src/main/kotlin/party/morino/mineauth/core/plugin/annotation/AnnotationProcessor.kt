@@ -152,9 +152,8 @@ class AnnotationProcessor : KoinComponent {
 
         // アノテーションの数をカウント（複数付与されていないか確認）
         val annotationCount = listOf(
-            param.hasAnnotation<Param>(),
-            param.hasAnnotation<PathParams>(),
-            param.hasAnnotation<RequestParams>(),
+            param.hasAnnotation<PathParam>(),
+            param.hasAnnotation<QueryParams>(),
             param.hasAnnotation<RequestBody>(),
             param.hasAnnotation<AuthedAccessUser>(),
             param.hasAnnotation<AccessUser>(),
@@ -168,17 +167,12 @@ class AnnotationProcessor : KoinComponent {
 
         // 各アノテーションに対応したParameterInfoを返す
         when {
-            param.hasAnnotation<Param>() -> {
-                // 単一パスパラメータ
-                val paramAnnotation = param.findAnnotation<Param>()!!
-                ParameterInfo.PathParam(listOf(paramAnnotation.value), paramType)
+            param.hasAnnotation<PathParam>() -> {
+                // パスパラメータ
+                val paramAnnotation = param.findAnnotation<PathParam>()!!
+                ParameterInfo.PathParam(paramAnnotation.value, paramType)
             }
-            param.hasAnnotation<PathParams>() -> {
-                // 複数パスパラメータ
-                val pathParamsAnnotation = param.findAnnotation<PathParams>()!!
-                ParameterInfo.PathParam(pathParamsAnnotation.value.toList(), paramType)
-            }
-            param.hasAnnotation<RequestParams>() -> {
+            param.hasAnnotation<QueryParams>() -> {
                 ParameterInfo.QueryParams(paramType)
             }
             param.hasAnnotation<RequestBody>() -> {

@@ -1,0 +1,5 @@
+{
+	"title": "Configuration",
+	"icon": "FileJson",
+	"pages": ["index", "server", "database"]
+}

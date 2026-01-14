@@ -86,7 +86,7 @@ class ShopHandler {
     @Permission("shop.delete")
     suspend fun deleteShop(
         @AuthedAccessUser player: OfflinePlayer,
-        @Param("id") id: String
+        @PathParam("id") id: String
     ) {
         // Requires "shop.delete" permission
         shopService.delete(id, player.uniqueId)

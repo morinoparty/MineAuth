@@ -3,11 +3,9 @@
 	"icon": "Puzzle",
 	"pages": [
 		"index",
-		"getting-started",
+		"register-handler",
 		"annotations",
 		"authentication",
-		"http-api",
-		"register-handler",
 		"examples"
 	]
 }

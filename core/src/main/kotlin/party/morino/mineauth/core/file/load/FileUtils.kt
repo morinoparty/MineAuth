@@ -1,22 +1,15 @@
 package party.morino.mineauth.core.file.load
 
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils
-import org.jetbrains.exposed.sql.transactions.transaction
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import party.morino.mineauth.core.MineAuth
-import party.morino.mineauth.core.database.Accounts
-import party.morino.mineauth.core.database.OAuthClients
-import party.morino.mineauth.core.database.UserAuthData
+import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.file.load.config.ConfigLoader
 import party.morino.mineauth.core.file.load.resources.AssetsResourceLoader
 import party.morino.mineauth.core.file.load.resources.TemplatePageResourceLoader
 import party.morino.mineauth.core.file.utils.KeyUtils
-import java.io.File
 
 object FileUtils : KoinComponent {
-    private val plugin: MineAuth by inject()
+    private val databaseConnector: DatabaseConnector by inject()
 
     fun loadFiles() {
         // 1. 統合設定ファイルを最初に読み込む
@@ -38,16 +31,19 @@ object FileUtils : KoinComponent {
         }
     }
 
+    /**
+     * データベースに接続する
+     * 設定に基づいてSQLiteまたはMySQLに接続
+     */
     fun settingDatabase() {
-        Database.connect(
-            url = "jdbc:sqlite:${plugin.dataFolder}${File.separator}MineAuth.db",
-            driver = "org.sqlite.JDBC"
-        )
+        databaseConnector.connect()
+    }
 
-        transaction {
-            // テーブルを作成（Accountsを先に作成する必要がある - OAuthClientsが参照するため）
-            SchemaUtils.create(UserAuthData, Accounts, OAuthClients)
-        }
-        plugin.logger.info("Database connected")
+    /**
+     * データベース接続を切断する
+     * プラグイン終了時に呼び出す
+     */
+    fun closeDatabase() {
+        databaseConnector.disconnect()
     }
 }

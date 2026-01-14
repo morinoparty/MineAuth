@@ -18,7 +18,7 @@ Defines a GET request endpoint.
 suspend fun listUsers(): List<UserData>
 
 @GetMapping("/users/{id}")
-suspend fun getUser(@Param("id") id: String): UserData?
+suspend fun getUser(@PathParam("id") id: String): UserData?
 ```
 
 | Parameter | Type | Description |
@@ -41,7 +41,7 @@ Defines a PUT request endpoint.
 ```kotlin
 @PutMapping("/users/{id}")
 suspend fun updateUser(
-    @Param("id") id: String,
+    @PathParam("id") id: String,
     @RequestBody user: UpdateUserRequest
 ): UserData
 ```
@@ -52,7 +52,7 @@ Defines a DELETE request endpoint.
 
 ```kotlin
 @DeleteMapping("/users/{id}")
-suspend fun deleteUser(@Param("id") id: String)
+suspend fun deleteUser(@PathParam("id") id: String)
 ```
 
 ---
@@ -61,13 +61,13 @@ suspend fun deleteUser(@Param("id") id: String)
 
 These annotations extract data from the HTTP request.
 
-### @Param
+### @PathParam
 
 Extracts a single path parameter.
 
 ```kotlin
 @GetMapping("/shops/{shopId}")
-suspend fun getShop(@Param("shopId") shopId: String): ShopData?
+suspend fun getShop(@PathParam("shopId") shopId: String): ShopData?
 ```
 
 | Parameter | Type | Description |
@@ -83,33 +83,14 @@ suspend fun getShop(@Param("shopId") shopId: String): ShopData?
 - `Boolean`
 - `UUID`
 
-### @PathParams
-
-Extracts multiple path parameters at once as a Map.
-
-```kotlin
-@GetMapping("/shops/{shopId}/items/{itemId}")
-suspend fun getItem(
-    @PathParams(["shopId", "itemId"]) params: Map<String, String>
-): ItemData? {
-    val shopId = params["shopId"]
-    val itemId = params["itemId"]
-    // ...
-}
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `value` | Array&lt;String&gt; | Names of the path parameters to extract |
-
-### @RequestParams
+### @QueryParams
 
 Extracts all query parameters as a Map.
 
 ```kotlin
 @GetMapping("/shops")
 suspend fun searchShops(
-    @RequestParams params: Map<String, String>
+    @QueryParams params: Map<String, String>
 ): List<ShopData> {
     val limit = params["limit"]?.toIntOrNull() ?: 10
     val offset = params["offset"]?.toIntOrNull() ?: 0
@@ -167,7 +148,7 @@ suspend fun getMyShops(@AuthedAccessUser player: OfflinePlayer): List<ShopData> 
 @PostMapping("/shops/{id}/settings")
 suspend fun updateSettings(
     @AuthedAccessUser player: OfflinePlayer,
-    @Param("id") id: String,
+    @PathParam("id") id: String,
     @RequestBody settings: ShopSettings
 ): ShopData {
     return shopService.updateSettings(id, player.uniqueId, settings)
@@ -228,9 +209,8 @@ class AdminHandler {
 | `@PostMapping` | Function | Define POST endpoint |
 | `@PutMapping` | Function | Define PUT endpoint |
 | `@DeleteMapping` | Function | Define DELETE endpoint |
-| `@Param` | Parameter | Extract single path parameter |
-| `@PathParams` | Parameter | Extract multiple path parameters |
-| `@RequestParams` | Parameter | Extract query parameters |
+| `@PathParam` | Parameter | Extract path parameter |
+| `@QueryParams` | Parameter | Extract query parameters |
 | `@RequestBody` | Parameter | Extract JSON body |
 | `@Authenticated` | Parameter | Require auth, inject online Player |
 | `@AuthedAccessUser` | Parameter | Require auth, inject OfflinePlayer |
