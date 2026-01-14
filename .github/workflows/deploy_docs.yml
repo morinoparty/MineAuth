@@ -3,6 +3,8 @@ name: deploy docs
 on:
   workflow_dispatch:
   push:
+    branches:
+      - master
     paths:
       - "docs/**"
 permissions:
