@@ -3,10 +3,10 @@ package party.morino.mineauth.core.plugin.route
 import arrow.core.Either
 import arrow.core.raise.either
 import arrow.core.raise.ensure
-import io.ktor.server.application.*
-import io.ktor.server.auth.*
-import io.ktor.server.auth.jwt.*
-import io.ktor.server.request.*
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.principal
+import io.ktor.server.request.receiveText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
 import org.bukkit.Bukkit
@@ -15,7 +15,6 @@ import org.bukkit.entity.Player
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.core.plugin.annotation.ParameterInfo
 import java.util.*
-import kotlin.reflect.KType
 import kotlin.reflect.jvm.jvmErasure
 
 /**
@@ -36,7 +35,7 @@ class ParameterResolver(
     suspend fun resolve(call: ApplicationCall, paramInfo: ParameterInfo): Either<ResolveError, Any?> = either {
         when (paramInfo) {
             is ParameterInfo.PathParam -> resolvePathParam(call, paramInfo).bind()
-            is ParameterInfo.QueryParams -> resolveQueryParams(call, paramInfo)
+            is ParameterInfo.QueryParams -> resolveQueryParams(call)
             is ParameterInfo.Body -> resolveBody(call, paramInfo).bind()
             is ParameterInfo.AuthenticatedPlayer -> resolveAuthenticatedPlayer(call, paramInfo).bind()
             is ParameterInfo.AccessPlayer -> resolveAccessPlayer(call, paramInfo)
@@ -91,8 +90,7 @@ class ParameterResolver(
      * @return クエリパラメータのMap
      */
     private fun resolveQueryParams(
-        call: ApplicationCall,
-        paramInfo: ParameterInfo.QueryParams
+        call: ApplicationCall
     ): Map<String, String> {
         return call.request.queryParameters.entries()
             .associate { it.key to (it.value.firstOrNull() ?: "") }
@@ -130,42 +128,17 @@ class ParameterResolver(
         call: ApplicationCall,
         paramInfo: ParameterInfo.AuthenticatedPlayer
     ): Either<ResolveError, Any> = either {
-        // JWTPrincipalを取得
+        // JWTPrincipalを取得して必須認証を確認
         val principal = call.principal<JWTPrincipal>()
         ensure(principal != null) {
             ResolveError.AuthenticationRequired("JWT token required")
         }
 
-        // playerUniqueIdクレームからUUIDを抽出
-        val uuidStr = principal.payload.getClaim("playerUniqueId").asString()
-        ensure(uuidStr != null) {
-            ResolveError.AuthenticationRequired("Missing playerUniqueId claim")
-        }
-
-        val uuid = try {
-            UUID.fromString(uuidStr)
-        } catch (e: IllegalArgumentException) {
-            raise(ResolveError.AuthenticationRequired("Invalid UUID format"))
-        }
+        // playerUniqueIdクレームをUUIDとして解決
+        val uuid = resolvePlayerUuid(principal).bind()
 
         // パラメータの型に応じてPlayerまたはOfflinePlayerを返す
-        val targetType = paramInfo.type.jvmErasure
-        val offlinePlayer = Bukkit.getOfflinePlayer(uuid)
-
-        when {
-            targetType == Player::class -> {
-                // Playerを要求している場合、オンラインでなければエラー
-                offlinePlayer.player ?: raise(ResolveError.PlayerNotFound(uuidStr))
-            }
-            targetType == OfflinePlayer::class -> {
-                // OfflinePlayerを要求している場合はそのまま返す
-                offlinePlayer
-            }
-            else -> {
-                // その他の型の場合はオンラインプレイヤーを試みる
-                offlinePlayer.player ?: offlinePlayer
-            }
-        }
+        resolvePlayerForAuth(uuid, paramInfo.type.jvmErasure).bind()
     }
 
     /**
@@ -181,23 +154,8 @@ class ParameterResolver(
         paramInfo: ParameterInfo.AccessPlayer
     ): Any? {
         val principal = call.principal<JWTPrincipal>() ?: return null
-
-        val uuidStr = principal.payload.getClaim("playerUniqueId").asString() ?: return null
-
-        val uuid = try {
-            UUID.fromString(uuidStr)
-        } catch (e: IllegalArgumentException) {
-            return null
-        }
-
-        val offlinePlayer = Bukkit.getOfflinePlayer(uuid)
-        val targetType = paramInfo.type.jvmErasure
-
-        return when {
-            targetType == Player::class -> offlinePlayer.player
-            targetType == OfflinePlayer::class -> offlinePlayer
-            else -> offlinePlayer.player ?: offlinePlayer
-        }
+        val uuid = parsePlayerUuidOrNull(principal) ?: return null
+        return resolvePlayerForAccess(uuid, paramInfo.type.jvmErasure)
     }
 
     /**
@@ -224,7 +182,7 @@ class ParameterResolver(
                 UUID::class -> UUID.fromString(value)
                 else -> value // デフォルトは文字列として返す
             }
-        } catch (e: Exception) {
+        } catch (e: IllegalArgumentException) {
             raise(
                 ResolveError.TypeConversionFailed(
                     parameterName = paramName,
@@ -232,6 +190,77 @@ class ParameterResolver(
                     actualValue = value
                 )
             )
+        }
+    }
+
+    /**
+     * JWTからplayerUniqueIdをUUIDとして取得する
+     *
+     * @param principal JWTPrincipal
+     * @return 変換後のUUID
+     */
+    private fun resolvePlayerUuid(principal: JWTPrincipal): Either<ResolveError, UUID> = either {
+        val uuidStr = principal.payload.getClaim("playerUniqueId").asString()
+        ensure(uuidStr != null) {
+            ResolveError.AuthenticationRequired("Missing playerUniqueId claim")
+        }
+        try {
+            UUID.fromString(uuidStr)
+        } catch (e: IllegalArgumentException) {
+            raise(ResolveError.AuthenticationRequired("Invalid UUID format"))
+        }
+    }
+
+    /**
+     * JWTからplayerUniqueIdを取り出し、失敗時はnullを返す
+     *
+     * @param principal JWTPrincipal
+     * @return UUIDまたはnull
+     */
+    private fun parsePlayerUuidOrNull(principal: JWTPrincipal): UUID? {
+        val uuidStr = principal.payload.getClaim("playerUniqueId").asString() ?: return null
+        return try {
+            UUID.fromString(uuidStr)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+
+    /**
+     * 認証済みアクセスでのプレイヤー解決
+     *
+     * @param uuid プレイヤーUUID
+     * @param targetType 要求される型
+     * @return PlayerまたはOfflinePlayer
+     */
+    private fun resolvePlayerForAuth(
+        uuid: UUID,
+        targetType: kotlin.reflect.KClass<*>
+    ): Either<ResolveError, Any> = either {
+        val offlinePlayer = Bukkit.getOfflinePlayer(uuid)
+        when {
+            targetType == Player::class -> {
+                // オンラインプレイヤー必須
+                offlinePlayer.player ?: raise(ResolveError.PlayerNotFound(uuid.toString()))
+            }
+            targetType == OfflinePlayer::class -> offlinePlayer
+            else -> offlinePlayer.player ?: offlinePlayer
+        }
+    }
+
+    /**
+     * 非必須認証でのプレイヤー解決
+     *
+     * @param uuid プレイヤーUUID
+     * @param targetType 要求される型
+     * @return Player/OfflinePlayer/nullable
+     */
+    private fun resolvePlayerForAccess(uuid: UUID, targetType: kotlin.reflect.KClass<*>): Any? {
+        val offlinePlayer = Bukkit.getOfflinePlayer(uuid)
+        return when {
+            targetType == Player::class -> offlinePlayer.player
+            targetType == OfflinePlayer::class -> offlinePlayer
+            else -> offlinePlayer.player ?: offlinePlayer
         }
     }
 }

@@ -39,7 +39,7 @@ class PluginRouteRegistry : KoinComponent {
      * @param route Ktorのルートコンテキスト
      */
     fun applyAll(route: Route) {
-        for ((_, routeConfig) in registeredRoutes) {
+        registeredRoutes.values.forEach { routeConfig ->
             route.routeConfig()
         }
     }

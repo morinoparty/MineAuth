@@ -30,7 +30,7 @@ tasks:
     silent: true
   "run:shop":
     cmds:
-      - ./gradlew clean :core:build --no-build-cache --rerun-tasks
+      - ./gradlew clean :core:build --no-build-cache --rerun-tasks -x test
       - cp ./core/build/libs/core-*-all.jar ./addons/quickshop-hikari/run/plugins/
       - sleep 5 && echo "starting server..."
       - ./gradlew clean :addons:quickshop-hikari:runServer

@@ -22,7 +22,7 @@ import java.util.*
 
 /**
  * QuickShop-Hikariのショップ操作を行うハンドラー
- * /api/v1/plugins/quickshop-hikari-addon/ 配下にエンドポイントを提供する
+ * /api/v1/plugins/{plugin-name}/ 配下にエンドポイントを提供する
  */
 class ShopHandler : KoinComponent {
     private val quickShopAPI: QuickShopAPI by inject()
@@ -37,12 +37,7 @@ class ShopHandler : KoinComponent {
      */
     @GetMapping("/shops/{shopId}")
     suspend fun getShop(@Param("shopId") shopId: String): ShopData {
-        val id = shopId.toLongOrNull()
-            ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
-
-        val shop = quickShopAPI.shopManager.getShop(id)
-            ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
-
+        val shop = findShopOrThrow(parseShopId(shopId))
         return shop.toShopData()
     }
 
@@ -58,9 +53,10 @@ class ShopHandler : KoinComponent {
             throw HttpError(HttpStatus.BAD_REQUEST, "Invalid UUID format")
         }
 
-        return quickShopAPI.shopManager.allShops
+        return quickShopAPI.shopManager.allShops.asSequence()
             .filter { it.owner.uniqueId == playerUuid }
             .map { it.shopId }
+            .toList()
     }
 
     // ========================================
@@ -73,9 +69,10 @@ class ShopHandler : KoinComponent {
      */
     @GetMapping("/users/me/shops")
     suspend fun getMyShops(@AuthedAccessUser player: OfflinePlayer): List<Long> {
-        return quickShopAPI.shopManager.allShops
+        return quickShopAPI.shopManager.allShops.asSequence()
             .filter { it.owner.uniqueId == player.uniqueId }
             .map { it.shopId }
+            .toList()
     }
 
     /**
@@ -87,22 +84,9 @@ class ShopHandler : KoinComponent {
         @AuthedAccessUser player: OfflinePlayer,
         @Param("shopId") shopId: String
     ): ShopSetting {
-        val id = shopId.toLongOrNull()
-            ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
-
-        val shop = quickShopAPI.shopManager.getShop(id)
-            ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
-
-        // オーナーチェック
-        if (shop.owner.uniqueId != player.uniqueId) {
-            throw HttpError(HttpStatus.FORBIDDEN, "You are not the owner of this shop")
-        }
-
-        return ShopSetting(
-            price = shop.price,
-            mode = if (shop.isBuying) ShopMode.BUY else ShopMode.SELL,
-            perBulkAmount = shop.shopStackingAmount
-        )
+        val shop = findShopOrThrow(parseShopId(shopId))
+        ensureOwner(player, shop)
+        return shop.toShopSetting()
     }
 
     /**
@@ -115,33 +99,9 @@ class ShopHandler : KoinComponent {
         @Param("shopId") shopId: String,
         @RequestBody setting: ShopSetting
     ) {
-        val id = shopId.toLongOrNull()
-            ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
-
-        val shop = quickShopAPI.shopManager.getShop(id)
-            ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
-
-        // オーナーチェック
-        if (shop.owner.uniqueId != player.uniqueId) {
-            throw HttpError(HttpStatus.FORBIDDEN, "You are not the owner of this shop")
-        }
-
-        // 価格のバリデーション
-        if (setting.price <= 0) {
-            throw HttpError(HttpStatus.BAD_REQUEST, "Price must be greater than 0")
-        }
-
-        // 個数のバリデーション
-        val maxStackSize = getItemMaxStackSize(shop.item.type)
-        if (setting.perBulkAmount <= 0) {
-            throw HttpError(HttpStatus.BAD_REQUEST, "perBulkAmount must be greater than 0")
-        }
-        if (setting.perBulkAmount > maxStackSize) {
-            throw HttpError(
-                HttpStatus.BAD_REQUEST,
-                "perBulkAmount must be less than or equal to $maxStackSize"
-            )
-        }
+        val shop = findShopOrThrow(parseShopId(shopId))
+        ensureOwner(player, shop)
+        validateShopSetting(shop, setting)
 
         // 設定を適用
         shop.price = setting.price
@@ -193,5 +153,61 @@ class ShopHandler : KoinComponent {
      */
     private fun getItemMaxStackSize(material: Material): Int {
         return material.maxStackSize
+    }
+
+    /**
+     * shopIdをLongに変換する
+     */
+    private fun parseShopId(shopId: String): Long {
+        return shopId.toLongOrNull()
+            ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
+    }
+
+    /**
+     * Shopを取得する（存在しない場合は404）
+     */
+    private fun findShopOrThrow(shopId: Long): Shop {
+        return quickShopAPI.shopManager.getShop(shopId)
+            ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
+    }
+
+    /**
+     * ショップのオーナーかどうかを検証する
+     */
+    private fun ensureOwner(player: OfflinePlayer, shop: Shop) {
+        if (shop.owner.uniqueId != player.uniqueId) {
+            throw HttpError(HttpStatus.FORBIDDEN, "You are not the owner of this shop")
+        }
+    }
+
+    /**
+     * ShopからShopSettingを生成する
+     */
+    private fun Shop.toShopSetting(): ShopSetting {
+        return ShopSetting(
+            price = this.price,
+            mode = if (this.isBuying) ShopMode.BUY else ShopMode.SELL,
+            perBulkAmount = this.shopStackingAmount
+        )
+    }
+
+    /**
+     * ショップ設定のバリデーション
+     */
+    private fun validateShopSetting(shop: Shop, setting: ShopSetting) {
+        if (setting.price <= 0) {
+            throw HttpError(HttpStatus.BAD_REQUEST, "Price must be greater than 0")
+        }
+
+        val maxStackSize = getItemMaxStackSize(shop.item.type)
+        if (setting.perBulkAmount <= 0) {
+            throw HttpError(HttpStatus.BAD_REQUEST, "perBulkAmount must be greater than 0")
+        }
+        if (setting.perBulkAmount > maxStackSize) {
+            throw HttpError(
+                HttpStatus.BAD_REQUEST,
+                "perBulkAmount must be less than or equal to $maxStackSize"
+            )
+        }
     }
 }

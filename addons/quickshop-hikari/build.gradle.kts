@@ -17,14 +17,13 @@ dependencies {
 
     implementation(libs.bundles.commands)
 
-    implementation(libs.kotlinx.serialization.json)
-
-    implementation(libs.bundles.coroutines)
-
-    implementation(libs.bundles.exposed)
-
     implementation(libs.koin.core)
-    implementation(kotlin("stdlib-jdk8"))
+
+    // Paperのlibraries機能またはMineAuthコアから提供されるライブラリ（compileOnly）
+    compileOnly(libs.kotlinx.serialization.json)
+    compileOnly(libs.bundles.coroutines)
+    compileOnly(libs.bundles.exposed)
+    compileOnly(kotlin("stdlib-jdk8"))
 
     compileOnly(libs.quickshop.api)
 }
@@ -33,7 +32,16 @@ tasks {
     build {
         dependsOn("shadowJar")
     }
-    shadowJar
+    shadowJar {
+        // MineAuthコアがPaperのlibrariesで提供するので除外
+        dependencies {
+            exclude(dependency("org.jetbrains.kotlin:.*:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-.*:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*:.*"))
+            exclude(dependency("org.jetbrains.exposed:.*:.*"))
+            exclude(dependency("io.arrow-kt:.*:.*"))
+        }
+    }
     runServer {
         minecraftVersion("1.21.8")
         val plugins = runPaper.downloadPluginsSpec {

@@ -2,6 +2,7 @@ package party.morino.mineauth.addons.quickshop
 
 import com.ghostchu.quickshop.api.QuickShopAPI
 import org.bukkit.plugin.java.JavaPlugin
+import org.koin.core.context.GlobalContext
 import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
@@ -46,7 +47,14 @@ class QuickShopHikariAddon : JavaPlugin() {
             single<QuickShopAPI> { QuickShopAPI.getInstance() }
         }
 
-        // Addonは新たにKoinを起動
+        // MineAuth側のKoinが起動済みならモジュールを追加する
+        val koinApp = GlobalContext.getOrNull()
+        if (koinApp != null) {
+            loadKoinModules(quickShopModule)
+            return
+        }
+
+        // Koin未起動の場合はアドオン側で起動する
         startKoin {
             modules(quickShopModule)
         }
@@ -57,10 +65,7 @@ class QuickShopHikariAddon : JavaPlugin() {
      * 登録されたハンドラーは /api/v1/plugins/quickshop-hikari-addon/ 配下で利用可能
      */
     private fun setupMineAuth() {
-        val handler = mineAuthAPI.createHandler(this)
-
-        handler.register(
-            ShopHandler()
-        )
-}
+        mineAuthAPI.createHandler(this)
+            .register(ShopHandler())
+    }
 }

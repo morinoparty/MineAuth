@@ -40,7 +40,7 @@ class ShopHandler {
     }
 
     @GetMapping("/shops/{id}")
-    suspend fun getShop(@Params(["id"]) id: String): ShopData? {
+    suspend fun getShop(@Param("id") id: String): ShopData? {
         // Return single shop
         return shopService.findById(id)
     }
@@ -56,7 +56,7 @@ class ShopHandler {
 ## 🏗️ Route Generation
 
 Routes are automatically generated based on:
-- **Plugin name**: Converted to kebab-case (e.g., `QuickShopHikari` → `quickshop-hikari`)
+- **Plugin name**: Lowercased plugin name (e.g., `QuickShopHikari` → `quickshophikari`)
 - **Handler annotations**: Paths from `@GetMapping`, `@PostMapping`, etc.
 
 ### 📍 Generated Endpoints
@@ -109,12 +109,12 @@ class AdminHandler {
 
 ### 🔗 Path Parameters
 
-Use `@Params` to extract path parameters:
+Use `@Param` or `@PathParams` to extract path parameters:
 
 ```kotlin
 @GetMapping("/shops/{shopId}/items/{itemId}")
 suspend fun getItem(
-    @Params(["shopId", "itemId"]) params: Map<String, String>
+    @PathParams(["shopId", "itemId"]) params: Map<String, String>
 ): ItemData? {
     val shopId = params["shopId"]
     val itemId = params["itemId"]
@@ -123,7 +123,7 @@ suspend fun getItem(
 
 // Single parameter
 @GetMapping("/shops/{id}")
-suspend fun getShop(@Params(["id"]) id: String): ShopData?
+suspend fun getShop(@Param("id") id: String): ShopData?
 ```
 
 ### ❓ Query Parameters
@@ -165,7 +165,7 @@ class ShopHandler : KoinComponent {
     }
 
     @GetMapping("/shops/{id}")
-    suspend fun getShop(@Params(["id"]) id: String): ShopData? {
+    suspend fun getShop(@Param("id") id: String): ShopData? {
         return shopService.findById(id)
     }
 
@@ -182,7 +182,7 @@ class ShopHandler : KoinComponent {
     @Permission("myshop.edit")
     suspend fun updateShop(
         @AuthedAccessUser player: Player,
-        @Params(["id"]) id: String,
+        @Param("id") id: String,
         @RequestBody shop: UpdateShopRequest
     ): ShopData {
         return shopService.update(id, player.uniqueId, shop)
@@ -192,7 +192,7 @@ class ShopHandler : KoinComponent {
     @Permission("myshop.delete")
     suspend fun deleteShop(
         @AuthedAccessUser player: Player,
-        @Params(["id"]) id: String
+        @Param("id") id: String
     ) {
         shopService.delete(id, player.uniqueId)
     }
@@ -208,7 +208,7 @@ import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 
 @GetMapping("/shops/{id}")
-suspend fun getShop(@Params(["id"]) id: String): ShopData {
+suspend fun getShop(@Param("id") id: String): ShopData {
     return shopService.findById(id)
         ?: throw HttpError(
             status = HttpStatus.NOT_FOUND,

@@ -1,6 +1,7 @@
 package party.morino.mineauth.core.plugin
 
 import org.bukkit.plugin.java.JavaPlugin
+import java.util.Locale
 
 /**
  * 外部プラグインのコンテキスト情報を保持するクラス
@@ -22,9 +23,9 @@ data class PluginContext(
          * @return 作成されたPluginContext
          */
         fun from(plugin: JavaPlugin): PluginContext {
-            // プラグイン名を小文字に正規化（ハイフンは入れない）
+            // プラグイン名を小文字に正規化
             // 例: QuickShopHikari -> quickshophikari, MineAuth -> mineauth
-            val pluginName = plugin.name.lowercase()
+            val pluginName = plugin.name.lowercase(Locale.ROOT)
             return PluginContext(
                 plugin = plugin,
                 basePath = "/api/v1/plugins/$pluginName"

@@ -57,7 +57,8 @@ The following annotations are used to define API endpoints:
 
 - `@RequestParams` - Receive URL parameters
 - `@RequestBody` - Receive request body
-- `@Params` - Receive multiple parameters at once
+- `@Param` - Receive a single path parameter
+- `@PathParams` - Receive multiple path parameters at once
 
 ### 🔐 Authentication Annotations
 
@@ -104,14 +105,14 @@ fun createUser(@RequestBody user: UserData): HttpResponse {
 
 @PutMapping("/users/{id}")
 fun updateUser(
-    @Params(["id"]) params: Map<String, String>,
+    @Param("id") id: String,
     @RequestBody user: UserData
 ): HttpResponse {
     // Update user
 }
 
 @DeleteMapping("/users/{id}")
-fun deleteUser(@Params(["id"]) params: Map<String, String>): HttpResponse {
+fun deleteUser(@Param("id") id: String): HttpResponse {
     // Delete user
 }
 ``` 

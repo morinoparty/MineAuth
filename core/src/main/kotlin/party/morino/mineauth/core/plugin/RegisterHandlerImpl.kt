@@ -21,8 +21,8 @@ class RegisterHandlerImpl(
     private val routeBuilder: RouteBuilder by inject()
     private val routeRegistry: PluginRouteRegistry by inject()
 
-    // 登録されたエンドポイントメタデータ
-    private val endpoints = mutableListOf<EndpointMetadata>()
+    // 登録済みエンドポイントメタデータ
+    private val registeredEndpoints = mutableListOf<EndpointMetadata>()
 
     /**
      * ハンドラーインスタンスを登録する
@@ -31,8 +31,8 @@ class RegisterHandlerImpl(
      * @param endpoints 登録するハンドラーインスタンス（可変長引数）
      * @return このRegisterHandlerインスタンス（メソッドチェーン用）
      */
-    override fun register(vararg endpoints: Any): RegisterHandler {
-        for (handler in endpoints) {
+    override fun register(vararg handlers: Any): RegisterHandler {
+        for (handler in handlers) {
             // アノテーションを処理
             annotationProcessor.process(handler).fold(
                 { error ->
@@ -42,7 +42,7 @@ class RegisterHandlerImpl(
                     )
                 },
                 { metadata ->
-                    this.endpoints.addAll(metadata)
+                    this.registeredEndpoints.addAll(metadata)
                     context.plugin.logger.info(
                         "Registered ${metadata.size} endpoints from ${handler::class.simpleName}"
                     )
@@ -66,7 +66,7 @@ class RegisterHandlerImpl(
      * 登録されたエンドポイントからルート設定を再構築する
      */
     private fun rebuildRoutes() {
-        val currentEndpoints = this.endpoints.toList()
+        val currentEndpoints = this.registeredEndpoints.toList()
         val routeConfig: io.ktor.server.routing.Route.() -> Unit = {
             routeBuilder.buildRoutes(this, context, currentEndpoints)
         }
