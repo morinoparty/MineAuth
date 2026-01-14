@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "docs"
+      - "docs/**"
 permissions:
   contents: write
 
@@ -55,7 +55,7 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
-          path: ./docs/build
+          path: ./docs/out
 
   deploy:
     name: Deploy to GitHub Pages
