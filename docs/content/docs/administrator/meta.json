@@ -1,5 +1,5 @@
 {
   "title": "Administrator",
-    "root": true,
+  "icon": "Settings",
   "pages": ["config"]
 }

@@ -1,8 +1,12 @@
 {
     "pages": [
+        "---Introduction---",
         "index",
-        "(administrator)",
-        "(developer)",
-        "(contributer)"
+        "---Administrator---",
+        "...administrator",
+        "---Developer---",
+        "...developer",
+        "---Contributer---",
+        "...contributer"
     ]
 }

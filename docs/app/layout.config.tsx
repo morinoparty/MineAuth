@@ -4,21 +4,5 @@ export const baseOptions: BaseLayoutProps = {
     nav: {
         title: 'MineAuth',
     },
-    links: [
-        {
-            text: 'Docs',
-            url: '/docs',
-            active: 'nested-url',
-        },
-        {
-            text: 'GitHub',
-            url: 'https://github.com/morinoparty/MineAuth',
-            external: true,
-        },
-        {
-            text: 'Download',
-            url: 'https://modrinth.com/plugin/MineAuth',
-            external: true,
-        },
-    ],
+    githubUrl: "https://github.com/morinoparty/MineAuth",
 };
