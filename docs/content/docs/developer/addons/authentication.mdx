@@ -1,15 +1,15 @@
 ---
 title: Authentication Guide
-description: MineAuth APIでの認証・認可の実装方法
+description: How to implement authentication and authorization in MineAuth API
 ---
 
 This guide explains how to implement authentication and authorization in your MineAuth addon.
 
-## 🔑 Authentication Overview
+## Authentication Overview
 
 MineAuth uses JWT (JSON Web Tokens) for API authentication. When a client makes a request with a valid access token, MineAuth extracts the user information and makes it available to your handler methods.
 
-## 🛡️ Requiring Authentication
+## Requiring Authentication
 
 ### Basic Authentication
 
@@ -57,7 +57,7 @@ suspend fun listItems(@AccessUser player: OfflinePlayer?): List<ItemData> {
 }
 ```
 
-## 🔒 Permission Checking
+## Permission Checking
 
 ### Method-Level Permissions
 
@@ -134,7 +134,7 @@ When permission check fails, MineAuth returns:
 }
 ```
 
-## 🔐 JWT Token Structure
+## JWT Token Structure
 
 MineAuth JWT tokens contain the following claims:
 
@@ -147,7 +147,7 @@ MineAuth JWT tokens contain the following claims:
 | `iat` | Issued at time |
 | `scope` | OAuth scopes granted |
 
-## 📋 Authentication Flow
+## Authentication Flow
 
 ```
 ┌─────────────┐                    ┌─────────────┐
@@ -166,7 +166,7 @@ MineAuth JWT tokens contain the following claims:
        │                                  │
 ```
 
-## ⚠️ Error Responses
+## Error Responses
 
 ### 401 Unauthorized
 
@@ -192,7 +192,7 @@ Permission denied or player not online:
 }
 ```
 
-## 🎯 Best Practices
+## Best Practices
 
 1. **Use `@AuthedAccessUser` by default** - It works for both online and offline players
 

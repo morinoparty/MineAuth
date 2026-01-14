@@ -1,17 +1,17 @@
 ---
 title: HTTP API
-description: MineAuth HTTP APIの構造とアノテーション
+description: MineAuth HTTP API structure and annotations
 ---
 
 This document explains the HTTP API of MineAuth.
 
-## 📝 Overview
+## Overview
 
 MineAuth's HTTP API provides a RESTful interface that enables integration with MineCraft servers.
 
-## 🏗️ API Structure
+## API Structure
 
-### 📡 HTTP Methods
+### HTTP Methods
 
 The following HTTP methods are supported:
 
@@ -21,7 +21,7 @@ The following HTTP methods are supported:
 - `DELETE` - Delete resources
 - `PATCH` - Partially update resources
 
-### 📤 Request
+### Request
 
 Requests are sent in the following format:
 
@@ -33,7 +33,7 @@ data class HttpRequest(
 )
 ```
 
-### 📥 Response
+### Response
 
 Responses are returned in the following format:
 
@@ -45,31 +45,31 @@ data class HttpResponse(
 )
 ```
 
-## 🏷️ Annotations
+## Annotations
 
 The following annotations are used to define API endpoints:
 
-### 🔄 HTTP Method Annotations
+### HTTP Method Annotations
 
 - `@GetMapping(value: String)` - Define GET request endpoints
 - `@PostMapping(value: String)` - Define POST request endpoints
 - `@PutMapping(value: String)` - Define PUT request endpoints
 - `@DeleteMapping(value: String)` - Define DELETE request endpoints
 
-### 📊 Parameter Annotations
+### Parameter Annotations
 
 - `@RequestParams` - Receive URL parameters
 - `@RequestBody` - Receive request body
 - `@Param` - Receive a single path parameter
 - `@PathParams` - Receive multiple path parameters at once
 
-### 🔐 Authentication Annotations
+### Authentication Annotations
 
 - `@Authenticated` - Define endpoints that require authentication
 - `@AuthedAccessUser` - Receive authenticated user information
 - `@Permission` - Define required permissions
 
-## ⚠️ Error Handling
+## Error Handling
 
 Errors are handled using the `HttpError` class:
 
@@ -81,7 +81,7 @@ class HttpError(
 )
 ```
 
-### 📊 Main HTTP Status Codes
+### Main HTTP Status Codes
 
 - `200 OK` - Request successful
 - `201 Created` - Resource creation successful
@@ -91,9 +91,9 @@ class HttpError(
 - `404 Not Found` - Resource not found
 - `500 Internal Server Error` - Server error
 
-## 📋 Usage Examples
+## Usage Examples
 
-### 🔌 Endpoint Definition
+### Endpoint Definition
 
 ```kotlin
 @GetMapping("/users")

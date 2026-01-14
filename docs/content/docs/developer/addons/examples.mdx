@@ -1,11 +1,11 @@
 ---
 title: Complete Examples
-description: MineAuth APIを使った完全なアドオン実装例
+description: Complete addon implementation examples using MineAuth API
 ---
 
 This document provides complete, working examples of MineAuth addons.
 
-## 🛒 Shop Addon Example
+## Shop Addon Example
 
 A complete example based on the QuickShop-Hikari integration.
 
@@ -214,7 +214,7 @@ depend:
 
 ---
 
-## 🎮 User Stats Addon Example
+## User Stats Addon Example
 
 A simpler example showing user statistics.
 
@@ -276,7 +276,7 @@ class StatsHandler {
 
 ---
 
-## 🔗 Generated Endpoints
+## Generated Endpoints
 
 For the examples above, the following endpoints would be generated:
 
@@ -284,17 +284,17 @@ For the examples above, the following endpoints would be generated:
 
 | Method | Path | Auth |
 |--------|------|------|
-| GET | `/api/v1/plugins/shopaddon/shops` | ❌ |
-| GET | `/api/v1/plugins/shopaddon/shops/{id}` | ❌ |
-| GET | `/api/v1/plugins/shopaddon/users/me/shops` | ✅ |
-| POST | `/api/v1/plugins/shopaddon/shops` | ✅ |
-| PUT | `/api/v1/plugins/shopaddon/shops/{id}` | ✅ |
-| DELETE | `/api/v1/plugins/shopaddon/shops/{id}` | ✅ |
+| GET | `/api/v1/plugins/shopaddon/shops` | No |
+| GET | `/api/v1/plugins/shopaddon/shops/{id}` | No |
+| GET | `/api/v1/plugins/shopaddon/users/me/shops` | Yes |
+| POST | `/api/v1/plugins/shopaddon/shops` | Yes |
+| PUT | `/api/v1/plugins/shopaddon/shops/{id}` | Yes |
+| DELETE | `/api/v1/plugins/shopaddon/shops/{id}` | Yes |
 
 ### Stats Addon (plugin name: `statsaddon`)
 
 | Method | Path | Auth |
 |--------|------|------|
-| GET | `/api/v1/plugins/statsaddon/stats/{uuid}` | ❌ |
-| GET | `/api/v1/plugins/statsaddon/stats/me` | ✅ |
-| GET | `/api/v1/plugins/statsaddon/leaderboard` | ❌ |
+| GET | `/api/v1/plugins/statsaddon/stats/{uuid}` | No |
+| GET | `/api/v1/plugins/statsaddon/stats/me` | Yes |
+| GET | `/api/v1/plugins/statsaddon/leaderboard` | No |

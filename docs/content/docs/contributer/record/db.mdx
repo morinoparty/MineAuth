@@ -1,61 +1,61 @@
 ---
 title: Database
-description: データベースレコードデータのリファレンス
+description: Database record data reference
 ---
 
-## 👤 UserAuthData
+## UserAuthData
 
-ユーザー認証情報を管理するテーブル。
+Table for managing user authentication information.
 
 | Column Name | Type | Example | Description |
 |-------------|------|---------|-------------|
-| uuid | VARCHAR(36) PK | `550e8400-e29b-41d4-a716-446655440000` | プレイヤーのMinecraft UUID |
-| password | VARCHAR(255) | `$argon2id$v=19$...` | Argon2idでハッシュ化されたパスワード |
+| uuid | VARCHAR(36) PK | `550e8400-e29b-41d4-a716-446655440000` | Player's Minecraft UUID |
+| password | VARCHAR(255) | `$argon2id$v=19$...` | Password hashed with Argon2id |
 
 ---
 
-## 🔑 RevokeTokenData
+## RevokeTokenData
 
-無効化されたトークンを管理するテーブル。
+Table for managing revoked tokens.
 
 | Column Name | Type | Example | Description |
 |-------------|------|---------|-------------|
-| token_id | VARCHAR(200) PK | `abc123...` | 無効化されたトークンのID |
-| exp_data | TIMESTAMP | `2025-01-06 12:00:00` | トークンの有効期限 |
+| token_id | VARCHAR(200) PK | `abc123...` | Revoked token ID |
+| exp_data | TIMESTAMP | `2025-01-06 12:00:00` | Token expiration time |
 
 ---
 
-## 🆔 Accounts
+## Accounts
 
-アカウント情報を管理するテーブル。プレイヤーアカウントとサービスアカウント（ロボットアカウント）の両方をサポート。
+Table for managing account information. Supports both player accounts and service accounts (robot accounts).
 
 | Column Name | Type | Example | Description |
 |-------------|------|---------|-------------|
-| account_id | VARCHAR(36) PK | `019234ab-...` | アカウントID（UUIDv7、時間ソート可能） |
-| account_type | VARCHAR(20) | `player` | アカウント種別: "player" または "service" |
-| identifier | VARCHAR(64) | `550e8400-e29b-41d4-a716-446655440000` | プレイヤーの場合はMinecraft UUID、サービスの場合はサービス名 |
-| created_at | TIMESTAMP | `2025-01-06 12:00:00` | アカウント作成日時 |
+| account_id | VARCHAR(36) PK | `019234ab-...` | Account ID (UUIDv7, time-sortable) |
+| account_type | VARCHAR(20) | `player` | Account type: "player" or "service" |
+| identifier | VARCHAR(64) | `550e8400-e29b-41d4-a716-446655440000` | Minecraft UUID for players, service name for services |
+| created_at | TIMESTAMP | `2025-01-06 12:00:00` | Account creation timestamp |
 
 ---
 
-## 🔐 OAuthClients
+## OAuthClients
 
-OAuth2/OIDCクライアントアプリケーションを管理するテーブル。
+Table for managing OAuth2/OIDC client applications.
 
 | Column Name | Type | Example | Description |
 |-------------|------|---------|-------------|
-| client_id | VARCHAR(36) PK | `019234ab-...` | クライアントID（UUIDv7、時間ソート可能） |
-| client_name | VARCHAR(255) | `My OAuth App` | クライアントの表示名 |
-| client_type | VARCHAR(20) | `confidential` | クライアント種別: "public" または "confidential" |
-| client_secret_hash | VARCHAR(255) NULL | `$argon2id$v=19$...` | Argon2idでハッシュ化されたシークレット（Publicの場合はNULL） |
-| redirect_uri | VARCHAR(2048) | `https://example\.com/callback.*` | リダイレクトURI（正規表現パターン対応） |
-| issuer_account_id | VARCHAR(36) FK | `019234ab-...` | 発行者のアカウントID（Accountsテーブル参照） |
-| created_at | TIMESTAMP | `2025-01-06 12:00:00` | クライアント作成日時 |
-| updated_at | TIMESTAMP | `2025-01-06 12:00:00` | クライアント更新日時 |
+| client_id | VARCHAR(36) PK | `019234ab-...` | Client ID (UUIDv7, time-sortable) |
+| client_name | VARCHAR(255) | `My OAuth App` | Client display name |
+| client_type | VARCHAR(20) | `confidential` | Client type: "public" or "confidential" |
+| client_secret_hash | VARCHAR(255) NULL | `$argon2id$v=19$...` | Secret hashed with Argon2id (NULL for public clients) |
+| redirect_uri | VARCHAR(2048) | `https://example\.com/callback.*` | Redirect URI (supports regex patterns) |
+| issuer_account_id | VARCHAR(36) FK | `019234ab-...` | Issuer's account ID (references Accounts table) |
+| created_at | TIMESTAMP | `2025-01-06 12:00:00` | Client creation timestamp |
+| updated_at | TIMESTAMP | `2025-01-06 12:00:00` | Client update timestamp |
 
 ---
 
-## 📊 ER Diagram
+## ER Diagram
 
 ```mermaid
 erDiagram

@@ -1,17 +1,17 @@
 ---
 title: OIDC Discovery
-description: MineAuthのOIDC Discoveryエンドポイントについて
+description: MineAuth OIDC Discovery endpoint
 ---
 
-MineAuthは、[OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)に準拠したDiscoveryエンドポイントを提供します。
+MineAuth provides a Discovery endpoint compliant with [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html).
 
-## 📍 エンドポイント
+## Endpoint
 
 ```
 GET /.well-known/openid-configuration
 ```
 
-## 📋 レスポンス例
+## Response Example
 
 ```json
 {
@@ -43,27 +43,27 @@ GET /.well-known/openid-configuration
 }
 ```
 
-## 🔑 メタデータの説明
+## Metadata Description
 
-| フィールド | 説明 |
-|------------|------|
-| `issuer` | トークンの発行者識別子 |
-| `authorization_endpoint` | 認可エンドポイントのURL |
-| `token_endpoint` | トークンエンドポイントのURL |
-| `userinfo_endpoint` | UserInfoエンドポイントのURL |
-| `jwks_uri` | JWK SetのURL（公開鍵の取得先） |
-| `response_types_supported` | サポートするレスポンスタイプ |
-| `subject_types_supported` | サポートするサブジェクトタイプ |
-| `id_token_signing_alg_values_supported` | IDトークンの署名アルゴリズム |
-| `scopes_supported` | サポートするスコープ |
-| `token_endpoint_auth_methods_supported` | トークンエンドポイントの認証方法 |
-| `claims_supported` | サポートするクレーム |
-| `grant_types_supported` | サポートするグラントタイプ |
-| `code_challenge_methods_supported` | PKCEで使用可能なコードチャレンジメソッド |
+| Field | Description |
+|-------|-------------|
+| `issuer` | Token issuer identifier |
+| `authorization_endpoint` | Authorization endpoint URL |
+| `token_endpoint` | Token endpoint URL |
+| `userinfo_endpoint` | UserInfo endpoint URL |
+| `jwks_uri` | JWK Set URL (public key location) |
+| `response_types_supported` | Supported response types |
+| `subject_types_supported` | Supported subject types |
+| `id_token_signing_alg_values_supported` | ID token signing algorithm |
+| `scopes_supported` | Supported scopes |
+| `token_endpoint_auth_methods_supported` | Token endpoint authentication methods |
+| `claims_supported` | Supported claims |
+| `grant_types_supported` | Supported grant types |
+| `code_challenge_methods_supported` | PKCE code challenge methods |
 
-## ⚙️ 設定
+## Configuration
 
-Discoveryで公開されるURLは、`config.json`の`server.baseUrl`から生成されます。
+URLs published in Discovery are generated from `server.baseUrl` in `config.json`.
 
 ```json
 {
@@ -73,11 +73,11 @@ Discoveryで公開されるURLは、`config.json`の`server.baseUrl`から生成
 }
 ```
 
-リバースプロキシを使用している場合は、プロキシのURLを設定してください。
+If using a reverse proxy, set the proxy URL here.
 
-## 🔗 関連エンドポイント
+## Related Endpoints
 
-- **JWKs**: `/.well-known/jwks.json` - 公開鍵の取得
-- **Authorization**: `/oauth2/authorize` - 認可リクエスト
-- **Token**: `/oauth2/token` - トークン発行
-- **UserInfo**: `/oauth2/userinfo` - ユーザー情報の取得
+- **JWKs**: `/.well-known/jwks.json` - Public key retrieval
+- **Authorization**: `/oauth2/authorize` - Authorization request
+- **Token**: `/oauth2/token` - Token issuance
+- **UserInfo**: `/oauth2/userinfo` - User information retrieval

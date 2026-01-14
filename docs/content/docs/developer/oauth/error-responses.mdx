@@ -1,11 +1,11 @@
 ---
 title: Error Responses
-description: トークンエンドポイントのエラーレスポンス仕様
+description: Token endpoint error response specification
 ---
 
-トークンエンドポイントのエラーレスポンスは、RFC 6749 Section 5.2 に準拠しています。
+Token endpoint error responses comply with RFC 6749 Section 5.2.
 
-## エラーレスポンス形式
+## Error Response Format
 
 ```json
 {
@@ -14,20 +14,20 @@ description: トークンエンドポイントのエラーレスポンス仕様
 }
 ```
 
-## エラーコード一覧
+## Error Codes
 
-| エラーコード | HTTP ステータス | 説明 |
-|-------------|---------------|------|
-| `invalid_request` | 400 | 必須パラメータが不足、無効なパラメータ値、重複パラメータなど |
-| `invalid_client` | 401 | クライアント認証に失敗（client_id不明、client_secret不正など） |
-| `invalid_grant` | 400 | 認可コード無効、期限切れ、code_verifier不正など |
-| `unauthorized_client` | 400 | クライアントがこのグラントタイプを使用する権限がない |
-| `unsupported_grant_type` | 400 | サーバーがこの grant_type をサポートしていない |
-| `invalid_scope` | 400 | リクエストされたスコープが無効、不明、または不正 |
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| `invalid_request` | 400 | Missing required parameters, invalid parameter values, duplicate parameters, etc. |
+| `invalid_client` | 401 | Client authentication failed (unknown client_id, invalid client_secret, etc.) |
+| `invalid_grant` | 400 | Invalid authorization code, expired, invalid code_verifier, etc. |
+| `unauthorized_client` | 400 | Client is not authorized to use this grant type |
+| `unsupported_grant_type` | 400 | Server does not support this grant_type |
+| `invalid_scope` | 400 | Requested scope is invalid, unknown, or malformed |
 
-## エラー例
+## Error Examples
 
-### パラメータ不足
+### Missing Parameters
 
 ```http
 POST /oauth2/token
@@ -43,7 +43,7 @@ grant_type=authorization_code&code=abc123
 }
 ```
 
-### 認可コード無効
+### Invalid Authorization Code
 
 ```json
 {
@@ -52,7 +52,7 @@ grant_type=authorization_code&code=abc123
 }
 ```
 
-### クライアント認証失敗
+### Client Authentication Failed
 
 ```json
 {
@@ -61,7 +61,7 @@ grant_type=authorization_code&code=abc123
 }
 ```
 
-### サポートされていない grant_type
+### Unsupported grant_type
 
 ```json
 {
@@ -70,6 +70,6 @@ grant_type=authorization_code&code=abc123
 }
 ```
 
-## 参考
+## References
 
 - [RFC 6749 - Error Response](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2)

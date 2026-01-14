@@ -1,38 +1,38 @@
 ---
 title: UserInfo Endpoint
-description: UserInfoエンドポイントの仕様
+description: UserInfo endpoint specification
 ---
 
-UserInfo エンドポイントは、OpenID Connect Core 1.0 Section 5.3 に準拠したユーザー情報を返します。
+The UserInfo endpoint returns user information compliant with OpenID Connect Core 1.0 Section 5.3.
 
-## エンドポイント
+## Endpoint
 
 ```
 GET /oauth2/userinfo
 ```
 
-## 認証
+## Authentication
 
-Bearer トークン（アクセストークン）が必要です。
+Bearer token (access token) is required.
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-## レスポンス
+## Response
 
-### スコープに基づくクレーム
+### Scope-based Claims
 
-返却されるクレームは、アクセストークンのスコープに依存します。
+The returned claims depend on the access token's scope.
 
-| スコープ | クレーム |
-|---------|---------|
+| Scope | Claims |
+|-------|--------|
 | `openid` | `sub` |
 | `profile` | `name`, `nickname`, `picture` |
 
-### レスポンス例
+### Response Examples
 
-#### openid スコープのみの場合
+#### openid scope only
 
 ```json
 {
@@ -40,7 +40,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-#### openid + profile スコープの場合
+#### openid + profile scope
 
 ```json
 {
@@ -51,16 +51,16 @@ Authorization: Bearer <access_token>
 }
 ```
 
-## クレームの説明
+## Claim Descriptions
 
-| クレーム | 型 | 説明 |
-|---------|---|------|
-| `sub` | String | Subject Identifier - プレイヤーのUUID |
-| `name` | String | プレイヤーの表示名 |
-| `nickname` | String | プレイヤーのニックネーム |
-| `picture` | String | プレイヤーのアバター画像URL（Crafthead API） |
+| Claim | Type | Description |
+|-------|------|-------------|
+| `sub` | String | Subject Identifier - Player UUID |
+| `name` | String | Player display name |
+| `nickname` | String | Player nickname |
+| `picture` | String | Player avatar image URL (Crafthead API) |
 
-## 参考
+## References
 
 - [OpenID Connect Core 1.0 - UserInfo Endpoint](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo)
-- [Crafthead](https://crafthead.net/) - Minecraft アバター画像 API
+- [Crafthead](https://crafthead.net/) - Minecraft avatar image API

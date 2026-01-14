@@ -28,6 +28,7 @@
         "postcss": "^8.5.6",
         "react": "^19.2.3",
         "react-dom": "^19.2.3",
+        "remark-directive": "^4.0.0",
         "tailwind-merge": "^3.4.0",
         "tailwindcss": "^4.1.18",
         "uuid": "^13.0.0"

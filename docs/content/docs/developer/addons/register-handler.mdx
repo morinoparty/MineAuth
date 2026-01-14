@@ -1,17 +1,17 @@
 ---
 title: Register Handler
-description: 外部プラグインがHTTPエンドポイントを登録する方法
+description: How external plugins can register HTTP endpoints
 ---
 
 This document explains how external plugins can register HTTP endpoints using the RegisterHandler API.
 
-## 📝 Overview
+## Overview
 
 MineAuth provides a `RegisterHandler` API that allows external plugins to register their own HTTP endpoints. These endpoints are automatically mounted under `/api/v1/plugins/{plugin-name}/` and support annotation-based routing similar to Spring MVC.
 
-## 🚀 Getting Started
+## Getting Started
 
-### 📦 Obtaining MineAuthAPI
+### Obtaining MineAuthAPI
 
 First, obtain the `MineAuthAPI` instance from the service manager:
 
@@ -29,7 +29,7 @@ class MyPlugin : JavaPlugin() {
 }
 ```
 
-### 🏷️ Creating a Handler Class
+### Creating a Handler Class
 
 Handler classes contain methods annotated with HTTP mapping annotations:
 
@@ -56,13 +56,13 @@ class ShopHandler {
 }
 ```
 
-## 🏗️ Route Generation
+## Route Generation
 
 Routes are automatically generated based on:
 - **Plugin name**: Lowercased plugin name (e.g., `QuickShopHikari` → `quickshophikari`)
 - **Handler annotations**: Paths from `@GetMapping`, `@PostMapping`, etc.
 
-### 📍 Generated Endpoints
+### Generated Endpoints
 
 For a plugin named "MyPlugin" with the handler above:
 
@@ -72,9 +72,9 @@ For a plugin named "MyPlugin" with the handler above:
 | `@GetMapping("/shops/{id}")` | `GET /api/v1/plugins/my-plugin/shops/{id}` |
 | `@PostMapping("/shops")` | `POST /api/v1/plugins/my-plugin/shops` |
 
-## 🔐 Authentication & Authorization
+## Authentication & Authorization
 
-### 🔑 Requiring Authentication
+### Requiring Authentication
 
 Use `@AuthedAccessUser` to require JWT authentication and inject the authenticated player:
 
@@ -85,7 +85,7 @@ suspend fun getMyShops(@AuthedAccessUser player: Player): List<ShopData> {
 }
 ```
 
-### 🛡️ Permission Checking
+### Permission Checking
 
 Use `@Permission` to require specific permissions:
 
@@ -108,9 +108,9 @@ class AdminHandler {
 }
 ```
 
-## 📊 Parameter Handling
+## Parameter Handling
 
-### 🔗 Path Parameters
+### Path Parameters
 
 Use `@Param` or `@PathParams` to extract path parameters:
 
@@ -129,7 +129,7 @@ suspend fun getItem(
 suspend fun getShop(@Param("id") id: String): ShopData?
 ```
 
-### ❓ Query Parameters
+### Query Parameters
 
 Use `@RequestParams` to receive all query parameters:
 
@@ -144,7 +144,7 @@ suspend fun searchShops(
 }
 ```
 
-### 📤 Request Body
+### Request Body
 
 Use `@RequestBody` to receive JSON body:
 
@@ -155,7 +155,7 @@ suspend fun createShop(@RequestBody shop: ShopData): ShopData {
 }
 ```
 
-## 📋 Complete Example
+## Complete Example
 
 ```kotlin
 class ShopHandler : KoinComponent {
@@ -202,7 +202,7 @@ class ShopHandler : KoinComponent {
 }
 ```
 
-## ⚠️ Error Handling
+## Error Handling
 
 Throw `HttpError` to return custom error responses:
 
@@ -221,7 +221,7 @@ suspend fun getShop(@Param("id") id: String): ShopData {
 }
 ```
 
-### 📊 Error Response Format
+### Error Response Format
 
 ```json
 {
@@ -232,7 +232,7 @@ suspend fun getShop(@Param("id") id: String): ShopData {
 }
 ```
 
-## 🔄 Method Chaining
+## Method Chaining
 
 `register()` returns the `RegisterHandler` instance, allowing method chaining:
 

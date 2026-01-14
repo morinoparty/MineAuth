@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: MineAuth APIを使ったアドオン開発の始め方
+description: Getting started with MineAuth API addon development
 ---
 
 This guide will help you get started with developing addons for MineAuth.
 
-## 📦 Adding MineAuth API as a Dependency
+## Adding MineAuth API as a Dependency
 
 ### Gradle (Kotlin DSL)
 
@@ -33,7 +33,7 @@ depend:
   - MineAuth
 ```
 
-## 🔌 Service Registration Pattern
+## Service Registration Pattern
 
 ### Obtaining MineAuthAPI
 
@@ -69,7 +69,7 @@ val mineAuthAPI = server.pluginManager.getPlugin("MineAuth") as? MineAuthAPI
     ?: throw IllegalStateException("MineAuth plugin not found")
 ```
 
-## 📝 Basic Handler Example
+## Basic Handler Example
 
 Create a simple handler class with annotated methods:
 
@@ -105,7 +105,7 @@ For a plugin named "MyPlugin", the endpoints will be:
 | GET | `/api/v1/plugins/myplugin/users/{uuid}` |
 | POST | `/api/v1/plugins/myplugin/items` |
 
-## 🏗️ Project Structure
+## Project Structure
 
 Recommended addon project structure:
 
@@ -126,7 +126,7 @@ my-addon/
     └── plugin.yml
 ```
 
-## 🎯 Next Steps
+## Next Steps
 
 - [HTTP API](/docs/developer/addons/http-api) - Learn about the HTTP API structure
 - [Annotations](/docs/developer/addons/annotations) - Detailed annotation reference
