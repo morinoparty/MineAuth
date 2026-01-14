@@ -12,19 +12,18 @@ version = project.version.toString()
 val addonName = "quickshop-hikari-addon"
 
 dependencies {
-    implementation(project(":api"))
+    compileOnly(project(":api"))
     compileOnly(libs.paper.api)
 
     implementation(libs.bundles.commands)
 
-    implementation(libs.kotlinx.serialization.json)
-
-    implementation(libs.bundles.coroutines)
-
-    implementation(libs.bundles.exposed)
-
     implementation(libs.koin.core)
-    implementation(kotlin("stdlib-jdk8"))
+
+    // Paperのlibraries機能またはMineAuthコアから提供されるライブラリ（compileOnly）
+    compileOnly(libs.kotlinx.serialization.json)
+    compileOnly(libs.bundles.coroutines)
+    compileOnly(libs.bundles.exposed)
+    compileOnly(kotlin("stdlib-jdk8"))
 
     compileOnly(libs.quickshop.api)
 }
@@ -33,9 +32,18 @@ tasks {
     build {
         dependsOn("shadowJar")
     }
-    shadowJar
+    shadowJar {
+        // MineAuthコアがPaperのlibrariesで提供するので除外
+        dependencies {
+            exclude(dependency("org.jetbrains.kotlin:.*:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-.*:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*:.*"))
+            exclude(dependency("org.jetbrains.exposed:.*:.*"))
+            exclude(dependency("io.arrow-kt:.*:.*"))
+        }
+    }
     runServer {
-        minecraftVersion("1.21")
+        minecraftVersion("1.21.8")
         val plugins = runPaper.downloadPluginsSpec {
             //Vault
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")
@@ -60,7 +68,7 @@ sourceSets.main {
             main = "$group.mineauth.addons.quickshop.QuickShopHikariAddon"
             apiVersion = "1.20"
             libraries = libs.bundles.coroutines.asString()
-            softDepend = listOf("Vault", "QuickShop-Hikari", "MineAuth")
+            depend = listOf("MineAuth", "QuickShop-Hikari")
         }
     }
 }

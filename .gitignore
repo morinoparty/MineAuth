@@ -114,7 +114,7 @@ gradle-app.setting
 
 # Cache of project
 .gradletasknamecache
-
+.kotlin/
 **/build/
 
 # Common working directory
