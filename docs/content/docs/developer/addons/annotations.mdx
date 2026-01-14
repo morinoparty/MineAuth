@@ -1,0 +1,238 @@
+---
+title: "🏷️ Annotation Reference"
+description: MineAuth APIで使用可能な全アノテーションのリファレンス
+---
+
+This document provides a comprehensive reference for all annotations available in the MineAuth API.
+
+## 🔄 HTTP Method Annotations
+
+These annotations define the HTTP method and path for your endpoint methods.
+
+### @GetMapping
+
+Defines a GET request endpoint.
+
+```kotlin
+@GetMapping("/users")
+suspend fun listUsers(): List<UserData>
+
+@GetMapping("/users/{id}")
+suspend fun getUser(@Param("id") id: String): UserData?
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | String | The URL path for the endpoint |
+
+### @PostMapping
+
+Defines a POST request endpoint.
+
+```kotlin
+@PostMapping("/users")
+suspend fun createUser(@RequestBody user: CreateUserRequest): UserData
+```
+
+### @PutMapping
+
+Defines a PUT request endpoint.
+
+```kotlin
+@PutMapping("/users/{id}")
+suspend fun updateUser(
+    @Param("id") id: String,
+    @RequestBody user: UpdateUserRequest
+): UserData
+```
+
+### @DeleteMapping
+
+Defines a DELETE request endpoint.
+
+```kotlin
+@DeleteMapping("/users/{id}")
+suspend fun deleteUser(@Param("id") id: String)
+```
+
+---
+
+## 📊 Parameter Annotations
+
+These annotations extract data from the HTTP request.
+
+### @Param
+
+Extracts a single path parameter.
+
+```kotlin
+@GetMapping("/shops/{shopId}")
+suspend fun getShop(@Param("shopId") shopId: String): ShopData?
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | String | The name of the path parameter to extract |
+
+**Supported Types:**
+- `String`
+- `Int`
+- `Long`
+- `Double`
+- `Float`
+- `Boolean`
+- `UUID`
+
+### @PathParams
+
+Extracts multiple path parameters at once as a Map.
+
+```kotlin
+@GetMapping("/shops/{shopId}/items/{itemId}")
+suspend fun getItem(
+    @PathParams(["shopId", "itemId"]) params: Map<String, String>
+): ItemData? {
+    val shopId = params["shopId"]
+    val itemId = params["itemId"]
+    // ...
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | Array&lt;String&gt; | Names of the path parameters to extract |
+
+### @RequestParams
+
+Extracts all query parameters as a Map.
+
+```kotlin
+@GetMapping("/shops")
+suspend fun searchShops(
+    @RequestParams params: Map<String, String>
+): List<ShopData> {
+    val limit = params["limit"]?.toIntOrNull() ?: 10
+    val offset = params["offset"]?.toIntOrNull() ?: 0
+    val search = params["search"]
+    // ...
+}
+```
+
+### @RequestBody
+
+Extracts and deserializes the JSON request body.
+
+```kotlin
+@PostMapping("/shops")
+suspend fun createShop(@RequestBody shop: CreateShopRequest): ShopData
+
+// Data class must be @Serializable
+@Serializable
+data class CreateShopRequest(
+    val name: String,
+    val price: Double,
+    val quantity: Int
+)
+```
+
+---
+
+## 🔐 Authentication Annotations
+
+These annotations handle authentication and authorization.
+
+### @Authenticated
+
+Marks an endpoint as requiring authentication. Injects the authenticated online `Player`.
+
+```kotlin
+@GetMapping("/profile")
+suspend fun getProfile(@Authenticated player: Player): ProfileData {
+    return profileService.getProfile(player.uniqueId)
+}
+```
+
+**Note:** This annotation requires the player to be online on the server.
+
+### @AuthedAccessUser
+
+Requires authentication and injects the authenticated `OfflinePlayer`. This is more flexible than `@Authenticated` as it works even when the player is offline.
+
+```kotlin
+@GetMapping("/my-shops")
+suspend fun getMyShops(@AuthedAccessUser player: OfflinePlayer): List<ShopData> {
+    return shopService.findByOwner(player.uniqueId)
+}
+
+@PostMapping("/shops/{id}/settings")
+suspend fun updateSettings(
+    @AuthedAccessUser player: OfflinePlayer,
+    @Param("id") id: String,
+    @RequestBody settings: ShopSettings
+): ShopData {
+    return shopService.updateSettings(id, player.uniqueId, settings)
+}
+```
+
+### @AccessUser
+
+Optional authentication. Returns `null` if no valid JWT is provided.
+
+```kotlin
+@GetMapping("/items")
+suspend fun listItems(@AccessUser player: OfflinePlayer?): List<ItemData> {
+    return if (player != null) {
+        // Show personalized items
+        itemService.findForUser(player.uniqueId)
+    } else {
+        // Show public items
+        itemService.findPublic()
+    }
+}
+```
+
+### @Permission
+
+Specifies required permissions. Can be applied at class or method level.
+
+```kotlin
+// Class-level: applies to all methods
+@Permission("myshop.admin")
+class AdminHandler {
+
+    @GetMapping("/stats")
+    suspend fun getStats(): StatsData {
+        // Requires "myshop.admin"
+    }
+
+    // Method-level overrides class-level
+    @GetMapping("/public-stats")
+    @Permission("myshop.view")
+    suspend fun getPublicStats(): StatsData {
+        // Only requires "myshop.view"
+    }
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | String | The permission string required |
+
+---
+
+## 📋 Annotation Usage Summary
+
+| Annotation | Target | Description |
+|------------|--------|-------------|
+| `@GetMapping` | Function | Define GET endpoint |
+| `@PostMapping` | Function | Define POST endpoint |
+| `@PutMapping` | Function | Define PUT endpoint |
+| `@DeleteMapping` | Function | Define DELETE endpoint |
+| `@Param` | Parameter | Extract single path parameter |
+| `@PathParams` | Parameter | Extract multiple path parameters |
+| `@RequestParams` | Parameter | Extract query parameters |
+| `@RequestBody` | Parameter | Extract JSON body |
+| `@Authenticated` | Parameter | Require auth, inject online Player |
+| `@AuthedAccessUser` | Parameter | Require auth, inject OfflinePlayer |
+| `@AccessUser` | Parameter | Optional auth, inject nullable OfflinePlayer |
+| `@Permission` | Class/Function | Require permission |

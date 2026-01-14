@@ -1,0 +1,4 @@
+{
+  "title": "Addon Development",
+  "pages": ["index", "getting-started", "annotations", "authentication", "http-api", "register-handler", "examples"]
+}

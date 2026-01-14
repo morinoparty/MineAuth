@@ -1,0 +1,4 @@
+{
+  "title": "OAuth / OIDC",
+  "pages": ["discovery", "userinfo", "error-responses"]
+}

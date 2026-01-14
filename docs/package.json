@@ -1,68 +1,41 @@
 {
-    "name": "website",
-    "version": "0.0.0",
+    "name": "mineauth-docs",
+    "version": "1.0.0",
     "private": true,
+    "description": "MineAuth Documentation",
     "scripts": {
-        "docusaurus": "docusaurus",
-        "start": "docusaurus start",
-        "build": "docusaurus build",
-        "swizzle": "docusaurus swizzle",
-        "deploy": "docusaurus deploy",
-        "clear": "docusaurus clear",
-        "serve": "docusaurus serve",
-        "write-translations": "docusaurus write-translations",
-        "write-heading-ids": "docusaurus write-heading-ids",
-        "typecheck": "tsc",
-        "lint": "biome lint --write .",
-        "format": "biome format --write .",
-        "check": "biome check . --write"
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint"
     },
+    "packageManager": "pnpm@10.23.0",
     "dependencies": {
-        "@docusaurus/core": "3.9.2",
-        "@docusaurus/faster": "^3.9.2",
-        "@docusaurus/preset-classic": "3.9.2",
-        "@docusaurus/theme-mermaid": "^3.9.2",
-        "@easyops-cn/docusaurus-search-local": "^0.52.2",
-        "@mdx-js/react": "^3.1.1",
         "@radix-ui/react-slot": "^1.2.4",
         "@radix-ui/react-toast": "^1.2.15",
         "@tailwindcss/postcss": "^4.1.18",
+        "@types/mdx": "^2.0.13",
+        "autoprefixer": "^10.4.23",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "fumadocs-core": "^16.4.7",
+        "fumadocs-mdx": "^14.2.5",
+        "fumadocs-ui": "^16.4.7",
         "lucide-react": "^0.562.0",
-        "prism-react-renderer": "^2.4.1",
+        "next": "^16.1.1",
+        "next-themes": "^0.4.6",
+        "postcss": "^8.5.6",
         "react": "^19.2.3",
         "react-dom": "^19.2.3",
+        "tailwind-merge": "^3.4.0",
+        "tailwindcss": "^4.1.18",
         "uuid": "^13.0.0"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.3.10",
-        "@docusaurus/module-type-aliases": "3.9.2",
-        "@docusaurus/tsconfig": "3.9.2",
-        "@docusaurus/types": "3.9.2",
-        "@tailwindcss/postcss": "^4.0.9",
-        "@tsconfig/docusaurus": "^2.0.7",
-        "postcss": "^8.5.6",
-        "tailwind-merge": "^3.4.0",
-        "tailwindcss": "^4.1.18",
-        "tailwindcss-animate": "^1.0.7",
-        "typescript": "~5.9.3"
-    },
-    "browserslist": {
-        "production": [
-            ">0.5%",
-            "not dead",
-            "not op_mini all"
-        ],
-        "development": [
-            "last 3 chrome version",
-            "last 3 firefox version",
-            "last 5 safari version"
-        ]
-    },
-    "packageManager": "pnpm@10.15.0",
-    "engines": {
-        "node": ">=18.0"
-    },
-    "license": "CC0-1.0"
+        "@types/node": "^25.0.8",
+        "@types/react": "^19.2.8",
+        "@types/react-dom": "^19.2.3",
+        "@types/uuid": "^11.0.0",
+        "typescript": "^5.9.3"
+    }
 }

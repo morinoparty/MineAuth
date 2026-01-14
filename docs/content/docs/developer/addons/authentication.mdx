@@ -1,0 +1,205 @@
+---
+title: "🔐 Authentication Guide"
+description: MineAuth APIでの認証・認可の実装方法
+---
+
+This guide explains how to implement authentication and authorization in your MineAuth addon.
+
+## 🔑 Authentication Overview
+
+MineAuth uses JWT (JSON Web Tokens) for API authentication. When a client makes a request with a valid access token, MineAuth extracts the user information and makes it available to your handler methods.
+
+## 🛡️ Requiring Authentication
+
+### Basic Authentication
+
+Use `@AuthedAccessUser` to require authentication and access user information:
+
+```kotlin
+@GetMapping("/my-data")
+suspend fun getMyData(@AuthedAccessUser player: OfflinePlayer): MyData {
+    // player.uniqueId contains the authenticated user's UUID
+    return dataService.getByOwner(player.uniqueId)
+}
+```
+
+When no valid token is provided, MineAuth automatically returns a `401 Unauthorized` response.
+
+### Online Player Requirement
+
+Use `@Authenticated` when you need the player to be online:
+
+```kotlin
+@PostMapping("/action")
+suspend fun performAction(@Authenticated player: Player): ActionResult {
+    // player is guaranteed to be online
+    // You can access player.location, player.inventory, etc.
+    return actionService.perform(player)
+}
+```
+
+If the player is not online, returns `403 Forbidden`.
+
+### Optional Authentication
+
+Use `@AccessUser` when authentication is optional:
+
+```kotlin
+@GetMapping("/items")
+suspend fun listItems(@AccessUser player: OfflinePlayer?): List<ItemData> {
+    return if (player != null) {
+        // Authenticated user - show personalized content
+        itemService.findForUser(player.uniqueId)
+    } else {
+        // Anonymous user - show public content
+        itemService.findPublic()
+    }
+}
+```
+
+## 🔒 Permission Checking
+
+### Method-Level Permissions
+
+Apply `@Permission` to individual methods:
+
+```kotlin
+class ShopHandler {
+
+    @GetMapping("/shops")
+    suspend fun listShops(): List<ShopData> {
+        // No permission required - public endpoint
+        return shopService.findAll()
+    }
+
+    @PostMapping("/shops")
+    @Permission("shop.create")
+    suspend fun createShop(
+        @AuthedAccessUser player: OfflinePlayer,
+        @RequestBody shop: CreateShopRequest
+    ): ShopData {
+        // Requires "shop.create" permission
+        return shopService.create(player.uniqueId, shop)
+    }
+
+    @DeleteMapping("/shops/{id}")
+    @Permission("shop.delete")
+    suspend fun deleteShop(
+        @AuthedAccessUser player: OfflinePlayer,
+        @Param("id") id: String
+    ) {
+        // Requires "shop.delete" permission
+        shopService.delete(id, player.uniqueId)
+    }
+}
+```
+
+### Class-Level Permissions
+
+Apply `@Permission` to the entire handler class:
+
+```kotlin
+@Permission("admin.access")
+class AdminHandler {
+
+    @GetMapping("/users")
+    suspend fun listUsers(): List<UserData> {
+        // Requires "admin.access"
+    }
+
+    @GetMapping("/stats")
+    suspend fun getStats(): StatsData {
+        // Requires "admin.access"
+    }
+
+    // Override class-level permission
+    @GetMapping("/public-info")
+    @Permission("user.view")
+    suspend fun getPublicInfo(): PublicInfo {
+        // Only requires "user.view"
+    }
+}
+```
+
+### Permission Denied Response
+
+When permission check fails, MineAuth returns:
+
+```json
+{
+    "error": "Permission denied",
+    "details": {
+        "required": "shop.create"
+    }
+}
+```
+
+## 🔐 JWT Token Structure
+
+MineAuth JWT tokens contain the following claims:
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | Subject - Player UUID |
+| `iss` | Issuer - MineAuth server URL |
+| `aud` | Audience - Client ID |
+| `exp` | Expiration time |
+| `iat` | Issued at time |
+| `scope` | OAuth scopes granted |
+
+## 📋 Authentication Flow
+
+```
+┌─────────────┐                    ┌─────────────┐
+│   Client    │                    │  MineAuth   │
+└──────┬──────┘                    └──────┬──────┘
+       │                                  │
+       │  1. Request with Bearer token    │
+       │ ─────────────────────────────►   │
+       │                                  │
+       │                           2. Validate JWT
+       │                           3. Check permissions
+       │                           4. Execute handler
+       │                                  │
+       │  5. Response                     │
+       │ ◄─────────────────────────────   │
+       │                                  │
+```
+
+## ⚠️ Error Responses
+
+### 401 Unauthorized
+
+No valid token provided:
+
+```json
+{
+    "error": "Authentication required",
+    "error_description": "Valid access token is required"
+}
+```
+
+### 403 Forbidden
+
+Permission denied or player not online:
+
+```json
+{
+    "error": "Permission denied",
+    "details": {
+        "required": "shop.admin"
+    }
+}
+```
+
+## 🎯 Best Practices
+
+1. **Use `@AuthedAccessUser` by default** - It works for both online and offline players
+
+2. **Use `@Authenticated` only when necessary** - When you need access to online player data like location or inventory
+
+3. **Use `@AccessUser` for public endpoints** - When you want to personalize content but still serve anonymous users
+
+4. **Apply class-level permissions for admin handlers** - Reduces boilerplate and ensures consistent security
+
+5. **Be specific with permission strings** - Use hierarchical permissions like `shop.create`, `shop.delete`, `shop.admin`

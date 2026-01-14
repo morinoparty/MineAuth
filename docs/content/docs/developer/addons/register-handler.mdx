@@ -1,0 +1,244 @@
+---
+title: "🔌 Register Handler"
+description: 外部プラグインがHTTPエンドポイントを登録する方法
+---
+
+This document explains how external plugins can register HTTP endpoints using the RegisterHandler API.
+
+## 📝 Overview
+
+MineAuth provides a `RegisterHandler` API that allows external plugins to register their own HTTP endpoints. These endpoints are automatically mounted under `/api/v1/plugins/{plugin-name}/` and support annotation-based routing similar to Spring MVC.
+
+## 🚀 Getting Started
+
+### 📦 Obtaining MineAuthAPI
+
+First, obtain the `MineAuthAPI` instance from the service manager:
+
+```kotlin
+class MyPlugin : JavaPlugin() {
+    override fun onEnable() {
+        val mineAuth = server.servicesManager
+            .getRegistration(MineAuthAPI::class.java)?.provider
+            ?: throw IllegalStateException("MineAuth not found")
+
+        // Create and register handlers
+        mineAuth.createHandler(this)
+            .register(ShopHandler(), UserHandler())
+    }
+}
+```
+
+### 🏷️ Creating a Handler Class
+
+Handler classes contain methods annotated with HTTP mapping annotations:
+
+```kotlin
+class ShopHandler {
+
+    @GetMapping("/shops")
+    suspend fun listShops(): List<ShopData> {
+        // Return list of shops
+        return shopService.findAll()
+    }
+
+    @GetMapping("/shops/{id}")
+    suspend fun getShop(@Param("id") id: String): ShopData? {
+        // Return single shop
+        return shopService.findById(id)
+    }
+
+    @PostMapping("/shops")
+    suspend fun createShop(@RequestBody shop: ShopData): ShopData {
+        // Create new shop
+        return shopService.create(shop)
+    }
+}
+```
+
+## 🏗️ Route Generation
+
+Routes are automatically generated based on:
+- **Plugin name**: Lowercased plugin name (e.g., `QuickShopHikari` → `quickshophikari`)
+- **Handler annotations**: Paths from `@GetMapping`, `@PostMapping`, etc.
+
+### 📍 Generated Endpoints
+
+For a plugin named "MyPlugin" with the handler above:
+
+| Annotation | Generated Route |
+|------------|----------------|
+| `@GetMapping("/shops")` | `GET /api/v1/plugins/my-plugin/shops` |
+| `@GetMapping("/shops/{id}")` | `GET /api/v1/plugins/my-plugin/shops/{id}` |
+| `@PostMapping("/shops")` | `POST /api/v1/plugins/my-plugin/shops` |
+
+## 🔐 Authentication & Authorization
+
+### 🔑 Requiring Authentication
+
+Use `@AuthedAccessUser` to require JWT authentication and inject the authenticated player:
+
+```kotlin
+@GetMapping("/my-shops")
+suspend fun getMyShops(@AuthedAccessUser player: Player): List<ShopData> {
+    return shopService.findByOwner(player.uniqueId)
+}
+```
+
+### 🛡️ Permission Checking
+
+Use `@Permission` to require specific permissions:
+
+```kotlin
+// Class-level permission (applies to all methods)
+@Permission("myshop.admin")
+class AdminHandler {
+
+    @GetMapping("/stats")
+    suspend fun getStats(@AuthedAccessUser player: Player): StatsData {
+        // Player must have "myshop.admin" permission
+    }
+
+    // Method-level permission overrides class-level
+    @GetMapping("/public-stats")
+    @Permission("myshop.view")
+    suspend fun getPublicStats(): StatsData {
+        // Player only needs "myshop.view" permission
+    }
+}
+```
+
+## 📊 Parameter Handling
+
+### 🔗 Path Parameters
+
+Use `@Param` or `@PathParams` to extract path parameters:
+
+```kotlin
+@GetMapping("/shops/{shopId}/items/{itemId}")
+suspend fun getItem(
+    @PathParams(["shopId", "itemId"]) params: Map<String, String>
+): ItemData? {
+    val shopId = params["shopId"]
+    val itemId = params["itemId"]
+    // ...
+}
+
+// Single parameter
+@GetMapping("/shops/{id}")
+suspend fun getShop(@Param("id") id: String): ShopData?
+```
+
+### ❓ Query Parameters
+
+Use `@RequestParams` to receive all query parameters:
+
+```kotlin
+@GetMapping("/shops")
+suspend fun searchShops(
+    @RequestParams params: Map<String, String>
+): List<ShopData> {
+    val limit = params["limit"]?.toIntOrNull() ?: 10
+    val offset = params["offset"]?.toIntOrNull() ?: 0
+    // ...
+}
+```
+
+### 📤 Request Body
+
+Use `@RequestBody` to receive JSON body:
+
+```kotlin
+@PostMapping("/shops")
+suspend fun createShop(@RequestBody shop: ShopData): ShopData {
+    return shopService.create(shop)
+}
+```
+
+## 📋 Complete Example
+
+```kotlin
+class ShopHandler : KoinComponent {
+    private val shopService: ShopService by inject()
+
+    @GetMapping("/shops")
+    suspend fun listShops(@RequestParams params: Map<String, String>): List<ShopData> {
+        val limit = params["limit"]?.toIntOrNull() ?: 20
+        return shopService.findAll(limit)
+    }
+
+    @GetMapping("/shops/{id}")
+    suspend fun getShop(@Param("id") id: String): ShopData? {
+        return shopService.findById(id)
+    }
+
+    @PostMapping("/shops")
+    @Permission("myshop.create")
+    suspend fun createShop(
+        @AuthedAccessUser player: Player,
+        @RequestBody shop: CreateShopRequest
+    ): ShopData {
+        return shopService.create(player.uniqueId, shop)
+    }
+
+    @PutMapping("/shops/{id}")
+    @Permission("myshop.edit")
+    suspend fun updateShop(
+        @AuthedAccessUser player: Player,
+        @Param("id") id: String,
+        @RequestBody shop: UpdateShopRequest
+    ): ShopData {
+        return shopService.update(id, player.uniqueId, shop)
+    }
+
+    @DeleteMapping("/shops/{id}")
+    @Permission("myshop.delete")
+    suspend fun deleteShop(
+        @AuthedAccessUser player: Player,
+        @Param("id") id: String
+    ) {
+        shopService.delete(id, player.uniqueId)
+    }
+}
+```
+
+## ⚠️ Error Handling
+
+Throw `HttpError` to return custom error responses:
+
+```kotlin
+import party.morino.mineauth.api.http.HttpError
+import party.morino.mineauth.api.http.HttpStatus
+
+@GetMapping("/shops/{id}")
+suspend fun getShop(@Param("id") id: String): ShopData {
+    return shopService.findById(id)
+        ?: throw HttpError(
+            status = HttpStatus.NOT_FOUND,
+            message = "Shop not found",
+            details = mapOf("id" to id)
+        )
+}
+```
+
+### 📊 Error Response Format
+
+```json
+{
+    "error": "Shop not found",
+    "details": {
+        "id": "123"
+    }
+}
+```
+
+## 🔄 Method Chaining
+
+`register()` returns the `RegisterHandler` instance, allowing method chaining:
+
+```kotlin
+mineAuth.createHandler(this)
+    .register(ShopHandler())
+    .register(UserHandler())
+    .register(AdminHandler())
+```
