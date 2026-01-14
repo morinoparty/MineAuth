@@ -1,12 +1,12 @@
 {
-    "pages": [
-        "---Introduction---",
-        "index",
-        "---Administrator---",
-        "...administrator",
-        "---Developer---",
-        "...developer",
-        "---Contributer---",
-        "...contributer"
-    ]
+	"pages": [
+		"---Introduction---",
+		"index",
+		"---Administrator---",
+		"...administrator",
+		"---Developer---",
+		"...developer",
+		"---Contributer---",
+		"...contributer"
+	]
 }

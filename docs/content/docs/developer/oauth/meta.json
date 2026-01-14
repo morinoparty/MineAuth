@@ -1,5 +1,5 @@
 {
-  "title": "OAuth / OIDC",
-  "icon": "KeyRound",
-  "pages": ["discovery", "userinfo", "error-responses"]
+	"title": "OAuth / OIDC",
+	"icon": "KeyRound",
+	"pages": ["discovery", "userinfo", "error-responses"]
 }

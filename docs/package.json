@@ -1,43 +1,45 @@
 {
-    "name": "mineauth-docs",
-    "version": "1.0.0",
-    "private": true,
-    "description": "MineAuth Documentation",
-    "scripts": {
-        "dev": "next dev",
-        "build": "next build",
-        "start": "next start",
-        "lint": "next lint"
-    },
-    "packageManager": "pnpm@10.23.0",
-    "dependencies": {
-        "@radix-ui/react-slot": "^1.2.4",
-        "@radix-ui/react-toast": "^1.2.15",
-        "@tailwindcss/postcss": "^4.1.18",
-        "@types/mdx": "^2.0.13",
-        "autoprefixer": "^10.4.23",
-        "class-variance-authority": "^0.7.1",
-        "clsx": "^2.1.1",
-        "fumadocs-core": "^16.4.7",
-        "fumadocs-mdx": "^14.2.5",
-        "fumadocs-ui": "^16.4.7",
-        "lucide-react": "^0.562.0",
-        "mermaid": "^11.12.2",
-        "next": "^16.1.1",
-        "next-themes": "^0.4.6",
-        "postcss": "^8.5.6",
-        "react": "^19.2.3",
-        "react-dom": "^19.2.3",
-        "remark-directive": "^4.0.0",
-        "tailwind-merge": "^3.4.0",
-        "tailwindcss": "^4.1.18",
-        "uuid": "^13.0.0"
-    },
-    "devDependencies": {
-        "@types/node": "^25.0.8",
-        "@types/react": "^19.2.8",
-        "@types/react-dom": "^19.2.3",
-        "@types/uuid": "^11.0.0",
-        "typescript": "^5.9.3"
-    }
+	"name": "mineauth-docs",
+	"version": "1.0.0",
+	"private": true,
+	"description": "MineAuth Documentation",
+	"scripts": {
+		"dev": "next dev",
+		"build": "next build",
+		"start": "next start",
+		"check": "biome check ./ --write"
+	},
+	"packageManager": "pnpm@10.23.0",
+	"dependencies": {
+		"@orama/orama": "^3.1.18",
+		"@radix-ui/react-slot": "^1.2.4",
+		"@radix-ui/react-toast": "^1.2.15",
+		"@tailwindcss/postcss": "^4.1.18",
+		"@types/mdx": "^2.0.13",
+		"autoprefixer": "^10.4.23",
+		"class-variance-authority": "^0.7.1",
+		"clsx": "^2.1.1",
+		"fumadocs-core": "^16.4.7",
+		"fumadocs-mdx": "^14.2.5",
+		"fumadocs-ui": "^16.4.7",
+		"lucide-react": "^0.562.0",
+		"mermaid": "^11.12.2",
+		"next": "^16.1.1",
+		"next-themes": "^0.4.6",
+		"postcss": "^8.5.6",
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3",
+		"remark-directive": "^4.0.0",
+		"tailwind-merge": "^3.4.0",
+		"tailwindcss": "^4.1.18",
+		"uuid": "^13.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.11",
+		"@types/node": "^25.0.8",
+		"@types/react": "^19.2.8",
+		"@types/react-dom": "^19.2.3",
+		"@types/uuid": "^11.0.0",
+		"typescript": "^5.9.3"
+	}
 }

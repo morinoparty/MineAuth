@@ -1,6 +1,6 @@
 {
-  "title": "Developer",
-  "icon": "Code",
-  "root": true,
-  "pages": ["addons", "oauth"]
+	"title": "Developer",
+	"icon": "Code",
+	"root": true,
+	"pages": ["addons", "oauth"]
 }
