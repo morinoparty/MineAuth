@@ -36,7 +36,7 @@ class ShopHandler : KoinComponent {
      * GET /shops/{shopId}
      */
     @GetMapping("/shops/{shopId}")
-    suspend fun getShop(@Param("shopId") shopId: String): ShopData {
+    suspend fun getShop(@PathParam("shopId") shopId: String): ShopData {
         val shop = findShopOrThrow(parseShopId(shopId))
         return shop.toShopData()
     }
@@ -46,7 +46,7 @@ class ShopHandler : KoinComponent {
      * GET /users/{uuid}/shops
      */
     @GetMapping("/users/{uuid}/shops")
-    suspend fun getUserShops(@Param("uuid") uuid: String): List<Long> {
+    suspend fun getUserShops(@PathParam("uuid") uuid: String): List<Long> {
         val playerUuid = try {
             UUID.fromString(uuid)
         } catch (e: IllegalArgumentException) {
@@ -82,7 +82,7 @@ class ShopHandler : KoinComponent {
     @GetMapping("/shops/{shopId}/setting")
     suspend fun getShopSetting(
         @AuthedAccessUser player: OfflinePlayer,
-        @Param("shopId") shopId: String
+        @PathParam("shopId") shopId: String
     ): ShopSetting {
         val shop = findShopOrThrow(parseShopId(shopId))
         ensureOwner(player, shop)
@@ -96,7 +96,7 @@ class ShopHandler : KoinComponent {
     @PostMapping("/shops/{shopId}/setting")
     suspend fun updateShopSetting(
         @AuthedAccessUser player: OfflinePlayer,
-        @Param("shopId") shopId: String,
+        @PathParam("shopId") shopId: String,
         @RequestBody setting: ShopSetting
     ) {
         val shop = findShopOrThrow(parseShopId(shopId))

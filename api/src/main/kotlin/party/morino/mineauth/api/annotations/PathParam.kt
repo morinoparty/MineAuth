@@ -8,6 +8,6 @@ package party.morino.mineauth.api.annotations
  */
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Param(
+annotation class PathParam(
     val value: String
 )

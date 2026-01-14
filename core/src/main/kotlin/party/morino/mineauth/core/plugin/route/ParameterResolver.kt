@@ -54,31 +54,16 @@ class ParameterResolver(
         call: ApplicationCall,
         paramInfo: ParameterInfo.PathParam
     ): Either<ResolveError, Any?> = either {
-        val names = paramInfo.names
+        val name = paramInfo.name
         val targetType = paramInfo.type.jvmErasure
 
-        if (names.size == 1) {
-            // 単一パラメータの場合
-            val name = names.first()
-            val value = call.parameters[name]
-            ensure(value != null) {
-                ResolveError.MissingPathParameter(name)
-            }
-
-            // 型に応じて変換
-            convertToType(value, name, targetType).bind()
-        } else {
-            // 複数パラメータの場合はMapで返す
-            val result = mutableMapOf<String, String>()
-            for (name in names) {
-                val value = call.parameters[name]
-                ensure(value != null) {
-                    ResolveError.MissingPathParameter(name)
-                }
-                result[name] = value
-            }
-            result
+        val value = call.parameters[name]
+        ensure(value != null) {
+            ResolveError.MissingPathParameter(name)
         }
+
+        // 型に応じて変換
+        convertToType(value, name, targetType).bind()
     }
 
     /**

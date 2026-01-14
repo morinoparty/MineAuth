@@ -43,7 +43,7 @@ class ShopHandler {
     }
 
     @GetMapping("/shops/{id}")
-    suspend fun getShop(@Param("id") id: String): ShopData? {
+    suspend fun getShop(@PathParam("id") id: String): ShopData? {
         // Return single shop
         return shopService.findById(id)
     }
@@ -112,31 +112,21 @@ class AdminHandler {
 
 ### Path Parameters
 
-Use `@Param` or `@PathParams` to extract path parameters:
+Use `@PathParam` to extract path parameters:
 
 ```kotlin
-@GetMapping("/shops/{shopId}/items/{itemId}")
-suspend fun getItem(
-    @PathParams(["shopId", "itemId"]) params: Map<String, String>
-): ItemData? {
-    val shopId = params["shopId"]
-    val itemId = params["itemId"]
-    // ...
-}
-
-// Single parameter
 @GetMapping("/shops/{id}")
-suspend fun getShop(@Param("id") id: String): ShopData?
+suspend fun getShop(@PathParam("id") id: String): ShopData?
 ```
 
 ### Query Parameters
 
-Use `@RequestParams` to receive all query parameters:
+Use `@QueryParams` to receive all query parameters:
 
 ```kotlin
 @GetMapping("/shops")
 suspend fun searchShops(
-    @RequestParams params: Map<String, String>
+    @QueryParams params: Map<String, String>
 ): List<ShopData> {
     val limit = params["limit"]?.toIntOrNull() ?: 10
     val offset = params["offset"]?.toIntOrNull() ?: 0
@@ -162,13 +152,13 @@ class ShopHandler : KoinComponent {
     private val shopService: ShopService by inject()
 
     @GetMapping("/shops")
-    suspend fun listShops(@RequestParams params: Map<String, String>): List<ShopData> {
+    suspend fun listShops(@QueryParams params: Map<String, String>): List<ShopData> {
         val limit = params["limit"]?.toIntOrNull() ?: 20
         return shopService.findAll(limit)
     }
 
     @GetMapping("/shops/{id}")
-    suspend fun getShop(@Param("id") id: String): ShopData? {
+    suspend fun getShop(@PathParam("id") id: String): ShopData? {
         return shopService.findById(id)
     }
 
@@ -185,7 +175,7 @@ class ShopHandler : KoinComponent {
     @Permission("myshop.edit")
     suspend fun updateShop(
         @AuthedAccessUser player: Player,
-        @Param("id") id: String,
+        @PathParam("id") id: String,
         @RequestBody shop: UpdateShopRequest
     ): ShopData {
         return shopService.update(id, player.uniqueId, shop)
@@ -195,7 +185,7 @@ class ShopHandler : KoinComponent {
     @Permission("myshop.delete")
     suspend fun deleteShop(
         @AuthedAccessUser player: Player,
-        @Param("id") id: String
+        @PathParam("id") id: String
     ) {
         shopService.delete(id, player.uniqueId)
     }
@@ -211,7 +201,7 @@ import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 
 @GetMapping("/shops/{id}")
-suspend fun getShop(@Param("id") id: String): ShopData {
+suspend fun getShop(@PathParam("id") id: String): ShopData {
     return shopService.findById(id)
         ?: throw HttpError(
             status = HttpStatus.NOT_FOUND,

@@ -1,20 +1,133 @@
 ---
-title: Addon Overview
-description: Overview of addon development with MineAuth API
+title: Addon Development
+description: Getting started with MineAuth API addon development
 ---
 
 MineAuth provides a powerful API for external plugins to register custom HTTP endpoints. This guide will help you get started with addon development.
 
-## Getting Started
+## Adding MineAuth API as a Dependency
 
-To develop an addon for MineAuth, you need to:
+### Gradle (Kotlin DSL)
 
-1. Add MineAuth API as a dependency
-2. Obtain the `MineAuthAPI` instance
-3. Create handler classes with annotations
-4. Register your handlers
+Add the MineAuth API to your `build.gradle.kts`:
 
-Check out the following guides:
+```kotlin
+repositories {
+    maven("https://repo.morinoparty.net/releases")
+}
 
-- [HTTP API](/docs/developer/addons/http-api) - HTTP API structure and annotations
-- [Register Handler](/docs/developer/addons/register-handler) - How to register custom endpoints
+dependencies {
+    compileOnly("party.morino.mineauth:api:1.0.0")
+}
+```
+
+### plugin.yml Configuration
+
+Add MineAuth as a dependency in your `plugin.yml`:
+
+```yaml
+name: MyPlugin
+version: 1.0.0
+main: com.example.myplugin.MyPlugin
+depend:
+  - MineAuth
+```
+
+## Service Registration Pattern
+
+### Obtaining MineAuthAPI
+
+Get the `MineAuthAPI` instance from the Bukkit services manager:
+
+```kotlin
+class MyPlugin : JavaPlugin() {
+    private lateinit var mineAuthAPI: MineAuthAPI
+
+    override fun onEnable() {
+        // Get MineAuth API from services
+        mineAuthAPI = server.servicesManager
+            .getRegistration(MineAuthAPI::class.java)?.provider
+            ?: throw IllegalStateException("MineAuth plugin not found")
+
+        // Register your handlers
+        registerHandlers()
+    }
+
+    private fun registerHandlers() {
+        mineAuthAPI.createHandler(this)
+            .register(MyHandler())
+    }
+}
+```
+
+### Alternative: Direct Plugin Cast
+
+You can also get the API by casting the plugin directly:
+
+```kotlin
+val mineAuthAPI = server.pluginManager.getPlugin("MineAuth") as? MineAuthAPI
+    ?: throw IllegalStateException("MineAuth plugin not found")
+```
+
+## Basic Handler Example
+
+Create a simple handler class with annotated methods:
+
+```kotlin
+class MyHandler {
+
+    @GetMapping("/hello")
+    suspend fun hello(): Map<String, String> {
+        return mapOf("message" to "Hello, World!")
+    }
+
+    @GetMapping("/users/{uuid}")
+    suspend fun getUser(@PathParam("uuid") uuid: String): UserData? {
+        // Return user data by UUID
+        return userService.findByUuid(uuid)
+    }
+
+    @PostMapping("/items")
+    suspend fun createItem(@RequestBody item: ItemData): ItemData {
+        // Create and return item
+        return itemService.create(item)
+    }
+}
+```
+
+### Generated Endpoints
+
+For a plugin named "MyPlugin", the endpoints will be:
+
+| Method | Path |
+|--------|------|
+| GET | `/api/v1/plugins/myplugin/hello` |
+| GET | `/api/v1/plugins/myplugin/users/{uuid}` |
+| POST | `/api/v1/plugins/myplugin/items` |
+
+## Project Structure
+
+Recommended addon project structure:
+
+```
+my-addon/
+├── src/main/kotlin/com/example/myaddon/
+│   ├── MyAddon.kt           # Main plugin class
+│   ├── handlers/
+│   │   ├── ItemHandler.kt   # HTTP handlers
+│   │   └── UserHandler.kt
+│   ├── data/
+│   │   ├── ItemData.kt      # Data classes
+│   │   └── UserData.kt
+│   └── services/
+│       └── ItemService.kt   # Business logic
+├── build.gradle.kts
+└── src/main/resources/
+    └── plugin.yml
+```
+
+## Next Steps
+
+- [Register Handler](/docs/developer/addons/register-handler) - Learn how to register custom endpoints
+- [Annotations](/docs/developer/addons/annotations) - Detailed annotation reference
+- [Authentication](/docs/developer/addons/authentication) - Secure your endpoints

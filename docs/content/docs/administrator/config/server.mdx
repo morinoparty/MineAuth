@@ -1,0 +1,66 @@
+---
+title: Server Settings
+description: HTTP server, SSL, JWT, and OAuth configuration
+---
+
+## config.json Example
+
+```json5
+{
+  "server": {
+    "baseUrl": "https://api.example.com",
+    "port": 8080,
+    "ssl": {
+      "sslPort": 8443,
+      "keyStore": "keystore.jks",
+      "keyAlias": "MineAuth",
+      "keyStorePassword": "password",
+      "privateKeyPassword": "password"
+    }
+  },
+  "jwt": {
+    "issuer": "https://api.example.com/",
+    "realm": "example.com",
+    "privateKeyFile": "privateKey.pem",
+    "keyId": "a22c063a-a708-c801-6f92-49f6d53b89b2"
+  },
+  "oauth": {
+    "applicationName": "MineAuth",
+    "logoUrl": "/assets/lock.svg"
+  }
+}
+```
+
+## Server Configuration
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `baseUrl` | string | Yes | Base URL for endpoints published in OIDC Discovery. Set to proxy URL if using a reverse proxy |
+| `port` | number | Yes | HTTP server port number |
+| `ssl` | object | No | SSL configuration (optional) |
+
+### SSL Configuration
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `sslPort` | number | Yes | HTTPS server port number |
+| `keyStore` | string | Yes | Path to keystore file |
+| `keyAlias` | string | Yes | Key alias in keystore |
+| `keyStorePassword` | string | Yes | Keystore password |
+| `privateKeyPassword` | string | Yes | Private key password |
+
+## JWT Configuration
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `issuer` | string | Yes | JWT token issuer identifier |
+| `realm` | string | Yes | JWT authentication realm name |
+| `privateKeyFile` | string | Yes | Private key file path (relative to generated/) |
+| `keyId` | string | Yes | JWK key ID (UUID format) |
+
+## OAuth Configuration
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `applicationName` | string | Yes | Application name displayed on OAuth authorization screen |
+| `logoUrl` | string | Yes | Logo URL displayed on OAuth authorization screen |

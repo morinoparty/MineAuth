@@ -1,0 +1,75 @@
+---
+title: Database Settings
+description: SQLite and MySQL database configuration
+---
+
+MineAuth supports both SQLite and MySQL databases.
+
+## Database Type Selection
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `type` | string | Yes | Database type: `sqlite` or `mysql` |
+
+## SQLite Configuration
+
+SQLite is the default database. No additional setup required.
+
+```json
+{
+  "database": {
+    "type": "sqlite",
+    "filename": "MineAuth.db"
+  }
+}
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `filename` | string | `MineAuth.db` | SQLite database file name (relative to plugin directory) |
+
+## MySQL Configuration
+
+For production environments with multiple servers, MySQL is recommended.
+
+```json
+{
+  "database": {
+    "type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "database": "mineauth",
+    "username": "mineauth_user",
+    "password": "secure_password",
+    "properties": {
+      "useSSL": "false",
+      "autoReconnect": "true"
+    }
+  }
+}
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `host` | string | `localhost` | MySQL server hostname |
+| `port` | number | `3306` | MySQL server port |
+| `database` | string | `mineauth` | Database name |
+| `username` | string | `root` | MySQL username |
+| `password` | string | - | MySQL password |
+| `properties` | object | See below | JDBC connection properties |
+
+### Default MySQL Properties
+
+```json
+{
+  "useSSL": "false",
+  "autoReconnect": "true"
+}
+```
+
+### Properties Reference
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `useSSL` | `false` | Enable SSL connection |
+| `autoReconnect` | `true` | Automatically reconnect on connection loss |
