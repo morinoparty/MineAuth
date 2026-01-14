@@ -1,4 +1,5 @@
 {
   "title": "Contributer",
+  "root": true,
   "pages": ["endpoint", "reference", "record"]
 }

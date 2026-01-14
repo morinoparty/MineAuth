@@ -2,9 +2,7 @@
     "pages": [
         "index",
         "(administrator)",
-        "---Developer---",
-        "developer",
-        "---Contributer---",
-        "contributer"
+        "(developer)",
+        "(contributer)"
     ]
 }
