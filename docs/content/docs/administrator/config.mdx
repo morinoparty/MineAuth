@@ -44,6 +44,10 @@ plugins/MineAuth/
   "oauth": {
     "applicationName": "MineAuth",  // Application name displayed on authorization screen
     "logoUrl": "/assets/lock.svg"   // Logo URL displayed on authorization screen
+  },
+  "database": {
+    "type": "sqlite",  // Database type: "sqlite" or "mysql"
+    "filename": "MineAuth.db"  // SQLite database file name
   }
 }
 ```
@@ -73,6 +77,59 @@ plugins/MineAuth/
 |-----|------|----------|-------------|
 | `applicationName` | string | Yes | Application name displayed on OAuth authorization screen |
 | `logoUrl` | string | Yes | Logo URL displayed on OAuth authorization screen |
+
+#### database
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `type` | string | Yes | Database type: `sqlite` or `mysql` |
+
+##### SQLite Configuration (type: "sqlite")
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `filename` | string | `MineAuth.db` | SQLite database file name (relative to plugin directory) |
+
+##### MySQL Configuration (type: "mysql")
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `host` | string | `localhost` | MySQL server hostname |
+| `port` | number | `3306` | MySQL server port |
+| `database` | string | `mineauth` | Database name |
+| `username` | string | `root` | MySQL username |
+| `password` | string | - | MySQL password |
+| `properties` | object | See below | JDBC connection properties |
+
+###### Default MySQL Properties
+
+```json
+{
+  "useSSL": "false",
+  "characterEncoding": "utf8mb4",
+  "serverTimezone": "UTC"
+}
+```
+
+##### MySQL Configuration Example
+
+```json
+{
+  "database": {
+    "type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "database": "mineauth",
+    "username": "mineauth_user",
+    "password": "secure_password",
+    "properties": {
+      "useSSL": "true",
+      "characterEncoding": "utf8mb4",
+      "serverTimezone": "Asia/Tokyo"
+    }
+  }
+}
+```
 
 ## Auto-generated Files
 

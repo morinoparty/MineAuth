@@ -20,6 +20,7 @@ import party.morino.mineauth.api.RegisterHandler
 import party.morino.mineauth.core.plugin.PluginContext
 import party.morino.mineauth.core.plugin.pluginModule
 import party.morino.mineauth.core.plugin.RegisterHandlerImpl
+import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.commands.OAuthClientCommand
 import party.morino.mineauth.core.commands.RegisterCommand
 import party.morino.mineauth.core.commands.ReloadCommand
@@ -55,6 +56,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
         val appModule = module {
             single<MineAuth> { this@MineAuth }
             single<PluginDirectory> { PluginDirectoryImpl() }
+            single { DatabaseConnector() }
         }
 
         getOrNull() ?: GlobalContext.startKoin {
@@ -64,6 +66,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
 
     override suspend fun onDisableAsync() {
         WebServer.stopServer()
+        FileUtils.closeDatabase()
     }
 
     private fun setCommand() {

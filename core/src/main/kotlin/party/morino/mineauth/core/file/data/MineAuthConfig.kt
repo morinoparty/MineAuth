@@ -19,7 +19,10 @@ data class MineAuthConfig(
     val jwt: JwtConfig = JwtConfig(),
 
     // OAuth設定
-    val oauth: OAuthConfig = OAuthConfig()
+    val oauth: OAuthConfig = OAuthConfig(),
+
+    // データベース設定
+    val database: DatabaseConfig = DatabaseConfig.SQLite()
 )
 
 /**

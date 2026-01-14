@@ -25,6 +25,7 @@ dependencies {
     compileOnly(libs.nimbus.jose.jwt)
     compileOnly(libs.bcpkix.jdk18on)
     compileOnly(libs.java.uuid.generator)
+    compileOnly(libs.hikari)
     compileOnly(kotlin("stdlib-jdk8"))
 
     // JARにバンドル（Paperのlibrariesでは動かない）
@@ -53,6 +54,7 @@ dependencies {
     testImplementation(libs.nimbus.jose.jwt)
     testImplementation(libs.bcpkix.jdk18on)
     testImplementation(libs.java.uuid.generator)
+    testImplementation(libs.hikari)
     testImplementation(kotlin("stdlib-jdk8"))
 }
 
@@ -133,6 +135,8 @@ sourceSets.main {
                 add(libs.arrow.core.asString())
                 add(libs.kotlinx.serialization.json.asString())
                 add(libs.java.uuid.generator.asString())
+                add(libs.hikari.asString())
+                add(libs.mysql.connector.asString())
             }
             softDepend = listOf("Vault", "QuickShop-Hikari")
         }
