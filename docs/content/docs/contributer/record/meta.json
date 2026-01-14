@@ -1,0 +1,5 @@
+{
+	"title": "Record Data",
+	"icon": "Database",
+	"pages": ["db", "file"]
+}

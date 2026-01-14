@@ -1,0 +1,31 @@
+---
+title: API Endpoints
+description: OAuth2.0 and OpenID Connect endpoint list
+---
+
+This is an endpoint list for OAuth2.0 and OpenID Connect (OIDC) for Moripa API.
+
+## Endpoints
+
+### OAuth2.0
+
+| Implemented | Endpoint | Path | Specification |
+|-------------|----------|------|---------------|
+| Yes | Authorization | `/oauth2/authorize` | [RFC 6749 4.1.1](https://datatracker.ietf.org/doc/html/rfc6749.html#section-4.1.1) |
+| Yes | Token | `/oauth2/token` | [RFC 6749 4.1.3](https://datatracker.ietf.org/doc/html/rfc6749.html#section-4.1.3) |
+| No | Introspection | `/oauth2/introspect` | [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662.html#section-2.1) |
+| No | Revocation | `/oauth2/revoke` | [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009.html#section-2.1) |
+
+### OpenID Connect (OIDC)
+
+| Implemented | Endpoint | Path | Specification |
+|-------------|----------|------|---------------|
+| Yes | Discovery | `/.well-known/openid-configuration` | [OIDC Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) |
+| Yes | JWKs | `/.well-known/jwks.json` | - |
+| Yes | UserInfo | `/oauth2/userinfo` | [OIDC Core 5.3](https://openid-foundation-japan.github.io/openid-connect-core-1_0.ja.html#UserInfo) |
+
+### Plugin
+
+| Endpoint | Path |
+|----------|------|
+| Plugin | `/api/v1/plugin/<pluginName>/*` |

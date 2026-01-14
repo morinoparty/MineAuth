@@ -55,13 +55,11 @@ jobs:
         run: |
           sed -i "s/VersionPlaceholder/${{ env.COMMIT_SHORT_SHA }}/" ./gradle.properties
 
-      - name: Configure Docusaurus for preview
+      - name: Configure Fumadocs for preview
         run: |
           cd docs
-          # baseUrlを一時的に変更
-          sed -i 's#baseUrl: "/"#baseUrl: "/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs/"#g' docusaurus.config.ts
-          # urlを一時的に変更
-          sed -i 's#url: "https://mineauth.plugin.morino.party"#url: "https://moripa-ci.nikomaru.dev"#g' docusaurus.config.ts
+          # Update basePath for preview deployment
+          sed -i "s#basePath: ''#basePath: '/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs'#g" next.config.mjs
 
       - name: Install docs dependencies
         working-directory: docs
@@ -76,7 +74,7 @@ jobs:
           pnpm install
           pnpm compile
 
-      - name: Build Docusaurus
+      - name: Build Fumadocs
         working-directory: docs
         run: pnpm run build
 
@@ -96,7 +94,7 @@ jobs:
           mkdir -p ./upload/detekt
           cp -r ./build/reports/detekt/* ./upload/detekt/
           mkdir -p ./upload/docs
-          cp -r ./docs/build/* ./upload/docs/
+          cp -r ./docs/out/* ./upload/docs/
           aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
 
       - name: Publish test results

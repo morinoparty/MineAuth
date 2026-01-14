@@ -1,0 +1,13 @@
+{
+	"title": "Addon Development",
+	"icon": "Puzzle",
+	"pages": [
+		"index",
+		"getting-started",
+		"annotations",
+		"authentication",
+		"http-api",
+		"register-handler",
+		"examples"
+	]
+}

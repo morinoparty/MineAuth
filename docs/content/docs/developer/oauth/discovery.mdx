@@ -1,0 +1,83 @@
+---
+title: OIDC Discovery
+description: MineAuth OIDC Discovery endpoint
+---
+
+MineAuth provides a Discovery endpoint compliant with [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html).
+
+## Endpoint
+
+```
+GET /.well-known/openid-configuration
+```
+
+## Response Example
+
+```json
+{
+  "issuer": "https://api.example.com",
+  "authorization_endpoint": "https://api.example.com/oauth2/authorize",
+  "token_endpoint": "https://api.example.com/oauth2/token",
+  "userinfo_endpoint": "https://api.example.com/oauth2/userinfo",
+  "jwks_uri": "https://api.example.com/.well-known/jwks.json",
+  "response_types_supported": ["code"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "scopes_supported": ["openid", "profile"],
+  "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+  "claims_supported": [
+    "sub",
+    "name",
+    "nickname",
+    "picture",
+    "iss",
+    "aud",
+    "exp",
+    "iat",
+    "auth_time",
+    "nonce",
+    "at_hash"
+  ],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"]
+}
+```
+
+## Metadata Description
+
+| Field | Description |
+|-------|-------------|
+| `issuer` | Token issuer identifier |
+| `authorization_endpoint` | Authorization endpoint URL |
+| `token_endpoint` | Token endpoint URL |
+| `userinfo_endpoint` | UserInfo endpoint URL |
+| `jwks_uri` | JWK Set URL (public key location) |
+| `response_types_supported` | Supported response types |
+| `subject_types_supported` | Supported subject types |
+| `id_token_signing_alg_values_supported` | ID token signing algorithm |
+| `scopes_supported` | Supported scopes |
+| `token_endpoint_auth_methods_supported` | Token endpoint authentication methods |
+| `claims_supported` | Supported claims |
+| `grant_types_supported` | Supported grant types |
+| `code_challenge_methods_supported` | PKCE code challenge methods |
+
+## Configuration
+
+URLs published in Discovery are generated from `server.baseUrl` in `config.json`.
+
+```json
+{
+  "server": {
+    "baseUrl": "https://api.example.com"
+  }
+}
+```
+
+If using a reverse proxy, set the proxy URL here.
+
+## Related Endpoints
+
+- **JWKs**: `/.well-known/jwks.json` - Public key retrieval
+- **Authorization**: `/oauth2/authorize` - Authorization request
+- **Token**: `/oauth2/token` - Token issuance
+- **UserInfo**: `/oauth2/userinfo` - User information retrieval

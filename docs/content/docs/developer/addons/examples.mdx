@@ -1,0 +1,300 @@
+---
+title: Complete Examples
+description: Complete addon implementation examples using MineAuth API
+---
+
+This document provides complete, working examples of MineAuth addons.
+
+## Shop Addon Example
+
+A complete example based on the QuickShop-Hikari integration.
+
+### Main Plugin Class
+
+```kotlin
+package com.example.shopaddon
+
+import org.bukkit.plugin.java.JavaPlugin
+import party.morino.mineauth.api.MineAuthAPI
+
+class ShopAddon : JavaPlugin() {
+    private lateinit var mineAuthAPI: MineAuthAPI
+
+    override fun onEnable() {
+        // Get MineAuth API
+        mineAuthAPI = server.servicesManager
+            .getRegistration(MineAuthAPI::class.java)?.provider
+            ?: throw IllegalStateException("MineAuth not found")
+
+        // Register handlers
+        mineAuthAPI.createHandler(this)
+            .register(ShopHandler())
+
+        logger.info("ShopAddon enabled!")
+    }
+}
+```
+
+### Data Classes
+
+```kotlin
+package com.example.shopaddon.data
+
+import kotlinx.serialization.Serializable
+import java.util.UUID
+
+@Serializable
+data class ShopData(
+    val id: Long,
+    val owner: @Serializable(with = UUIDSerializer::class) UUID?,
+    val itemName: String,
+    val price: Double,
+    val stock: Int,
+    val mode: ShopMode
+)
+
+@Serializable
+enum class ShopMode {
+    BUY, SELL
+}
+
+@Serializable
+data class CreateShopRequest(
+    val itemName: String,
+    val price: Double,
+    val mode: ShopMode
+)
+
+@Serializable
+data class UpdateShopRequest(
+    val price: Double? = null,
+    val mode: ShopMode? = null
+)
+```
+
+### Handler Class
+
+```kotlin
+package com.example.shopaddon.handlers
+
+import org.bukkit.OfflinePlayer
+import party.morino.mineauth.api.annotations.*
+import party.morino.mineauth.api.http.HttpError
+import party.morino.mineauth.api.http.HttpStatus
+
+class ShopHandler {
+    private val shopService = ShopService()
+
+    // Public endpoint - no auth required
+    @GetMapping("/shops")
+    suspend fun listShops(
+        @RequestParams params: Map<String, String>
+    ): List<ShopData> {
+        val limit = params["limit"]?.toIntOrNull() ?: 20
+        val offset = params["offset"]?.toIntOrNull() ?: 0
+        return shopService.findAll(limit, offset)
+    }
+
+    // Public endpoint - get single shop
+    @GetMapping("/shops/{id}")
+    suspend fun getShop(@Param("id") id: Long): ShopData {
+        return shopService.findById(id)
+            ?: throw HttpError(
+                status = HttpStatus.NOT_FOUND,
+                message = "Shop not found",
+                details = mapOf("id" to id)
+            )
+    }
+
+    // Authenticated endpoint - get my shops
+    @GetMapping("/users/me/shops")
+    suspend fun getMyShops(
+        @AuthedAccessUser player: OfflinePlayer
+    ): List<ShopData> {
+        return shopService.findByOwner(player.uniqueId)
+    }
+
+    // Authenticated endpoint - create shop
+    @PostMapping("/shops")
+    @Permission("shop.create")
+    suspend fun createShop(
+        @AuthedAccessUser player: OfflinePlayer,
+        @RequestBody request: CreateShopRequest
+    ): ShopData {
+        return shopService.create(player.uniqueId, request)
+    }
+
+    // Authenticated endpoint - update shop
+    @PutMapping("/shops/{id}")
+    @Permission("shop.edit")
+    suspend fun updateShop(
+        @AuthedAccessUser player: OfflinePlayer,
+        @Param("id") id: Long,
+        @RequestBody request: UpdateShopRequest
+    ): ShopData {
+        val shop = shopService.findById(id)
+            ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
+
+        // Check ownership
+        if (shop.owner != player.uniqueId) {
+            throw HttpError(HttpStatus.FORBIDDEN, "Not your shop")
+        }
+
+        return shopService.update(id, request)
+    }
+
+    // Authenticated endpoint - delete shop
+    @DeleteMapping("/shops/{id}")
+    @Permission("shop.delete")
+    suspend fun deleteShop(
+        @AuthedAccessUser player: OfflinePlayer,
+        @Param("id") id: Long
+    ) {
+        val shop = shopService.findById(id)
+            ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
+
+        if (shop.owner != player.uniqueId) {
+            throw HttpError(HttpStatus.FORBIDDEN, "Not your shop")
+        }
+
+        shopService.delete(id)
+    }
+}
+```
+
+### build.gradle.kts
+
+```kotlin
+plugins {
+    kotlin("jvm") version "2.0.0"
+    kotlin("plugin.serialization") version "2.0.0"
+    id("com.gradleup.shadow") version "9.0.0-beta10"
+}
+
+repositories {
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.morinoparty.net/releases")
+}
+
+dependencies {
+    // MineAuth API
+    compileOnly("party.morino.mineauth:api:1.0.0")
+
+    // Paper API
+    compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
+
+    // Kotlin
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+}
+
+tasks {
+    shadowJar {
+        archiveClassifier.set("")
+
+        // Exclude libraries provided by MineAuth
+        dependencies {
+            exclude(dependency("org.jetbrains.kotlin:.*:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*:.*"))
+        }
+    }
+}
+```
+
+### plugin.yml
+
+```yaml
+name: ShopAddon
+version: 1.0.0
+main: com.example.shopaddon.ShopAddon
+api-version: "1.21"
+depend:
+  - MineAuth
+```
+
+---
+
+## User Stats Addon Example
+
+A simpler example showing user statistics.
+
+```kotlin
+package com.example.statsaddon
+
+import org.bukkit.OfflinePlayer
+import org.bukkit.plugin.java.JavaPlugin
+import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.annotations.*
+import kotlinx.serialization.Serializable
+
+class StatsAddon : JavaPlugin() {
+    override fun onEnable() {
+        val api = server.servicesManager
+            .getRegistration(MineAuthAPI::class.java)?.provider
+            ?: return
+
+        api.createHandler(this).register(StatsHandler())
+    }
+}
+
+@Serializable
+data class PlayerStats(
+    val uuid: String,
+    val name: String,
+    val playtime: Long,
+    val deaths: Int,
+    val kills: Int,
+    val blocksPlaced: Long,
+    val blocksBroken: Long
+)
+
+class StatsHandler {
+
+    @GetMapping("/stats/{uuid}")
+    suspend fun getStats(@Param("uuid") uuid: String): PlayerStats {
+        // Fetch and return stats
+        return statsService.getByUuid(uuid)
+    }
+
+    @GetMapping("/stats/me")
+    suspend fun getMyStats(
+        @AuthedAccessUser player: OfflinePlayer
+    ): PlayerStats {
+        return statsService.getByUuid(player.uniqueId.toString())
+    }
+
+    @GetMapping("/leaderboard")
+    suspend fun getLeaderboard(
+        @RequestParams params: Map<String, String>
+    ): List<PlayerStats> {
+        val category = params["category"] ?: "playtime"
+        val limit = params["limit"]?.toIntOrNull() ?: 10
+        return statsService.getTopPlayers(category, limit)
+    }
+}
+```
+
+---
+
+## Generated Endpoints
+
+For the examples above, the following endpoints would be generated:
+
+### Shop Addon (plugin name: `shopaddon`)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/v1/plugins/shopaddon/shops` | No |
+| GET | `/api/v1/plugins/shopaddon/shops/{id}` | No |
+| GET | `/api/v1/plugins/shopaddon/users/me/shops` | Yes |
+| POST | `/api/v1/plugins/shopaddon/shops` | Yes |
+| PUT | `/api/v1/plugins/shopaddon/shops/{id}` | Yes |
+| DELETE | `/api/v1/plugins/shopaddon/shops/{id}` | Yes |
+
+### Stats Addon (plugin name: `statsaddon`)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/v1/plugins/statsaddon/stats/{uuid}` | No |
+| GET | `/api/v1/plugins/statsaddon/stats/me` | Yes |
+| GET | `/api/v1/plugins/statsaddon/leaderboard` | No |

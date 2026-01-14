@@ -1,0 +1,134 @@
+---
+title: Getting Started
+description: Getting started with MineAuth API addon development
+---
+
+This guide will help you get started with developing addons for MineAuth.
+
+## Adding MineAuth API as a Dependency
+
+### Gradle (Kotlin DSL)
+
+Add the MineAuth API to your `build.gradle.kts`:
+
+```kotlin
+repositories {
+    maven("https://repo.morinoparty.net/releases")
+}
+
+dependencies {
+    compileOnly("party.morino.mineauth:api:1.0.0")
+}
+```
+
+### plugin.yml Configuration
+
+Add MineAuth as a dependency in your `plugin.yml`:
+
+```yaml
+name: MyPlugin
+version: 1.0.0
+main: com.example.myplugin.MyPlugin
+depend:
+  - MineAuth
+```
+
+## Service Registration Pattern
+
+### Obtaining MineAuthAPI
+
+Get the `MineAuthAPI` instance from the Bukkit services manager:
+
+```kotlin
+class MyPlugin : JavaPlugin() {
+    private lateinit var mineAuthAPI: MineAuthAPI
+
+    override fun onEnable() {
+        // Get MineAuth API from services
+        mineAuthAPI = server.servicesManager
+            .getRegistration(MineAuthAPI::class.java)?.provider
+            ?: throw IllegalStateException("MineAuth plugin not found")
+
+        // Register your handlers
+        registerHandlers()
+    }
+
+    private fun registerHandlers() {
+        mineAuthAPI.createHandler(this)
+            .register(MyHandler())
+    }
+}
+```
+
+### Alternative: Direct Plugin Cast
+
+You can also get the API by casting the plugin directly:
+
+```kotlin
+val mineAuthAPI = server.pluginManager.getPlugin("MineAuth") as? MineAuthAPI
+    ?: throw IllegalStateException("MineAuth plugin not found")
+```
+
+## Basic Handler Example
+
+Create a simple handler class with annotated methods:
+
+```kotlin
+class MyHandler {
+
+    @GetMapping("/hello")
+    suspend fun hello(): Map<String, String> {
+        return mapOf("message" to "Hello, World!")
+    }
+
+    @GetMapping("/users/{uuid}")
+    suspend fun getUser(@Param("uuid") uuid: String): UserData? {
+        // Return user data by UUID
+        return userService.findByUuid(uuid)
+    }
+
+    @PostMapping("/items")
+    suspend fun createItem(@RequestBody item: ItemData): ItemData {
+        // Create and return item
+        return itemService.create(item)
+    }
+}
+```
+
+### Generated Endpoints
+
+For a plugin named "MyPlugin", the endpoints will be:
+
+| Method | Path |
+|--------|------|
+| GET | `/api/v1/plugins/myplugin/hello` |
+| GET | `/api/v1/plugins/myplugin/users/{uuid}` |
+| POST | `/api/v1/plugins/myplugin/items` |
+
+## Project Structure
+
+Recommended addon project structure:
+
+```
+my-addon/
+├── src/main/kotlin/com/example/myaddon/
+│   ├── MyAddon.kt           # Main plugin class
+│   ├── handlers/
+│   │   ├── ItemHandler.kt   # HTTP handlers
+│   │   └── UserHandler.kt
+│   ├── data/
+│   │   ├── ItemData.kt      # Data classes
+│   │   └── UserData.kt
+│   └── services/
+│       └── ItemService.kt   # Business logic
+├── build.gradle.kts
+└── src/main/resources/
+    └── plugin.yml
+```
+
+## Next Steps
+
+- [HTTP API](/docs/developer/addons/http-api) - Learn about the HTTP API structure
+- [Annotations](/docs/developer/addons/annotations) - Detailed annotation reference
+- [Authentication](/docs/developer/addons/authentication) - Secure your endpoints
+- [Examples](/docs/developer/addons/examples) - Complete addon examples

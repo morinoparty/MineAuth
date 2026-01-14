@@ -1,0 +1,66 @@
+---
+title: UserInfo Endpoint
+description: UserInfo endpoint specification
+---
+
+The UserInfo endpoint returns user information compliant with OpenID Connect Core 1.0 Section 5.3.
+
+## Endpoint
+
+```
+GET /oauth2/userinfo
+```
+
+## Authentication
+
+Bearer token (access token) is required.
+
+```http
+Authorization: Bearer <access_token>
+```
+
+## Response
+
+### Scope-based Claims
+
+The returned claims depend on the access token's scope.
+
+| Scope | Claims |
+|-------|--------|
+| `openid` | `sub` |
+| `profile` | `name`, `nickname`, `picture` |
+
+### Response Examples
+
+#### openid scope only
+
+```json
+{
+  "sub": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+#### openid + profile scope
+
+```json
+{
+  "sub": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Steve",
+  "nickname": "Steve",
+  "picture": "https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+## Claim Descriptions
+
+| Claim | Type | Description |
+|-------|------|-------------|
+| `sub` | String | Subject Identifier - Player UUID |
+| `name` | String | Player display name |
+| `nickname` | String | Player nickname |
+| `picture` | String | Player avatar image URL (Crafthead API) |
+
+## References
+
+- [OpenID Connect Core 1.0 - UserInfo Endpoint](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo)
+- [Crafthead](https://crafthead.net/) - Minecraft avatar image API

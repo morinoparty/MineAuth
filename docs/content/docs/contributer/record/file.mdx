@@ -1,0 +1,64 @@
+---
+title: File-Based
+description: File-based record data reference
+---
+
+## File Structure
+
+```
+└── MineAuth/
+    ├── config.json
+    ├── MineAuth.db
+    │
+    ├─ generated/          # Auto-generated (no editing required)
+    │   ├── certificate.pem
+    │   ├── jwks.json
+    │   ├── privateKey.pem
+    │   └── publicKey.pem
+    │
+    ├─ assets/
+    │   └── lock.svg
+    │
+    └─ templates/
+        └── authorize.vm
+```
+
+---
+
+## File Descriptions
+
+### Configuration
+
+| File Path | Format | Description |
+|-----------|--------|-------------|
+| config.json | JSON | Unified configuration file (Server, JWT, OAuth settings) |
+
+---
+
+### Database
+
+| File Name | Format | Description |
+|-----------|--------|-------------|
+| MineAuth.db | SQLite | Main database (user authentication, OAuth clients, etc.) |
+
+---
+
+### Generated Security Files
+
+Files in the `generated/` directory are automatically generated on first startup. No manual editing is required.
+
+| File Name | Format | Description |
+|-----------|--------|-------------|
+| privateKey.pem | PEM | RSA private key (2048bit, for JWT signing) |
+| publicKey.pem | PEM | RSA public key (for JWT verification) |
+| certificate.pem | PEM | Self-signed X.509 certificate (1 year validity) |
+| jwks.json | JSON | JSON Web Key Set (for OIDC Discovery) |
+
+---
+
+### Resources
+
+| Directory | Description |
+|-----------|-------------|
+| assets/ | Static asset files (copied from resources/assets) |
+| templates/ | Velocity templates (copied from resources/templates) |

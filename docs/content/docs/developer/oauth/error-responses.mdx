@@ -1,0 +1,75 @@
+---
+title: Error Responses
+description: Token endpoint error response specification
+---
+
+Token endpoint error responses comply with RFC 6749 Section 5.2.
+
+## Error Response Format
+
+```json
+{
+  "error": "error_code",
+  "error_description": "Human-readable error description"
+}
+```
+
+## Error Codes
+
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| `invalid_request` | 400 | Missing required parameters, invalid parameter values, duplicate parameters, etc. |
+| `invalid_client` | 401 | Client authentication failed (unknown client_id, invalid client_secret, etc.) |
+| `invalid_grant` | 400 | Invalid authorization code, expired, invalid code_verifier, etc. |
+| `unauthorized_client` | 400 | Client is not authorized to use this grant type |
+| `unsupported_grant_type` | 400 | Server does not support this grant_type |
+| `invalid_scope` | 400 | Requested scope is invalid, unknown, or malformed |
+
+## Error Examples
+
+### Missing Parameters
+
+```http
+POST /oauth2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=abc123
+```
+
+```json
+{
+  "error": "invalid_request",
+  "error_description": "Missing required parameters"
+}
+```
+
+### Invalid Authorization Code
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "The authorization code is invalid or expired"
+}
+```
+
+### Client Authentication Failed
+
+```json
+{
+  "error": "invalid_client",
+  "error_description": "Client authentication failed"
+}
+```
+
+### Unsupported grant_type
+
+```json
+{
+  "error": "unsupported_grant_type",
+  "error_description": "The grant_type is not supported"
+}
+```
+
+## References
+
+- [RFC 6749 - Error Response](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2)
