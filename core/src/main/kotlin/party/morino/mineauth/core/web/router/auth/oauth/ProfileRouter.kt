@@ -7,6 +7,7 @@ import io.ktor.server.routing.*
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.file.data.MineAuthConfig
+import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.web.components.auth.UserInfoResponse
@@ -44,12 +45,20 @@ object ProfileRouter : KoinComponent {
                     )
                 }
 
+                // rolesスコープがリクエストされている場合、LuckPermsからグループを取得
+                val roles = if (scopes.contains("roles") && LuckPermsIntegration.available) {
+                    LuckPermsIntegration.getPlayerGroups(playerUniqueId)
+                } else {
+                    null
+                }
+
                 // スコープに基づいてOIDC準拠のレスポンスを構築
                 val response = UserInfoResponse.fromScopes(
                     sub = playerUniqueId.toString(),
                     username = username,
                     scopes = scopes,
-                    email = email
+                    email = email,
+                    roles = roles
                 )
 
                 call.respond(response)

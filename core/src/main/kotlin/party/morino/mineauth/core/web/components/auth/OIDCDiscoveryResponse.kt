@@ -68,26 +68,42 @@ data class OIDCDiscoveryResponse(
          *
          * @param baseUrl サーバーのベースURL
          * @param emailEnabled emailスコープが有効かどうか（emailFormatが設定されている場合true）
+         * @param rolesEnabled rolesスコープが有効かどうか（LuckPermsがインストールされている場合true）
          */
-        fun fromBaseUrl(baseUrl: String, emailEnabled: Boolean = false): OIDCDiscoveryResponse {
+        fun fromBaseUrl(
+            baseUrl: String,
+            emailEnabled: Boolean = false,
+            rolesEnabled: Boolean = false
+        ): OIDCDiscoveryResponse {
             val normalizedUrl = baseUrl.trimEnd('/')
 
-            // emailが有効な場合はemailスコープとクレームを追加
+            // 有効なスコープを構築
             val scopes = buildList {
                 add("openid")
                 add("profile")
                 if (emailEnabled) add("email")
+                if (rolesEnabled) add("roles")
             }
 
+            // 有効なクレームを構築
             val claims = buildList {
+                // openid
                 add("sub")
+                // profile
                 add("name")
                 add("nickname")
                 add("picture")
+                add("preferred_username")
+                // email
                 if (emailEnabled) {
                     add("email")
                     add("email_verified")
                 }
+                // roles
+                if (rolesEnabled) {
+                    add("roles")
+                }
+                // ID Token標準クレーム
                 add("iss")
                 add("aud")
                 add("exp")

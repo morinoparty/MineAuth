@@ -36,7 +36,7 @@ class UserInfoResponseTest {
         @Test
         @DisplayName("Returns all claims with profile scope")
         fun returnsAllClaimsWithProfileScope() {
-            // profileスコープが含まれる場合、name, nickname, pictureも返される
+            // profileスコープが含まれる場合、name, nickname, picture, preferred_usernameも返される
             val response = UserInfoResponse.fromScopes(
                 sub = "550e8400-e29b-41d4-a716-446655440000",
                 username = "Steve",
@@ -47,6 +47,7 @@ class UserInfoResponseTest {
             assertEquals("Steve", response.name)
             assertEquals("Steve", response.nickname)
             assertEquals("https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000", response.picture)
+            assertEquals("Steve", response.preferredUsername)
         }
 
         @Test
@@ -131,6 +132,37 @@ class UserInfoResponseTest {
             assertEquals("https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000", response.picture)
             assertEquals("steve@example.com", response.email)
             assertEquals(false, response.emailVerified)
+        }
+
+        @Test
+        @DisplayName("Returns roles claims with roles scope and roles provided")
+        fun returnsRolesClaimsWithRolesScope() {
+            // rolesスコープが含まれ、rolesが提供されている場合、rolesが返される
+            val response = UserInfoResponse.fromScopes(
+                sub = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve",
+                scopes = listOf("openid", "roles"),
+                roles = listOf("admin", "vip", "builder")
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
+            assertEquals(listOf("admin", "vip", "builder"), response.roles)
+            assertNull(response.name)
+        }
+
+        @Test
+        @DisplayName("Returns no roles claims when roles scope but no roles provided")
+        fun returnsNoRolesWhenNoRolesProvided() {
+            // rolesスコープが含まれるが、rolesが提供されていない場合、rolesクレームは返されない
+            val response = UserInfoResponse.fromScopes(
+                sub = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve",
+                scopes = listOf("openid", "roles"),
+                roles = null
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
+            assertNull(response.roles)
         }
     }
 
