@@ -7,6 +7,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.utils.KeyUtils
+import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
 import party.morino.mineauth.core.web.components.auth.OIDCDiscoveryResponse
 
 /**
@@ -23,9 +24,12 @@ object WellKnownRouter : KoinComponent {
             get("openid-configuration") {
                 // emailFormatが設定されている場合、emailスコープを有効化
                 val emailEnabled = config.server.emailFormat != null
+                // LuckPermsがインストールされている場合、rolesスコープを有効化
+                val rolesEnabled = LuckPermsIntegration.available
                 val response = OIDCDiscoveryResponse.fromBaseUrl(
                     baseUrl = config.server.baseUrl,
-                    emailEnabled = emailEnabled
+                    emailEnabled = emailEnabled,
+                    rolesEnabled = rolesEnabled
                 )
                 call.respond(response)
             }
