@@ -80,6 +80,102 @@ class UserInfoResponseTest {
             assertNull(response.nickname)
             assertNull(response.picture)
         }
+
+        @Test
+        @DisplayName("Returns email claims with email scope and email provided")
+        fun returnsEmailClaimsWithEmailScope() {
+            // emailスコープが含まれ、emailが提供されている場合、email, email_verifiedも返される
+            val response = UserInfoResponse.fromScopes(
+                sub = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve",
+                scopes = listOf("openid", "email"),
+                email = "550e8400-e29b-41d4-a716-446655440000-Steve@example.com"
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
+            assertEquals("550e8400-e29b-41d4-a716-446655440000-Steve@example.com", response.email)
+            assertEquals(false, response.emailVerified)
+            assertNull(response.name)
+        }
+
+        @Test
+        @DisplayName("Returns no email claims when email scope but no email provided")
+        fun returnsNoEmailWhenNoEmailProvided() {
+            // emailスコープが含まれるが、emailが提供されていない場合、emailクレームは返されない
+            val response = UserInfoResponse.fromScopes(
+                sub = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve",
+                scopes = listOf("openid", "email"),
+                email = null
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
+            assertNull(response.email)
+            assertNull(response.emailVerified)
+        }
+
+        @Test
+        @DisplayName("Returns all claims with profile and email scopes")
+        fun returnsAllClaimsWithProfileAndEmailScopes() {
+            // profile + emailスコープの場合、全てのクレームが返される
+            val response = UserInfoResponse.fromScopes(
+                sub = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve",
+                scopes = listOf("openid", "profile", "email"),
+                email = "steve@example.com"
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
+            assertEquals("Steve", response.name)
+            assertEquals("Steve", response.nickname)
+            assertEquals("https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000", response.picture)
+            assertEquals("steve@example.com", response.email)
+            assertEquals(false, response.emailVerified)
+        }
+    }
+
+    @Nested
+    @DisplayName("generateEmail")
+    inner class GenerateEmailTest {
+
+        @Test
+        @DisplayName("Generates email with uuid and username placeholders")
+        fun generatesEmailWithPlaceholders() {
+            // <uuid>と<username>のプレースホルダーを置換
+            val email = UserInfoResponse.generateEmail(
+                emailFormat = "<uuid>-<username>@example.com",
+                uuid = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve"
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000-Steve@example.com", email)
+        }
+
+        @Test
+        @DisplayName("Generates email with only uuid placeholder")
+        fun generatesEmailWithOnlyUuidPlaceholder() {
+            // <uuid>のみのプレースホルダー
+            val email = UserInfoResponse.generateEmail(
+                emailFormat = "<uuid>@minecraft.example.com",
+                uuid = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve"
+            )
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000@minecraft.example.com", email)
+        }
+
+        @Test
+        @DisplayName("Generates email with only username placeholder")
+        fun generatesEmailWithOnlyUsernamePlaceholder() {
+            // <username>のみのプレースホルダー
+            val email = UserInfoResponse.generateEmail(
+                emailFormat = "<username>@minecraft.example.com",
+                uuid = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve"
+            )
+
+            assertEquals("Steve@minecraft.example.com", email)
+        }
     }
 
     @Nested

@@ -16,7 +16,8 @@ description: HTTP server, SSL, JWT, and OAuth configuration
       "keyAlias": "MineAuth",
       "keyStorePassword": "password",
       "privateKeyPassword": "password"
-    }
+    },
+    "emailFormat": "<uuid>-<username>@example.com"  // Optional
   },
   "jwt": {
     "issuer": "https://api.example.com/",
@@ -38,6 +39,22 @@ description: HTTP server, SSL, JWT, and OAuth configuration
 | `baseUrl` | string | Yes | Base URL for endpoints published in OIDC Discovery. Set to proxy URL if using a reverse proxy |
 | `port` | number | Yes | HTTP server port number |
 | `ssl` | object | No | SSL configuration (optional) |
+| `emailFormat` | string | No | Email address format for OIDC email scope. Supports `<uuid>` and `<username>` placeholders |
+
+### Email Format Configuration
+
+When `emailFormat` is set, the OIDC UserInfo endpoint will return `email` and `email_verified` claims when the `email` scope is requested.
+
+**Placeholders:**
+- `<uuid>` - Player's UUID
+- `<username>` - Player's username
+
+**Example formats:**
+- `<uuid>-<username>@example.com` → `550e8400-e29b-41d4-a716-446655440000-Steve@example.com`
+- `<username>@minecraft.example.com` → `Steve@minecraft.example.com`
+- `<uuid>@players.example.com` → `550e8400-e29b-41d4-a716-446655440000@players.example.com`
+
+Note: `email_verified` is always returned as `false` since these are generated addresses, not verified real email addresses.
 
 ### SSL Configuration
 

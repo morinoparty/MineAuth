@@ -29,6 +29,9 @@ The returned claims depend on the access token's scope.
 |-------|--------|
 | `openid` | `sub` |
 | `profile` | `name`, `nickname`, `picture` |
+| `email` | `email`, `email_verified` |
+
+Note: The `email` scope is only available when `emailFormat` is configured in the server settings.
 
 ### Response Examples
 
@@ -51,6 +54,19 @@ The returned claims depend on the access token's scope.
 }
 ```
 
+#### openid + profile + email scope
+
+```json
+{
+  "sub": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Steve",
+  "nickname": "Steve",
+  "picture": "https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000",
+  "email": "550e8400-e29b-41d4-a716-446655440000-Steve@example.com",
+  "email_verified": false
+}
+```
+
 ## Claim Descriptions
 
 | Claim | Type | Description |
@@ -59,6 +75,8 @@ The returned claims depend on the access token's scope.
 | `name` | String | Player display name |
 | `nickname` | String | Player nickname |
 | `picture` | String | Player avatar image URL (Crafthead API) |
+| `email` | String | Generated email address based on `emailFormat` configuration |
+| `email_verified` | Boolean | Always `false` (generated addresses are not verified) |
 
 ## References
 
