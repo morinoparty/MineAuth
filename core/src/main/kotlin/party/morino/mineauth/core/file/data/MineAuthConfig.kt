@@ -37,7 +37,12 @@ data class ServerConfig(
     val port: Int = 8080,
 
     // SSL設定（nullの場合はHTTPのみ）
-    val ssl: SSLConfigData? = null
+    val ssl: SSLConfigData? = null,
+
+    // OIDC email クレーム用フォーマット（nullの場合はemailクレームを返さない）
+    // プレースホルダー: <uuid>, <username>
+    // 例: "<uuid>-<username>@example.com"
+    val emailFormat: String? = null
 )
 
 /**

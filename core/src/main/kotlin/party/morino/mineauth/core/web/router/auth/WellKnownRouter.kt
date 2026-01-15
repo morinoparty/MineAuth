@@ -21,7 +21,12 @@ object WellKnownRouter : KoinComponent {
             // OIDC Discovery Endpoint
             // OpenID Connect Discovery 1.0 準拠
             get("openid-configuration") {
-                val response = OIDCDiscoveryResponse.fromBaseUrl(config.server.baseUrl)
+                // emailFormatが設定されている場合、emailスコープを有効化
+                val emailEnabled = config.server.emailFormat != null
+                val response = OIDCDiscoveryResponse.fromBaseUrl(
+                    baseUrl = config.server.baseUrl,
+                    emailEnabled = emailEnabled
+                )
                 call.respond(response)
             }
 

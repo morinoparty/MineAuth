@@ -4,6 +4,9 @@ import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.web.components.auth.UserInfoResponse
@@ -12,7 +15,9 @@ import party.morino.mineauth.core.web.components.auth.UserInfoResponse
  * OpenID Connect UserInfo Endpoint
  * OIDC Core Section 5.3 準拠
  */
-object ProfileRouter {
+object ProfileRouter : KoinComponent {
+    private val config: MineAuthConfig by inject()
+
     fun Route.profileRouter() {
         authenticate("user-oauth-token") {
             // OIDC UserInfo Endpoint
@@ -30,11 +35,21 @@ object ProfileRouter {
                 val scopeString = payload.getClaim("scope").asString() ?: ""
                 val scopes = scopeString.split(" ").filter { it.isNotBlank() }
 
+                // emailFormatが設定されている場合、メールアドレスを生成
+                val email = config.server.emailFormat?.let { format ->
+                    UserInfoResponse.generateEmail(
+                        emailFormat = format,
+                        uuid = playerUniqueId.toString(),
+                        username = username
+                    )
+                }
+
                 // スコープに基づいてOIDC準拠のレスポンスを構築
                 val response = UserInfoResponse.fromScopes(
                     sub = playerUniqueId.toString(),
                     username = username,
-                    scopes = scopes
+                    scopes = scopes,
+                    email = email
                 )
 
                 call.respond(response)

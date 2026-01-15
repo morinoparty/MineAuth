@@ -65,9 +65,37 @@ data class OIDCDiscoveryResponse(
     companion object {
         /**
          * baseUrlからOIDC Discoveryレスポンスを生成
+         *
+         * @param baseUrl サーバーのベースURL
+         * @param emailEnabled emailスコープが有効かどうか（emailFormatが設定されている場合true）
          */
-        fun fromBaseUrl(baseUrl: String): OIDCDiscoveryResponse {
+        fun fromBaseUrl(baseUrl: String, emailEnabled: Boolean = false): OIDCDiscoveryResponse {
             val normalizedUrl = baseUrl.trimEnd('/')
+
+            // emailが有効な場合はemailスコープとクレームを追加
+            val scopes = buildList {
+                add("openid")
+                add("profile")
+                if (emailEnabled) add("email")
+            }
+
+            val claims = buildList {
+                add("sub")
+                add("name")
+                add("nickname")
+                add("picture")
+                if (emailEnabled) {
+                    add("email")
+                    add("email_verified")
+                }
+                add("iss")
+                add("aud")
+                add("exp")
+                add("iat")
+                add("auth_time")
+                add("nonce")
+                add("at_hash")
+            }
 
             return OIDCDiscoveryResponse(
                 issuer = normalizedUrl,
@@ -78,24 +106,12 @@ data class OIDCDiscoveryResponse(
                 responseTypesSupported = listOf("code"),
                 subjectTypesSupported = listOf("public"),
                 idTokenSigningAlgValuesSupported = listOf("RS256"),
-                scopesSupported = listOf("openid", "profile"),
+                scopesSupported = scopes,
                 tokenEndpointAuthMethodsSupported = listOf(
                     "client_secret_post",
                     "none"
                 ),
-                claimsSupported = listOf(
-                    "sub",
-                    "name",
-                    "nickname",
-                    "picture",
-                    "iss",
-                    "aud",
-                    "exp",
-                    "iat",
-                    "auth_time",
-                    "nonce",
-                    "at_hash"
-                ),
+                claimsSupported = claims,
                 grantTypesSupported = listOf(
                     "authorization_code",
                     "refresh_token"
