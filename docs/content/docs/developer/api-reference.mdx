@@ -1,0 +1,53 @@
+---
+title: API Reference
+description: MineAuth API documentation and OpenAPI specification
+icon: FileCode
+---
+
+MineAuth provides comprehensive API documentation through Dokka (Kotlin API docs) and OpenAPI specification.
+
+## Kotlin API Documentation (Dokka)
+
+The Kotlin API documentation is automatically generated from the source code using [Dokka](https://kotlinlang.org/docs/dokka-introduction.html).
+
+<Cards>
+  <Card title="Dokka API Reference" href="/dokka/index.html" external description="Complete Kotlin API documentation for MineAuth" />
+</Cards>
+
+This documentation covers:
+- **API Module** - Public interfaces for addon development
+- **Core Module** - Internal implementation details
+
+## OpenAPI Specification (Scalar)
+
+The REST API is documented using OpenAPI 3.0 specification, rendered with [Scalar](https://github.com/scalar/scalar).
+
+<Cards>
+  <Card title="OpenAPI Reference (Scalar)" href="/openapi/" external description="Interactive REST API documentation" />
+</Cards>
+
+### Available Endpoints
+
+The OpenAPI specification documents the following endpoint categories:
+
+| Category | Description |
+|----------|-------------|
+| **OAuth2** | Authorization, token, and userinfo endpoints |
+| **Discovery** | OpenID Connect discovery endpoints |
+| **Plugins** | Plugin-specific data endpoints |
+
+### Raw OpenAPI Specification
+
+You can also download the raw OpenAPI specification file:
+
+- [openapi-mineauth.yaml](/openapi/openapi-mineauth.yaml) - OpenAPI 3.0 YAML format
+
+This file can be imported into tools like:
+- [Postman](https://www.postman.com/)
+- [Insomnia](https://insomnia.rest/)
+- [Swagger Editor](https://editor.swagger.io/)
+
+## Related Documentation
+
+- [OAuth Discovery](/docs/developer/oauth/discovery) - OpenID Connect endpoint details
+- [Addon Development](/docs/developer/addons) - Creating custom endpoints

@@ -8,6 +8,10 @@ out/
 # Generated source
 .source/
 
+# Generated docs (CI-generated)
+public/dokka/
+public/openapi/
+
 # IDE
 .idea/
 .vscode/

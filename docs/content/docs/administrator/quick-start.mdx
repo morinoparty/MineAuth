@@ -1,0 +1,119 @@
+---
+title: Quick Start
+description: MineAuth quick start guide for server administrators
+---
+
+This guide explains the basic setup flow from MineAuth installation to OAuth client registration.
+
+## Prerequisites
+
+- Minecraft server with [Paper](https://papermc.io/) 1.21.5 or higher
+- MineAuth plugin installed in the `plugins/` directory
+
+## Step 1: Player Registration
+
+Players need to register before using OAuth authentication. Execute the following command in-game:
+
+```
+/ma register
+```
+
+A password will be automatically generated and displayed. This password is used for resource owner password credentials (ROPC) authentication.
+
+:::warning[Important]
+The displayed password is only shown once. Please copy and store it in a safe place.
+:::
+
+### Changing Password
+
+If you need to change your password:
+
+```
+/ma change
+```
+
+A new password will be generated.
+
+## Step 2: Create OAuth Client
+
+Server administrators can create OAuth clients. Execute the following command in-game:
+
+```
+/ma client create
+```
+
+A dialog will appear where you can enter the following information:
+
+| Item | Description |
+|------|-------------|
+| Client Name | Application name (e.g., "My Website") |
+| Client Type | `Public` or `Confidential` |
+| Redirect URI | OAuth callback URL (e.g., `http://localhost:3000/api/auth/callback/mineauth`) |
+
+### Client Types
+
+| Type | Use Case | Client Secret |
+|------|----------|---------------|
+| **Public** | Browser apps, mobile apps, SPAs | Not required (uses PKCE) |
+| **Confidential** | Server-side applications | Required |
+
+:::tip[Recommendation]
+For websites using better-auth, select **Public** type. PKCE provides secure authentication without exposing secrets.
+:::
+
+## Step 3: Client Management
+
+### List Clients
+
+View all registered OAuth clients:
+
+```
+/ma client list
+```
+
+### View Client Details
+
+Check detailed information of a specific client:
+
+```
+/ma client info <clientId>
+```
+
+### Delete Client
+
+Delete a client that is no longer needed:
+
+```
+/ma client delete <clientId>
+```
+
+### Regenerate Secret
+
+Regenerate the secret for a Confidential type client:
+
+```
+/ma client regenerate-secret <clientId>
+```
+
+:::warning[Note]
+Regenerating the secret will invalidate the old secret. Please update your application settings accordingly.
+:::
+
+## Command Reference
+
+| Command | Permission | Description |
+|---------|------------|-------------|
+| `/ma register` | - | Register as a new user |
+| `/ma change` | - | Change password |
+| `/ma client create` | `mineauth.client.create` | Create OAuth client |
+| `/ma client list` | `mineauth.client.list` | List clients |
+| `/ma client info <id>` | `mineauth.client.info` | View client details |
+| `/ma client delete <id>` | `mineauth.client.delete` | Delete client |
+| `/ma client regenerate-secret <id>` | `mineauth.client.regenerate` | Regenerate secret |
+
+## Next Steps
+
+Once the OAuth client is created, proceed to website integration:
+
+- [Web Integration Guide](/docs/developer/web-integration) - Integrating with better-auth
+- [OAuth Discovery](/docs/developer/oauth/discovery) - OpenID Connect endpoint information
