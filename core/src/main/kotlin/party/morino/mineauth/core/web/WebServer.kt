@@ -25,6 +25,7 @@ import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
+import party.morino.mineauth.core.repository.OAuthClientRepository
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
@@ -87,9 +88,10 @@ internal fun Application.module() {
             }
 
             validate { credential ->
+                // JWTからクライアントIDを取得してDBで検証
                 val clientId = credential.payload.getClaim("client_id").asString()
-                val folder = plugin.dataFolder.resolve("clients").resolve(clientId).resolve("data.json")
-                if (folder.exists()) {
+                val clientResult = OAuthClientRepository.findById(clientId)
+                if (clientResult.isRight()) {
                     JWTPrincipal(credential.payload)
                 } else {
                     null
