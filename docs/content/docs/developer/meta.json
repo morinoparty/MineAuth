@@ -2,5 +2,5 @@
 	"title": "Developer",
 	"icon": "Code",
 	"root": true,
-	"pages": ["addons", "oauth"]
+	"pages": ["web-integration", "api-reference", "addons", "oauth"]
 }

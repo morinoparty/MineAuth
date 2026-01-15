@@ -3,7 +3,7 @@ emit:
   - "@typespec/http-server-js"
 options:
   "@typespec/openapi3":
-    emitter-output-dir: "{project-root}/../docs/static/openapi"
+    emitter-output-dir: "{project-root}/../docs/public/openapi"
     openapi-versions:
       - 3.0.0
     file-type: yaml

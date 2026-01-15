@@ -1,5 +1,5 @@
 {
 	"title": "Administrator",
 	"icon": "Settings",
-	"pages": ["config"]
+	"pages": ["quick-start", "config"]
 }
