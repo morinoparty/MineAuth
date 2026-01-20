@@ -90,8 +90,6 @@ data class OIDCDiscoveryResponse(
                 // openid
                 add("sub")
                 // profile
-                add("name")
-                add("nickname")
                 add("picture")
                 add("preferred_username")
                 // email

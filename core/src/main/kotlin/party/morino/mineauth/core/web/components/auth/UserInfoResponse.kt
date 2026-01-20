@@ -9,13 +9,11 @@ import kotlinx.serialization.Serializable
  *
  * スコープに応じて返却されるクレームが決定される：
  * - openid: sub（必須）
- * - profile: name, nickname, picture, preferred_username
+ * - profile: picture, preferred_username
  * - email: email, email_verified
  * - roles: roles（LuckPermsのグループ情報）
  *
  * @property sub Subject Identifier - ユーザーの一意識別子（UUID形式）
- * @property name ユーザーの表示名（profileスコープが必要）
- * @property nickname ユーザーのニックネーム（profileスコープが必要）
  * @property picture ユーザーのプロフィール画像URL（profileスコープが必要）
  * @property preferredUsername OIDC標準のユーザー名（profileスコープが必要）
  * @property email ユーザーのメールアドレス（emailスコープが必要）
@@ -26,12 +24,6 @@ import kotlinx.serialization.Serializable
 data class UserInfoResponse(
     // openid スコープ: 必須 - Subject Identifier
     val sub: String,
-
-    // profile スコープ: ユーザーの表示名
-    val name: String? = null,
-
-    // profile スコープ: ニックネーム
-    val nickname: String? = null,
 
     // profile スコープ: プロフィール画像URL
     val picture: String? = null,
@@ -71,7 +63,7 @@ data class UserInfoResponse(
             email: String? = null,
             roles: List<String>? = null
         ): UserInfoResponse {
-            // profileスコープが含まれる場合のみname, nickname, picture, preferred_usernameを返す
+            // profileスコープが含まれる場合のみpicture, preferred_usernameを返す
             val hasProfileScope = scopes.contains("profile")
             // emailスコープが含まれ、かつemailが提供されている場合のみemailを返す
             val hasEmailScope = scopes.contains("email") && email != null
@@ -80,8 +72,6 @@ data class UserInfoResponse(
 
             return UserInfoResponse(
                 sub = sub,
-                name = if (hasProfileScope) username else null,
-                nickname = if (hasProfileScope) username else null,
                 picture = if (hasProfileScope) "$AVATAR_BASE_URL$sub" else null,
                 preferredUsername = if (hasProfileScope) username else null,
                 email = if (hasEmailScope) email else null,
@@ -93,7 +83,7 @@ data class UserInfoResponse(
         /**
          * emailFormatからメールアドレスを生成する
          *
-         * @param emailFormat メールフォーマット（例: "<uuid>-<username>@example.com"）
+         * @param emailFormat メールフォーマット（例: "<uuid>+<username>@example.com"）
          * @param uuid プレイヤーのUUID
          * @param username プレイヤー名
          * @return 生成されたメールアドレス

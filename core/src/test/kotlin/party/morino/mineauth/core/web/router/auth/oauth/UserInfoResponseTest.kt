@@ -28,15 +28,14 @@ class UserInfoResponseTest {
             )
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
-            assertNull(response.name)
-            assertNull(response.nickname)
             assertNull(response.picture)
+            assertNull(response.preferredUsername)
         }
 
         @Test
         @DisplayName("Returns all claims with profile scope")
         fun returnsAllClaimsWithProfileScope() {
-            // profileスコープが含まれる場合、name, nickname, picture, preferred_usernameも返される
+            // profileスコープが含まれる場合、picture, preferred_usernameも返される
             val response = UserInfoResponse.fromScopes(
                 sub = "550e8400-e29b-41d4-a716-446655440000",
                 username = "Steve",
@@ -44,8 +43,6 @@ class UserInfoResponseTest {
             )
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
-            assertEquals("Steve", response.name)
-            assertEquals("Steve", response.nickname)
             assertEquals("https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000", response.picture)
             assertEquals("Steve", response.preferredUsername)
         }
@@ -53,7 +50,7 @@ class UserInfoResponseTest {
         @Test
         @DisplayName("Returns all claims with profile scope only")
         fun returnsAllClaimsWithProfileScopeOnly() {
-            // profileスコープのみでもname, nickname, pictureは返される
+            // profileスコープのみでもpicture, preferred_usernameは返される
             val response = UserInfoResponse.fromScopes(
                 sub = "550e8400-e29b-41d4-a716-446655440000",
                 username = "Alex",
@@ -61,9 +58,8 @@ class UserInfoResponseTest {
             )
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
-            assertEquals("Alex", response.name)
-            assertEquals("Alex", response.nickname)
             assertEquals("https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000", response.picture)
+            assertEquals("Alex", response.preferredUsername)
         }
 
         @Test
@@ -77,9 +73,8 @@ class UserInfoResponseTest {
             )
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
-            assertNull(response.name)
-            assertNull(response.nickname)
             assertNull(response.picture)
+            assertNull(response.preferredUsername)
         }
 
         @Test
@@ -96,7 +91,7 @@ class UserInfoResponseTest {
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
             assertEquals("550e8400-e29b-41d4-a716-446655440000-Steve@example.com", response.email)
             assertEquals(false, response.emailVerified)
-            assertNull(response.name)
+            assertNull(response.preferredUsername)
         }
 
         @Test
@@ -127,9 +122,8 @@ class UserInfoResponseTest {
             )
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
-            assertEquals("Steve", response.name)
-            assertEquals("Steve", response.nickname)
             assertEquals("https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000", response.picture)
+            assertEquals("Steve", response.preferredUsername)
             assertEquals("steve@example.com", response.email)
             assertEquals(false, response.emailVerified)
         }
@@ -147,7 +141,7 @@ class UserInfoResponseTest {
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", response.sub)
             assertEquals(listOf("admin", "vip", "builder"), response.roles)
-            assertNull(response.name)
+            assertNull(response.preferredUsername)
         }
 
         @Test
@@ -175,12 +169,12 @@ class UserInfoResponseTest {
         fun generatesEmailWithPlaceholders() {
             // <uuid>と<username>のプレースホルダーを置換
             val email = UserInfoResponse.generateEmail(
-                emailFormat = "<uuid>-<username>@example.com",
+                emailFormat = "<uuid>+<username>@example.com",
                 uuid = "550e8400-e29b-41d4-a716-446655440000",
                 username = "Steve"
             )
 
-            assertEquals("550e8400-e29b-41d4-a716-446655440000-Steve@example.com", email)
+            assertEquals("550e8400-e29b-41d4-a716-446655440000+Steve@example.com", email)
         }
 
         @Test
@@ -219,15 +213,13 @@ class UserInfoResponseTest {
         fun createResponseWithAllFields() {
             val response = UserInfoResponse(
                 sub = "uuid-123",
-                name = "TestUser",
-                nickname = "testuser",
-                picture = "https://crafthead.net/avatar/uuid-123"
+                picture = "https://crafthead.net/avatar/uuid-123",
+                preferredUsername = "TestUser"
             )
 
             assertEquals("uuid-123", response.sub)
-            assertEquals("TestUser", response.name)
-            assertEquals("testuser", response.nickname)
             assertEquals("https://crafthead.net/avatar/uuid-123", response.picture)
+            assertEquals("TestUser", response.preferredUsername)
         }
 
         @Test
@@ -236,9 +228,8 @@ class UserInfoResponseTest {
             val response = UserInfoResponse(sub = "uuid-456")
 
             assertEquals("uuid-456", response.sub)
-            assertNull(response.name)
-            assertNull(response.nickname)
             assertNull(response.picture)
+            assertNull(response.preferredUsername)
         }
     }
 }

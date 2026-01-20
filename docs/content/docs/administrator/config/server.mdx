@@ -17,7 +17,7 @@ description: HTTP server, SSL, JWT, and OAuth configuration
       "keyStorePassword": "password",
       "privateKeyPassword": "password"
     },
-    "emailFormat": "<uuid>-<username>@example.com"  // Optional
+    "emailFormat": "<uuid>+<username>@example.com"  // Optional
   },
   "jwt": {
     "issuer": "https://api.example.com/",
@@ -50,7 +50,7 @@ When `emailFormat` is set, the OIDC UserInfo endpoint will return `email` and `e
 - `<username>` - Player's username
 
 **Example formats:**
-- `<uuid>-<username>@example.com` → `550e8400-e29b-41d4-a716-446655440000-Steve@example.com`
+- `<uuid>+<username>@example.com` → `550e8400-e29b-41d4-a716-446655440000+Steve@example.com`
 - `<username>@minecraft.example.com` → `Steve@minecraft.example.com`
 - `<uuid>@players.example.com` → `550e8400-e29b-41d4-a716-446655440000@players.example.com`
 
