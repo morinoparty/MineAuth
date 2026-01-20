@@ -137,13 +137,21 @@ object TokenRouter: KoinComponent {
                 }
                 if(clientSecret != null){
                     // Confidentialクライアントの場合：クライアント認証を実行
-                    val clientData = ClientData.getClientData(clientId)
+                    val clientData = try {
+                        ClientData.getClientData(clientId)
+                    } catch (e: Exception) {
+                        plugin.logger.warning("Client not found: $clientId")
+                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
+                        return@post
+                    }
                     if (clientData !is ClientData.ConfidentialClientData) {
+                        plugin.logger.warning("Client type mismatch for $clientId: expected Confidential, got ${clientData::class.simpleName}")
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
                         return@post
                     }
                     // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
                     if (!clientData.verifySecret(clientSecret)) {
+                        plugin.logger.warning("Client authentication failed for $clientId: invalid secret")
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }

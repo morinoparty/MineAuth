@@ -1,5 +1,6 @@
 package party.morino.mineauth.core.integration.luckperms
 
+import kotlinx.coroutines.future.await
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.LuckPermsProvider
 import net.luckperms.api.query.QueryOptions
@@ -40,18 +41,32 @@ object LuckPermsIntegration : Integration() {
 
     /**
      * プレイヤーのグループ名一覧を取得する
+     * オフラインプレイヤーにも対応するため、キャッシュになければストレージから非同期でロードする
      *
      * @param playerUuid プレイヤーのUUID
      * @return グループ名のリスト（LuckPerms未使用時は空リスト）
      */
-    fun getPlayerGroups(playerUuid: UUID): List<String> {
+    suspend fun getPlayerGroups(playerUuid: UUID): List<String> {
         if (!available) return emptyList()
 
-        // ユーザー情報を取得（キャッシュから）
-        val user = luckPerms.userManager.getUser(playerUuid) ?: return emptyList()
+        // まずキャッシュからユーザー情報を取得試行（オンラインプレイヤーの場合は高速）
+        val cachedUser = luckPerms.userManager.getUser(playerUuid)
+        if (cachedUser != null) {
+            // キャッシュにある場合はそのまま使用
+            val inheritedGroups = cachedUser.getInheritedGroups(QueryOptions.nonContextual())
+            return inheritedGroups.map { it.name }
+        }
 
-        // デフォルトのQueryOptionsでユーザーが所属するすべてのグループを取得
-        val inheritedGroups = user.getInheritedGroups(QueryOptions.nonContextual())
-        return inheritedGroups.map { it.name }
+        // キャッシュにない場合は非同期でストレージからロード
+        val loadedUser = luckPerms.userManager.loadUser(playerUuid).await()
+
+        return try {
+            // デフォルトのQueryOptionsでユーザーが所属するすべてのグループを取得
+            val inheritedGroups = loadedUser.getInheritedGroups(QueryOptions.nonContextual())
+            inheritedGroups.map { it.name }
+        } finally {
+            // 明示的にロードしたユーザーはクリーンアップしてメモリを解放
+            luckPerms.userManager.cleanupUser(loadedUser)
+        }
     }
 }
