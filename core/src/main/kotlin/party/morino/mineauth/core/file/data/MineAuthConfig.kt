@@ -41,7 +41,7 @@ data class ServerConfig(
 
     // OIDC email クレーム用フォーマット（nullの場合はemailクレームを返さない）
     // プレースホルダー: <uuid>, <username>
-    // 例: "<uuid>-<username>@example.com"
+    // 例: "<uuid>+<username>@example.com"
     val emailFormat: String? = null
 )
 

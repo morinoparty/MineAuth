@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.bundles.ktor.client)
 
     compileOnly(libs.vault.api)
+    compileOnly(libs.luckperms.api)
 
     // テスト依存関係
     testImplementation(libs.bundles.junit.jupiter)
@@ -105,8 +106,6 @@ tasks {
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")
             //EssestialsX
             url("https://ci.ender.zone/job/EssentialsX/1576/artifact/jars/EssentialsX-2.21.0-dev+93-3a6fdd9.jar")
-            //QuickShop
-            url("https://cdn.modrinth.com/data/ijC5dDkD/versions/yr8al7fH/QuickShop-Hikari-6.2.0.6.jar")
         }
         downloadPlugins {
             downloadPlugins.from(plugins)
@@ -138,7 +137,7 @@ sourceSets.main {
                 add(libs.hikari.asString())
                 add(libs.mysql.connector.asString())
             }
-            softDepend = listOf("Vault", "QuickShop-Hikari")
+            softDepend = listOf("Vault", "LuckPerms")
         }
     }
 }

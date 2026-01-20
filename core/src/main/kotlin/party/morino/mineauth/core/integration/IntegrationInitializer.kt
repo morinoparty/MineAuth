@@ -1,5 +1,6 @@
 package party.morino.mineauth.core.integration
 
+import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
 import party.morino.mineauth.core.integration.vault.VaultIntegration
 
 object IntegrationInitializer {
@@ -9,6 +10,7 @@ object IntegrationInitializer {
 
     fun initialize() {
         integrations.add(VaultIntegration)
+        integrations.add(LuckPermsIntegration)
 
         integrations.forEach {
             it.initialize()
