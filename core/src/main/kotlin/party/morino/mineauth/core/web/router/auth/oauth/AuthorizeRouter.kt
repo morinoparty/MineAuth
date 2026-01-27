@@ -9,6 +9,7 @@ import org.apache.commons.lang3.RandomStringUtils
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
+import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.OAuthConfigData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
@@ -25,6 +26,7 @@ import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validate
  */
 object AuthorizeRouter: KoinComponent {
     private val oauthConfig: OAuthConfigData by inject()
+    private val config: MineAuthConfig by inject()
 
     /**
      * 認可エンドポイントのルーティングを設定
@@ -70,6 +72,9 @@ object AuthorizeRouter: KoinComponent {
             }
 
             // 認可画面に表示するデータの準備
+            // スコープ文字列をリストに分割（テンプレートで個別表示するため）
+            val scopeList = scope.split(" ").filter { it.isNotBlank() }
+
             val model = mutableMapOf(
                 "clientId" to clientData.clientId,
                 "clientName" to clientData.clientName,
@@ -77,6 +82,8 @@ object AuthorizeRouter: KoinComponent {
                 "responseType" to "code",
                 "state" to state,
                 "scope" to scope,
+                "scopeList" to scopeList,
+                "issuer" to config.server.baseUrl,
                 "codeChallenge" to codeChallenge,
                 "codeChallengeMethod" to (codeChallengeMethod ?: "S256"),
                 "logoUrl" to oauthConfig.logoUrl,
