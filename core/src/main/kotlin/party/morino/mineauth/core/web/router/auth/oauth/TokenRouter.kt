@@ -17,6 +17,7 @@ import party.morino.mineauth.core.web.components.auth.TokenData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
+import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthErrorCode
 import party.morino.mineauth.core.web.router.auth.oauth.respondOAuthError
 import java.security.MessageDigest
@@ -245,6 +246,12 @@ object TokenRouter: KoinComponent {
             // token_typeがrefresh_tokenであることを確認
             val tokenType = jwt.getClaim("token_type").asString()
             if (tokenType != "refresh_token") {
+                return null
+            }
+
+            // RFC 7009: トークンが失効済みかチェック
+            val tokenId = jwt.id
+            if (tokenId != null && RevokedTokenRepository.isRevokedBlocking(tokenId)) {
                 return null
             }
 

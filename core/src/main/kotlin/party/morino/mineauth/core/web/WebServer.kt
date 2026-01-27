@@ -26,6 +26,7 @@ import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.repository.OAuthClientRepository
+import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
@@ -91,11 +92,17 @@ internal fun Application.module() {
                 // JWTからクライアントIDを取得してDBで検証
                 val clientId = credential.payload.getClaim("client_id").asString()
                 val clientResult = OAuthClientRepository.findById(clientId)
-                if (clientResult.isRight()) {
-                    JWTPrincipal(credential.payload)
-                } else {
-                    null
+                if (clientResult.isLeft()) {
+                    return@validate null
                 }
+
+                // RFC 7009: トークンが失効済みかチェック
+                val tokenId = credential.payload.id
+                if (tokenId != null && RevokedTokenRepository.isRevokedBlocking(tokenId)) {
+                    return@validate null
+                }
+
+                JWTPrincipal(credential.payload)
             }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, "Token is not valid or has expired")
