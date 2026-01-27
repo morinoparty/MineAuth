@@ -23,52 +23,87 @@
                 transform: translateY(-1px);
                 box-shadow: 0 4px 6px -1px rgba(65, 118, 93, 0.1), 0 2px 4px -1px rgba(65, 118, 93, 0.06);
             }
-            @media (max-width: 640px) {
-                .container {
-                    padding: 1rem;
-                }
-                .card {
-                    margin: 1rem 0;
-                }
-            }
         </style>
     </head>
     <body>
-        <h1 id="greeting" class="text-[#41765d] text-center mt-4"></h1>
         <section class="flex-grow">
-            <div class="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)]">
-                <div class="flex items-center mb-6 text-2xl font-semibold text-[#41765d]">
-                    <img class="w-8 h-8 mr-2" src="$logoUrl" id="logoUrl" alt="logo" />
-                    $applicationName
-                </div>
-                <div class="w-full max-w-md bg-white rounded-lg shadow-lg border border-[#d7d7d7]">
-                    <div class="p-6 space-y-4">
-                        <h1 class="text-xl font-bold leading-tight tracking-tight text-[#41765d] text-center" id="signIn"></h1>
+            <div class="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen">
+                <!-- メインカード -->
+                <div class="w-full max-w-4xl bg-white rounded-lg shadow-lg border border-[#d7d7d7]">
+                    <!-- ヘッダー：ロゴとアプリケーション名 -->
+                    <div class="flex items-center p-4 border-b border-gray-200">
+                        <img class="w-8 h-8 mr-2" src="$logoUrl" id="logoUrl" alt="logo" />
+                        <span class="text-xl font-semibold text-[#41765d]">$applicationName</span>
+                    </div>
 
-                        <form class="space-y-4" action="#">
-                            <input type="hidden" name="client_id" value="$clientId" />
-                            <input type="hidden" name="redirect_uri" value="$redirectUri" />
-                            <input type="hidden" name="response_type" value="code" />
-                            <input type="hidden" name="state" value="$state" />
-                            <input type="hidden" name="scope" value="$scope" />
-                            <input type="hidden" name="code_challenge" value="$codeChallenge" />
-                            <input type="hidden" name="code_challenge_method" value="$codeChallengeMethod" />
-                            #if($nonce)<input type="hidden" name="nonce" value="$nonce" />#end
-                            <div>
-                                <label for="username" class="block mb-2 text-sm font-medium text-[#41765d]" id="usernameLabel"></label>
-                                <input type="text" name="username" id="username" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="username" required />
+                    <!-- 2カラムレイアウト -->
+                    <div class="flex flex-col md:flex-row">
+                        <!-- 左カラム：クライアント情報 -->
+                        <div class="md:w-1/2 p-6 md:border-r border-gray-200">
+                            <!-- 認可タイトル -->
+                            <h1 class="text-xl font-bold leading-tight tracking-tight text-[#41765d] mb-4" id="authorizeApp"></h1>
+
+                            <!-- クライアント名の表示 -->
+                            <div class="mb-4">
+                                <p class="text-gray-700">
+                                    <span class="font-semibold text-[#41765d]">"$clientName"</span>
+                                    <span id="requestingAccess"></span>
+                                </p>
                             </div>
-                            <div>
-                                <label for="password" class="block mb-2 text-sm font-medium text-[#41765d]" id="passwordLabel"></label>
-                                <div class="relative">
-                                    <input type="password" name="password" id="password" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 pr-10 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="••••••••" required />
-                                    <i id="toggle-password" class="fas fa-eye absolute right-3 top-1/2 -translate-y-1/2 text-[#41765d] hover:text-[#2d4f3d] cursor-pointer"></i>
+
+                            <!-- Issuer URLの表示 -->
+                            <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                                <div class="flex justify-between items-start gap-2">
+                                    <span id="issuerLabel" class="text-sm font-medium text-gray-600 shrink-0"></span>
+                                    <span class="text-sm text-[#41765d] break-all text-right">$issuer</span>
                                 </div>
                             </div>
+
+                            <!-- スコープのリスト表示 -->
                             <div>
-                                <input type="submit" value="" formmethod="post" id="authorize" class="submit-button w-full px-4 py-2 text-sm font-medium text-white bg-[#41765d] rounded-lg hover:bg-[#41765d]/90 focus:outline-none focus:ring-2 focus:ring-[#41765d] focus:ring-offset-2" />
+                                <p class="text-sm font-medium text-gray-700 mb-3" id="permissionsLabel"></p>
+                                <ul class="space-y-2">
+                                    #foreach($s in $scopeList)
+                                    <li class="flex items-center text-sm text-gray-600">
+                                        <svg class="w-5 h-5 mr-3 text-[#41765d] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        <span class="scope-text" data-scope="$s">$s</span>
+                                    </li>
+                                    #end
+                                </ul>
                             </div>
-                        </form>
+                        </div>
+
+                        <!-- 右カラム：ログインフォーム -->
+                        <div class="md:w-1/2 p-6 border-t md:border-t-0 border-gray-200">
+                            <h2 class="text-lg font-semibold text-[#41765d] text-center mb-6" id="signIn"></h2>
+
+                            <form class="space-y-4" action="#">
+                                <input type="hidden" name="client_id" value="$clientId" />
+                                <input type="hidden" name="redirect_uri" value="$redirectUri" />
+                                <input type="hidden" name="response_type" value="code" />
+                                <input type="hidden" name="state" value="$state" />
+                                <input type="hidden" name="scope" value="$scope" />
+                                <input type="hidden" name="code_challenge" value="$codeChallenge" />
+                                <input type="hidden" name="code_challenge_method" value="$codeChallengeMethod" />
+                                #if($nonce)<input type="hidden" name="nonce" value="$nonce" />#end
+                                <div>
+                                    <label for="username" class="block mb-2 text-sm font-medium text-[#41765d]" id="usernameLabel"></label>
+                                    <input type="text" name="username" id="username" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="username" required />
+                                </div>
+                                <div>
+                                    <label for="password" class="block mb-2 text-sm font-medium text-[#41765d]" id="passwordLabel"></label>
+                                    <div class="relative">
+                                        <input type="password" name="password" id="password" class="bg-white border border-[#d7d7d7] text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-[#41765d]/20 focus:border-[#41765d] block w-full p-2.5 pr-10 text-[#41765d] placeholder:text-[#41765d]/60" placeholder="••••••••" required />
+                                        <i id="toggle-password" class="fas fa-eye absolute right-3 top-1/2 -translate-y-1/2 text-[#41765d] hover:text-[#2d4f3d] cursor-pointer"></i>
+                                    </div>
+                                </div>
+                                <div>
+                                    <input type="submit" value="" formmethod="post" id="authorize" class="submit-button w-full px-4 py-2 text-sm font-medium text-white bg-[#41765d] rounded-lg hover:bg-[#41765d]/90 focus:outline-none focus:ring-2 focus:ring-[#41765d] focus:ring-offset-2" />
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -105,29 +140,56 @@
                     resources: {
                         en: {
                             translation: {
-                                greeting: "Hello",
+                                authorizeApp: "Authorize Application",
+                                requestingAccess: "is requesting access to your account.",
+                                issuerLabel: "Issuer",
+                                permissionsLabel: "This application is requesting the following permissions:",
                                 signIn: "Sign in to your account",
                                 usernameLabel: "Your username",
                                 passwordLabel: "Password",
                                 authorize: "Authorize",
+                                scope_openid: "Basic identity information access",
+                                scope_profile: "Profile information (name, avatar) access",
+                                scope_email: "Email address access",
+                                scope_roles: "Permission group information access",
                             },
                         },
                         ja: {
                             translation: {
-                                greeting: "こんにちは",
+                                authorizeApp: "アプリケーションの認可",
+                                requestingAccess: "があなたのアカウントへのアクセスを要求しています。",
+                                issuerLabel: "発行者",
+                                permissionsLabel: "このアプリケーションは以下の権限を要求しています:",
                                 signIn: "アカウントでサインイン",
                                 usernameLabel: "ユーザー名",
                                 passwordLabel: "パスワード",
                                 authorize: "認証",
+                                scope_openid: "基本的な識別情報へのアクセス",
+                                scope_profile: "プロフィール情報（名前、アバター）へのアクセス",
+                                scope_email: "メールアドレスへのアクセス",
+                                scope_roles: "権限グループ情報へのアクセス",
                             },
                         },
                     },
                 },
                 function (err, t) {
+                    document.getElementById("authorizeApp").innerHTML = i18next.t("authorizeApp");
+                    document.getElementById("requestingAccess").innerHTML = i18next.t("requestingAccess");
+                    document.getElementById("issuerLabel").innerHTML = i18next.t("issuerLabel");
+                    document.getElementById("permissionsLabel").innerHTML = i18next.t("permissionsLabel");
                     document.getElementById("signIn").innerHTML = i18next.t("signIn");
                     document.getElementById("usernameLabel").innerHTML = i18next.t("usernameLabel");
                     document.getElementById("passwordLabel").innerHTML = i18next.t("passwordLabel");
                     document.getElementById("authorize").value = i18next.t("authorize");
+
+                    // スコープの翻訳を適用
+                    var scopeElements = document.querySelectorAll(".scope-text");
+                    scopeElements.forEach(function(element) {
+                        var scope = element.getAttribute("data-scope");
+                        var translationKey = "scope_" + scope;
+                        var translatedText = i18next.t(translationKey, { defaultValue: scope });
+                        element.innerHTML = translatedText;
+                    });
                 }
             );
         </script>
