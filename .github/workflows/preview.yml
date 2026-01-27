@@ -170,29 +170,42 @@ jobs:
           path: ./docs/out
           retention-days: 1
 
-  # S3 アップロードジョブ（並列アップロード）
+  # S3 アップロードジョブ（AWS CLI 並列リクエスト）
   upload-s3:
     needs: [setup, build-gradle, build-docs]
     runs-on: ubuntu-latest
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
-    strategy:
-      matrix:
-        artifact: [gradle-artifacts, docs-artifacts]
     steps:
-      - name: Download artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: ${{ matrix.artifact }}
-          path: ./upload/${{ matrix.artifact == 'docs-artifacts' && 'docs' || '' }}
+          path: ./artifacts
 
-      - name: Upload to S3
+      - name: Prepare upload directory
         run: |
-          if [ "${{ matrix.artifact }}" = "gradle-artifacts" ]; then
-            aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
-          else
-            aws s3 cp ./upload/docs --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
-          fi
+          mkdir -p ./upload
+          mv ./artifacts/gradle-artifacts/* ./upload/
+          mkdir -p ./upload/docs
+          mv ./artifacts/docs-artifacts/* ./upload/docs/
+
+      - name: Upload to S3 (parallel)
+        run: |
+          # AWS CLIの並列リクエスト数を増やす
+          aws configure set default.s3.max_concurrent_requests 50
+
+          S3_BASE="s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}"
+          S3_OPTS="--endpoint-url ${S3_ENDPOINT} --only-show-errors"
+
+          # 各ディレクトリを並列でアップロード
+          aws s3 cp ./upload/jars $S3_BASE/jars $S3_OPTS --recursive &
+          aws s3 cp ./upload/junit $S3_BASE/junit $S3_OPTS --recursive &
+          aws s3 cp ./upload/detekt $S3_BASE/detekt $S3_OPTS --recursive &
+          aws s3 cp ./upload/docs $S3_BASE/docs $S3_OPTS --recursive &
+
+          # 全ての並列アップロードを待機
+          wait
+          echo "S3 upload completed"
 
   # コメント作成ジョブ
   comment:
