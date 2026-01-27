@@ -7,53 +7,138 @@ permissions:
   pull-requests: write
   contents: write
 
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_EC2_METADATA_DISABLED: true
+  AWS_REGION: auto
+  AWS_CLI_FILE_ENCODING: UTF-8
+  AWS_DEFAULT_S3_SIGNATURE_VERSION: s3v4
+  S3_UPLOAD_BUCKET: ${{ secrets.S3_UPLOAD_BUCKET }}
+  S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+  PREVIEW_BASE_URL: https://moripa-ci.nikomaru.dev/mineauth
+  PROJECT_NAME: MineAuth
 
 jobs:
-  build:
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_EC2_METADATA_DISABLED: true
-      AWS_REGION: auto
-      AWS_CLI_FILE_ENCODING: UTF-8
-      AWS_DEFAULT_S3_SIGNATURE_VERSION: s3v4
-      S3_UPLOAD_BUCKET: ${{ secrets.S3_UPLOAD_BUCKET }}
-      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-      PREVIEW_BASE_URL: https://moripa-ci.nikomaru.dev/mineauth
-      PROJECT_NAME: MineAuth
+  # 共通の前処理：コミットSHAを取得
+  setup:
     runs-on: ubuntu-latest
-
+    outputs:
+      commit_sha: ${{ steps.vars.outputs.commit_sha }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-
-      - uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'gradle'
-
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        with:
-          node-version: '22'
-
-      - uses: pnpm/action-setup@b9e1dbc72ff7358f971cc0b7c62c7a0d83f1068b # v4.0.0
-        name: Install pnpm
-        with:
-          version: 10
-          run_install: false
-
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set short git commit SHA
         id: vars
         run: |
           calculatedSha=$(git rev-parse --short HEAD)
-          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
+          echo "commit_sha=$calculatedSha" >> $GITHUB_OUTPUT
+
+  # Gradle ビルドジョブ（docs と並列実行）
+  build-gradle:
+    needs: setup
+    runs-on: ubuntu-latest
+    outputs:
+      test_total: ${{ steps.publish-test-results.outputs.total }}
+      test_passed: ${{ steps.publish-test-results.outputs.passed }}
+      test_skipped: ${{ steps.publish-test-results.outputs.skipped }}
+      test_failed: ${{ steps.publish-test-results.outputs.failed }}
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # Gradle キャッシュの設定（setup-gradle を使用）
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
 
       - name: change plugin.yml version
         run: |
           sed -i "s/VersionPlaceholder/${{ env.COMMIT_SHORT_SHA }}/" ./gradle.properties
+
+      - name: Build with Gradle
+        continue-on-error: true
+        run: ./gradlew build
+
+      - name: Publish test results
+        id: publish-test-results
+        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
+        if: success() || failure()
+        with:
+          report_paths: './**/build/test-results/test/TEST-*.xml'
+
+      - name: Prepare Gradle artifacts
+        run: |
+          mkdir -p ./gradle-artifacts/jars
+          mkdir -p ./gradle-artifacts/junit
+          mkdir -p ./gradle-artifacts/detekt
+          mv ./core/build/libs/core-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
+          mv ./api/build/libs/api-*.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
+          cp -r ./core/build/reports/tests/test/* ./gradle-artifacts/junit/ || echo "No JUnit reports found"
+          cp -r ./build/reports/detekt/* ./gradle-artifacts/detekt/
+
+      - name: Upload Gradle artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gradle-artifacts
+          path: ./gradle-artifacts
+          retention-days: 1
+
+  # Docs ビルドジョブ（gradle と並列実行）
+  build-docs:
+    needs: setup
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # Gradle キャッシュの設定（Dokka 生成用）
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        name: Install pnpm
+        with:
+          version: 10
+          run_install: false
+
+      # pnpm キャッシュの設定
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
 
       - name: Configure Fumadocs for preview
         run: |
@@ -78,31 +163,46 @@ jobs:
         working-directory: docs
         run: pnpm run build
 
-      - name: Build with Gradle
-        continue-on-error: true
-        run: ./gradlew build
-
-      - name: Upload build artifacts
-        id: upload-artifacts
-        run: |
-          mkdir -p ./upload
-          mkdir -p ./upload/jars
-          mv ./core/build/libs/core-*-all.jar ./upload/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
-          mv ./api/build/libs/api-*.jar ./upload/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
-          mkdir -p ./upload/junit
-          cp -r ./core/build/reports/tests/test/* ./upload/junit/ || echo "No JUnit reports found"
-          mkdir -p ./upload/detekt
-          cp -r ./build/reports/detekt/* ./upload/detekt/
-          mkdir -p ./upload/docs
-          cp -r ./docs/out/* ./upload/docs/
-          aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
-
-      - name: Publish test results
-        id: publish-test-results
-        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
-        if: success() || failure()
+      - name: Upload docs artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          report_paths: './**/build/test-results/test/TEST-*.xml'
+          name: docs-artifacts
+          path: ./docs/out
+          retention-days: 1
+
+  # S3 アップロードジョブ（並列アップロード）
+  upload-s3:
+    needs: [setup, build-gradle, build-docs]
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    strategy:
+      matrix:
+        artifact: [gradle-artifacts, docs-artifacts]
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ matrix.artifact }}
+          path: ./upload/${{ matrix.artifact == 'docs-artifacts' && 'docs' || '' }}
+
+      - name: Upload to S3
+        run: |
+          if [ "${{ matrix.artifact }}" = "gradle-artifacts" ]; then
+            aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
+          else
+            aws s3 cp ./upload/docs --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
+          fi
+
+  # コメント作成ジョブ
+  comment:
+    needs: [setup, build-gradle, upload-s3]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.action == 'opened' || github.event.action == 'synchronize' }}
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Get limit time
         id: limit-time
@@ -111,7 +211,6 @@ jobs:
           echo "LIMIT_TIME=$limit_time" >> $GITHUB_ENV
 
       - name: Create comment file
-        id: create-comment-file
         env:
           ARTIFACT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar"
           ARTIFACT_URL_API: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar"
@@ -161,22 +260,22 @@ jobs:
           <table>
               <tr>
               <th>
-                <th>Tests 💯</th>
-                <th>Passed ✅</th>
-                <th>Skipped ⏭️</th>
-                <th>Failed ❌</th>
+              <th>Tests 💯</th>
+              <th>Passed ✅</th>
+              <th>Skipped ⏭️</th>
+              <th>Failed ❌</th>
               </tr>
               <tr>
                 <td>JUnit Test Report</td>
-                <td>${{ steps.publish-test-results.outputs.total }} ran</td>
-                <td>${{ steps.publish-test-results.outputs.passed }} passed</td>
-                <td>${{ steps.publish-test-results.outputs.skipped }} skipped</td>
-                <td>${{ steps.publish-test-results.outputs.failed }} failed</td>
+                <td>${{ needs.build-gradle.outputs.test_total }} ran</td>
+                <td>${{ needs.build-gradle.outputs.test_passed }} passed</td>
+                <td>${{ needs.build-gradle.outputs.test_skipped }} skipped</td>
+                <td>${{ needs.build-gradle.outputs.test_failed }} failed</td>
               </tr>
             </table>
           EOF
+
       - name: Create PR comment
-        if: ${{ job.status == 'success' && (github.event.action == 'opened' || github.event.action == 'synchronize') }}
         run: gh pr comment ${{ github.event.number }} --body-file comment.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
