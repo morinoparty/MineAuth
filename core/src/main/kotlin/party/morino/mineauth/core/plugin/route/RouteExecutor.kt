@@ -6,24 +6,21 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.component.KoinComponent
-import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
-import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
-import java.lang.reflect.Proxy
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
-import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
+import party.morino.mineauth.core.plugin.execution.ExecutionError
+import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
 import kotlin.reflect.KParameter
-import kotlin.reflect.jvm.javaMethod
 
 /**
  * ハンドラーメソッドを実行するクラス
+ * Cloud (Incendo/cloud) のパターンに基づきファクトリを使用してハンドラーを選択する
+ *
  * パラメータ解決、認証チェック、メソッド実行、レスポンス生成を担当する
  */
 class RouteExecutor(
     private val parameterResolver: ParameterResolver,
-    private val authHandler: AuthenticationHandler
+    private val authHandler: AuthenticationHandler,
+    private val executionHandlerFactory: MethodExecutionHandlerFactory
 ) : KoinComponent {
 
     /**
@@ -41,28 +38,13 @@ class RouteExecutor(
         // パラメータ解決に失敗した場合はレスポンス済みで終了
         val resolvedParams = resolveParameters(call, metadata) ?: return
 
-        // ハンドラーを実行して結果をレスポンスに変換する
-        try {
-            val result = if (metadata.isSuspending) {
-                // suspend関数はContinuationを付けて呼び出す
-                invokeSuspendMethod(metadata, resolvedParams)
-            } else {
-                // 通常の関数はそのまま呼び出す
-                invokeMethod(metadata, resolvedParams)
-            }
+        // ファクトリ経由でハンドラーを取得
+        val handler = executionHandlerFactory.createHandler(metadata)
 
-            // 戻り値をHTTPレスポンスに変換
-            handleResult(call, result)
-        } catch (e: HttpError) {
-            // HttpErrorはそのままレスポンス
-            respondHttpError(call, e)
-        } catch (e: InvocationTargetException) {
-            handleInvocationTargetException(call, e)
-        } catch (e: IllegalArgumentException) {
-            // リフレクションの引数型不一致エラー
-            respondArgumentTypeMismatch(call, metadata, resolvedParams)
-        } catch (e: Exception) {
-            respondUnexpectedError(call, e)
+        // ハンドラーを実行して結果を処理
+        when (val result = handler.execute(metadata, resolvedParams)) {
+            is Either.Left -> handleExecutionError(call, result.value, metadata, resolvedParams)
+            is Either.Right -> handleResult(call, result.value)
         }
     }
 
@@ -120,116 +102,6 @@ class RouteExecutor(
     }
 
     /**
-     * 通常のメソッドをJavaリフレクションで呼び出す
-     *
-     * @param metadata エンドポイントメタデータ
-     * @param params 解決済みパラメータ
-     * @return メソッドの戻り値
-     */
-    private fun invokeMethod(metadata: EndpointMetadata, params: List<Any?>): Any? {
-        val javaMethod = requireJavaMethod(metadata)
-        return javaMethod.invoke(metadata.handlerInstance, *params.toTypedArray())
-    }
-
-    /**
-     * Suspend関数を呼び出す
-     * 動的プロキシを使用して、異なるクラスローダー間のContinuation互換性問題を解決する
-     *
-     * @param metadata エンドポイントメタデータ
-     * @param params 解決済みパラメータ
-     * @return メソッドの戻り値
-     */
-    @Suppress("UNCHECKED_CAST")
-    private suspend fun invokeSuspendMethod(metadata: EndpointMetadata, params: List<Any?>): Any? {
-        val javaMethod = requireJavaMethod(metadata)
-
-        javaMethod.isAccessible = true
-
-        // suspendCoroutineUninterceptedOrReturn を使って継続を明示的に制御する
-        return suspendCoroutineUninterceptedOrReturn { cont ->
-            try {
-                // アドオンのクラスローダーから見えるContinuationインターフェースを取得
-                val addonContinuationClass = javaMethod.parameterTypes.last()
-
-                // 動的プロキシで異なるクラスローダー間のContinuation互換性を吸収する
-                val proxyContinuation = createContinuationProxy(addonContinuationClass, cont)
-
-                // suspend関数はContinuationを最後の引数として受け取る
-                val args = (params + proxyContinuation).toTypedArray()
-                val result = javaMethod.invoke(metadata.handlerInstance, *args)
-
-                // COROUTINE_SUSPENDED の場合はそのまま返す（コルーチンがサスペンド中）
-                if (isCoroutineSuspended(result)) COROUTINE_SUSPENDED else result
-            } catch (e: InvocationTargetException) {
-                throw e.targetException
-            }
-        }
-    }
-
-    /**
-     * KotlinリフレクションからJavaメソッドを取得する
-     *
-     * @param metadata エンドポイントメタデータ
-     * @return JavaのMethod
-     */
-    private fun requireJavaMethod(metadata: EndpointMetadata): Method {
-        return checkNotNull(metadata.method.javaMethod) {
-            "Cannot get Java method for ${metadata.method.name}"
-        }
-    }
-
-    /**
-     * アドオンクラスローダーから見えるContinuationを生成する
-     *
-     * @param addonContinuationClass アドオン側のContinuationインターフェース
-     * @param original 元のContinuation
-     * @return 互換性調整済みのContinuation
-     */
-    private fun createContinuationProxy(
-        addonContinuationClass: Class<*>,
-        original: Continuation<Any?>
-    ): Any {
-        return Proxy.newProxyInstance(
-            addonContinuationClass.classLoader,
-            arrayOf(addonContinuationClass)
-        ) { _, method, args ->
-            when (method.name) {
-                // Result型が異なるクラスローダーなので反射で中身を取り出す
-                "resumeWith" -> handleResumeWith(original, args?.get(0))
-                "getContext" -> original.context
-                else -> null
-            }
-        }
-    }
-
-    /**
-     * resumeWithの引数を安全に変換してContinuationへ伝搬する
-     *
-     * @param original 元のContinuation
-     * @param resultArg アドオン側のResult
-     */
-    private fun handleResumeWith(original: Continuation<Any?>, resultArg: Any?) {
-        val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
-        val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
-        if (exception != null) {
-            original.resumeWith(Result.failure(exception))
-        } else {
-            original.resumeWith(Result.success(value))
-        }
-    }
-
-    /**
-     * サスペンド状態の判定（クラスローダー差異を考慮）
-     *
-     * @param result 実行結果
-     * @return サスペンド中ならtrue
-     */
-    private fun isCoroutineSuspended(result: Any?): Boolean {
-        return result === COROUTINE_SUSPENDED ||
-            result?.javaClass?.name == "kotlin.coroutines.intrinsics.CoroutineSingletons"
-    }
-
-    /**
      * メソッドの戻り値をHTTPレスポンスに変換する
      *
      * @param call ApplicationCall
@@ -240,6 +112,72 @@ class RouteExecutor(
             null -> call.respond(HttpStatusCode.NoContent)
             is Unit -> call.respond(HttpStatusCode.OK)
             else -> call.respond(result)
+        }
+    }
+
+    /**
+     * 実行エラーをHTTPレスポンスに変換する
+     *
+     * @param call ApplicationCall
+     * @param error 実行エラー
+     * @param metadata エンドポイントメタデータ（エラーメッセージ用）
+     * @param resolvedParams 解決済みパラメータ（エラーメッセージ用）
+     */
+    private suspend fun handleExecutionError(
+        call: ApplicationCall,
+        error: ExecutionError,
+        metadata: EndpointMetadata,
+        resolvedParams: List<Any?>
+    ) {
+        when (error) {
+            is ExecutionError.InvocationFailed -> {
+                System.err.println(
+                    "[RouteExecutor] InvocationFailed: ${error.cause.javaClass.name}: ${error.cause.message}"
+                )
+                respondInternalServerError(call, error.cause.message ?: "Unknown error")
+            }
+
+            is ExecutionError.MethodNotFound -> {
+                System.err.println("[RouteExecutor] MethodNotFound: ${error.methodName}")
+                respondInternalServerError(call, "Method not found: ${error.methodName}")
+            }
+
+            is ExecutionError.ArgumentTypeMismatch -> {
+                val expectedParams = metadata.method.parameters
+                    .filter { it.kind != KParameter.Kind.INSTANCE }
+                    .joinToString(", ") { "${it.name}: ${it.type}" }
+                val actualParams = resolvedParams.mapIndexed { index, value ->
+                    "arg$index: ${value?.let { it::class.simpleName } ?: "null"}"
+                }.joinToString(", ")
+                System.err.println(
+                    "[RouteExecutor] ArgumentTypeMismatch: Method=${metadata.method.name}, " +
+                        "Expected=[$expectedParams], Actual=[$actualParams]"
+                )
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(
+                        error = "argument type mismatch",
+                        details = mapOf(
+                            "method" to JsonPrimitive(metadata.method.name),
+                            "expectedParams" to JsonPrimitive(expectedParams),
+                            "actualParams" to JsonPrimitive(actualParams)
+                        )
+                    )
+                )
+            }
+
+            is ExecutionError.HttpErrorThrown -> {
+                call.respond(
+                    HttpStatusCode.fromValue(error.status),
+                    ErrorResponse.fromDetails(error.message, error.details ?: emptyMap())
+                )
+            }
+
+            is ExecutionError.UnexpectedError -> {
+                val errorMessage = error.cause?.message ?: error.message
+                System.err.println("[RouteExecutor] UnexpectedError: $errorMessage")
+                respondInternalServerError(call, errorMessage)
+            }
         }
     }
 
@@ -310,84 +248,6 @@ class RouteExecutor(
                     )
                 )
         }
-    }
-
-    /**
-     * HttpErrorを共通レスポンスに変換する
-     *
-     * @param call ApplicationCall
-     * @param error HttpError
-     */
-    private suspend fun respondHttpError(call: ApplicationCall, error: HttpError) {
-        call.respond(
-            HttpStatusCode.fromValue(error.status.code),
-            ErrorResponse.fromDetails(error.message, error.details)
-        )
-    }
-
-    /**
-     * InvocationTargetExceptionを安全に処理する
-     *
-     * @param call ApplicationCall
-     * @param error InvocationTargetException
-     */
-    private suspend fun handleInvocationTargetException(call: ApplicationCall, error: InvocationTargetException) {
-        val targetException = error.targetException
-        if (targetException is HttpError) {
-            respondHttpError(call, targetException)
-        } else {
-            System.err.println(
-                "[RouteExecutor] InvocationTargetException: ${targetException.javaClass.name}: ${targetException.message}"
-            )
-            respondInternalServerError(call, targetException.message ?: "Unknown error")
-        }
-    }
-
-    /**
-     * 引数型不一致エラーを整形して返す
-     *
-     * @param call ApplicationCall
-     * @param metadata エンドポイントメタデータ
-     * @param resolvedParams 解決済みパラメータ
-     */
-    private suspend fun respondArgumentTypeMismatch(
-        call: ApplicationCall,
-        metadata: EndpointMetadata,
-        resolvedParams: List<Any?>
-    ) {
-        val expectedParams = metadata.method.parameters
-            .filter { it.kind != KParameter.Kind.INSTANCE }
-            .joinToString(", ") { "${it.name}: ${it.type}" }
-        val actualParams = resolvedParams.mapIndexed { index, value ->
-            "arg$index: ${value?.let { it::class.simpleName } ?: "null"}"
-        }.joinToString(", ")
-        System.err.println(
-            "[RouteExecutor] IllegalArgumentException: Method=${metadata.method.name}, " +
-                "Expected=[$expectedParams], Actual=[$actualParams]"
-        )
-        call.respond(
-            HttpStatusCode.InternalServerError,
-            ErrorResponse(
-                error = "argument type mismatch",
-                details = mapOf(
-                    "method" to JsonPrimitive(metadata.method.name),
-                    "expectedParams" to JsonPrimitive(expectedParams),
-                    "actualParams" to JsonPrimitive(actualParams)
-                )
-            )
-        )
-    }
-
-    /**
-     * 予期しない例外を500として返す
-     *
-     * @param call ApplicationCall
-     * @param error 例外
-     */
-    private suspend fun respondUnexpectedError(call: ApplicationCall, error: Exception) {
-        val errorMessage = error.cause?.message ?: error.message ?: "Unknown error"
-        System.err.println("[RouteExecutor] Exception: ${error.javaClass.name}: $errorMessage")
-        respondInternalServerError(call, errorMessage)
     }
 
     /**
