@@ -11,6 +11,12 @@ const config = {
     images: {
         unoptimized: true,
     },
+    // Scalarパッケージのトランスパイル設定
+    transpilePackages: [
+        "@scalar/api-reference-react",
+        "@scalar/api-reference",
+        "@scalar/agent-chat",
+    ],
 };
 
 export default withMDX(config);
