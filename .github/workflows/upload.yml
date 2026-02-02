@@ -4,12 +4,17 @@ on:
   release:
     types: [ published ]
 
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
 jobs:
   build:
-    env: 
+    runs-on: ubuntu-latest
+    env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_ACTOR: ${{ secrets.GITHUB_ACTOR }}
-    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -24,7 +29,6 @@ jobs:
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
-
 
       - name: Set version env
         run: |
@@ -44,9 +48,15 @@ jobs:
         run: ./gradlew publish
 
       - name: Change file name
-        run: 
+        run:
           mv ./core/build/libs/core-*-all.jar ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
-          
+
+      # GitHub Attestations で署名
+      - name: Attest JAR artifact
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: './core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar'
+
       - uses: Kir-Antipov/mc-publish@995edadc13559a8b28d0b7e6571229f067ec7659 # v3.3.0
         with:
           modrinth-id: 9LoU3yUC
