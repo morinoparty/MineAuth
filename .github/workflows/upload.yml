@@ -4,12 +4,20 @@ on:
   release:
     types: [ published ]
 
+permissions:
+  contents: write
+  id-token: write
+  actions: read
+
 jobs:
   build:
-    env: 
+    runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+      plugin_version: ${{ steps.version.outputs.plugin_version }}
+    env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_ACTOR: ${{ secrets.GITHUB_ACTOR }}
-    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -25,12 +33,13 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-
       - name: Set version env
+        id: version
         run: |
           before="${{ github.event.release.tag_name }}"
           after="${before//v/}"
           echo "PLUGIN_VERSION=$after" >> $GITHUB_ENV
+          echo "plugin_version=$after" >> $GITHUB_OUTPUT
 
       - name: change plugin.yml version
         run: |
@@ -44,9 +53,51 @@ jobs:
         run: ./gradlew publish
 
       - name: Change file name
-        run: 
+        run:
           mv ./core/build/libs/core-*-all.jar ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
-          
+
+      # SLSA用のハッシュ生成
+      - name: Generate hashes for SLSA
+        id: hash
+        shell: bash
+        run: |
+          cd ./core/build/libs
+          echo "hashes=$(sha256sum MineAuth-core_${{ env.PLUGIN_VERSION }}.jar | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+      # JAR を GitHub Artifacts にアップロード（SLSA用）
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-jar
+          path: ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
+          retention-days: 1
+
+  # SLSA Level 3 Provenance 生成ジョブ
+  provenance:
+    needs: build
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: "${{ needs.build.outputs.hashes }}"
+      upload-assets: true
+      provenance-name: "mineauth-${{ needs.build.outputs.plugin_version }}.intoto.jsonl"
+
+  # Modrinth と GitHub にアップロード
+  publish:
+    needs: [build, provenance]
+    runs-on: ubuntu-latest
+    env:
+      PLUGIN_VERSION: ${{ needs.build.outputs.plugin_version }}
+    steps:
+      - name: Download JAR artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-jar
+          path: ./release
+
       - uses: Kir-Antipov/mc-publish@995edadc13559a8b28d0b7e6571229f067ec7659 # v3.3.0
         with:
           modrinth-id: 9LoU3yUC
@@ -56,7 +107,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           github-draft: false
           files: |
-            ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
+            ./release/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
           loaders: |
             paper
             purpur

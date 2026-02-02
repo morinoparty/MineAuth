@@ -6,6 +6,8 @@ on:
 permissions:
   pull-requests: write
   contents: write
+  actions: read
+  id-token: write
 
 env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -43,6 +45,7 @@ jobs:
       test_passed: ${{ steps.publish-test-results.outputs.passed }}
       test_skipped: ${{ steps.publish-test-results.outputs.skipped }}
       test_failed: ${{ steps.publish-test-results.outputs.failed }}
+      hashes: ${{ steps.hash.outputs.hashes }}
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
     steps:
@@ -83,15 +86,52 @@ jobs:
           mkdir -p ./gradle-artifacts/detekt
           mv ./core/build/libs/core-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
           mv ./api/build/libs/api-*.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
+          mv ./addons/quickshop-hikari/build/libs/quickshop-hikari-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-quickshop-hikari-${{ env.COMMIT_SHORT_SHA }}.jar || echo "No quickshop-hikari JAR"
           cp -r ./core/build/reports/tests/test/* ./gradle-artifacts/junit/ || echo "No JUnit reports found"
           cp -r ./build/reports/detekt/* ./gradle-artifacts/detekt/
 
-      - name: Upload Gradle artifacts
+      # SLSA用のハッシュ生成
+      - name: Generate hashes for SLSA
+        id: hash
+        shell: bash
+        run: |
+          cd ./gradle-artifacts/jars
+          echo "hashes=$(sha256sum *.jar | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+      # JAR を GitHub Artifacts にアップロード（SLSA Level 3対応）
+      - name: Upload JAR artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gradle-artifacts
-          path: ./gradle-artifacts
+          name: mineauth-jars-${{ env.COMMIT_SHORT_SHA }}
+          path: ./gradle-artifacts/jars/*.jar
+          retention-days: 7
+
+      # レポートは一時アーティファクトとして保持（S3アップロード用）
+      - name: Prepare report artifacts for upload
+        run: |
+          mkdir -p ./report-artifacts
+          cp -r ./gradle-artifacts/junit ./report-artifacts/ || echo "No JUnit reports"
+          cp -r ./gradle-artifacts/detekt ./report-artifacts/ || echo "No Detekt reports"
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-artifacts
+          path: ./report-artifacts
           retention-days: 1
+
+  # SLSA Level 3 Provenance 生成ジョブ
+  provenance:
+    needs: [setup, build-gradle]
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: "${{ needs.build-gradle.outputs.hashes }}"
+      upload-assets: false
+      provenance-name: "mineauth-${{ needs.setup.outputs.commit_sha }}.intoto.jsonl"
 
   # Docs ビルドジョブ（gradle と並列実行）
   build-docs:
@@ -170,24 +210,24 @@ jobs:
           path: ./docs/out
           retention-days: 1
 
-  # S3 アップロードジョブ（AWS CLI 並列リクエスト）
+  # S3 アップロードジョブ（Docs と レポートのみ、JAR は GitHub Artifacts）
   upload-s3:
     needs: [setup, build-gradle, build-docs]
     runs-on: ubuntu-latest
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
     steps:
-      - name: Download all artifacts
+      - name: Download report artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: ./artifacts
+          name: report-artifacts
+          path: ./upload
 
-      - name: Prepare upload directory
-        run: |
-          mkdir -p ./upload
-          mv ./artifacts/gradle-artifacts/* ./upload/
-          mkdir -p ./upload/docs
-          mv ./artifacts/docs-artifacts/* ./upload/docs/
+      - name: Download docs artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-artifacts
+          path: ./upload/docs
 
       - name: Upload to S3 (parallel)
         run: |
@@ -197,8 +237,7 @@ jobs:
           S3_BASE="s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}"
           S3_OPTS="--endpoint-url ${S3_ENDPOINT} --only-show-errors"
 
-          # 各ディレクトリを並列でアップロード
-          aws s3 cp ./upload/jars $S3_BASE/jars $S3_OPTS --recursive &
+          # Docs と レポートを並列でアップロード（JAR は GitHub Artifacts を使用）
           aws s3 cp ./upload/junit $S3_BASE/junit $S3_OPTS --recursive &
           aws s3 cp ./upload/detekt $S3_BASE/detekt $S3_OPTS --recursive &
           aws s3 cp ./upload/docs $S3_BASE/docs $S3_OPTS --recursive &
@@ -209,7 +248,7 @@ jobs:
 
   # コメント作成ジョブ
   comment:
-    needs: [setup, build-gradle, upload-s3]
+    needs: [setup, build-gradle, upload-s3, provenance]
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'opened' || github.event.action == 'synchronize' }}
     env:
@@ -225,8 +264,9 @@ jobs:
 
       - name: Create comment file
         env:
-          ARTIFACT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar"
-          ARTIFACT_URL_API: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar"
+          # JAR は GitHub Artifacts を使用（SLSA Level 3対応）
+          ARTIFACT_RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Docs と レポートは S3 を使用
           JUNIT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
           DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
@@ -236,19 +276,21 @@ jobs:
         run: |
           cat  << EOF > comment.md
           ## 🚀 Preview of ${{ github.event.repository.name }}
-          This preview file are availalble for 7 days. (until $LIMIT_TIME)
+          This preview is available for 7 days. (until $LIMIT_TIME)
+
+          ### 📦 JAR Artifacts (SLSA Level 3)
+          Download JARs from GitHub Artifacts: [Actions Run]($ARTIFACT_RUN_URL)
+          - MineAuth-core-${{ env.COMMIT_SHORT_SHA }}.jar
+          - MineAuth-api-${{ env.COMMIT_SHORT_SHA }}.jar
+          - MineAuth-quickshop-hikari-${{ env.COMMIT_SHORT_SHA }}.jar
+
+          > **SLSA Level 3 Provenance** is included with the artifacts.
+
+          ### 📖 Documentation & Reports
           <table>
             <tr>
               <th scope="row">📖 Documentation Preview</th>
               <td><a href="$DOCS_PREVIEW_URL">$DOCS_PREVIEW_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">📦 Preview Jars Core</th>
-              <td><a href="$ARTIFACT_URL">$ARTIFACT_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">🔌 Preview Jars API</th>
-              <td><a href="$ARTIFACT_URL_API">$ARTIFACT_URL_API</a></td>
             </tr>
             <tr>
               <th scope="row">📖 Dokka API Documentation</th>
@@ -268,24 +310,11 @@ jobs:
             </tr>
           </table>
 
-          ## Test summary
+          ### 🧪 Test Summary
 
-          <table>
-              <tr>
-              <th>
-              <th>Tests 💯</th>
-              <th>Passed ✅</th>
-              <th>Skipped ⏭️</th>
-              <th>Failed ❌</th>
-              </tr>
-              <tr>
-                <td>JUnit Test Report</td>
-                <td>${{ needs.build-gradle.outputs.test_total }} ran</td>
-                <td>${{ needs.build-gradle.outputs.test_passed }} passed</td>
-                <td>${{ needs.build-gradle.outputs.test_skipped }} skipped</td>
-                <td>${{ needs.build-gradle.outputs.test_failed }} failed</td>
-              </tr>
-            </table>
+          | Tests 💯 | Passed ✅ | Skipped ⏭️ | Failed ❌ |
+          |----------|-----------|------------|----------|
+          | ${{ needs.build-gradle.outputs.test_total }} ran | ${{ needs.build-gradle.outputs.test_passed }} passed | ${{ needs.build-gradle.outputs.test_skipped }} skipped | ${{ needs.build-gradle.outputs.test_failed }} failed |
           EOF
 
       - name: Create PR comment

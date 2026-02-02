@@ -1,0 +1,30 @@
+:root {
+    --color-fd-background: var(--mpc-colors-color-palette-bg);
+    --color-fd-background-muted: var(--mpc-colors-color-palette-bg-subtle);
+    --color-fd-secondary: var(--mpc-colors-color-palette-surface);
+    --color-fd-secondary-hover: var(--mpc-colors-color-palette-surface-hover);
+
+    /* Foreground colors */
+    --color-fd-foreground: var(--mpc-colors-color-palette-fg);
+    --color-fd-muted-foreground: var(--mpc-colors-color-palette-fg-muted);
+    --color-fd-secondary-foreground: var(--mpc-colors-color-palette-fg-subtle);
+
+    /* Accent colors */
+    --color-fd-primary: var(--mpc-colors-color-palette-fg);
+    --color-fd-primary-foreground: var(--mpc-colors-color-palette-fg-subtle);
+
+    /* Card */
+    --color-fd-card: var(--mpc-colors-color-palette-bg-subtle);
+    --color-fd-card-foreground: var(--mpc-colors-color-palette-fg);
+
+    /* Popover */
+    --color-fd-popover: var(--mpc-colors-color-palette-bg);
+    --color-fd-popover-foreground: var(--mpc-colors-color-palette-fg);
+
+    /* Accent */
+    --color-fd-accent: var(--mpc-colors-color-palette-surface);
+    --color-fd-accent-foreground: var(--mpc-colors-color-palette-fg);
+
+    /* Ring */
+    --color-fd-ring: var(--mpc-colors-color-palette-surface-hover);
+}

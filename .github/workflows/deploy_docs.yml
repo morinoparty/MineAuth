@@ -7,11 +7,13 @@ on:
       - master
     paths:
       - "docs/**"
+
 permissions:
   contents: write
 
 jobs:
-  build:
+  # Dokka 生成ジョブ（TypeSpec と並列実行）
+  generate-dokka:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -29,8 +31,21 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Build with Gradle
+      - name: Generate Dokka
         run: ./gradlew dokkaGenerate
+
+      - name: Upload Dokka artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dokka-output
+          path: ./docs/public/dokka
+          retention-days: 1
+
+  # TypeSpec 生成ジョブ（Dokka と並列実行）
+  compile-typespec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -42,16 +57,84 @@ jobs:
           version: 10
           run_install: false
 
-      - name: Install
-        working-directory: docs
+      # pnpm キャッシュの設定
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
         run: |
-          pnpm install
-          
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
       - name: Generate OpenAPI
         working-directory: typespec
         run: |
           pnpm install
           pnpm compile
+
+      - name: Upload OpenAPI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openapi-output
+          path: ./docs/public/openapi
+          retention-days: 1
+
+  # Docs ビルドジョブ（Dokka と TypeSpec 完了後に実行）
+  build:
+    needs: [generate-dokka, compile-typespec]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        name: Install pnpm
+        with:
+          version: 10
+          run_install: false
+
+      # pnpm キャッシュの設定
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      # Dokka artifacts をダウンロード
+      - name: Download Dokka artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dokka-output
+          path: ./docs/public/dokka
+
+      # OpenAPI artifacts をダウンロード
+      - name: Download OpenAPI artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: openapi-output
+          path: ./docs/public/openapi
+
+      - name: Install
+        working-directory: docs
+        run: |
+          pnpm install
 
       - name: Build
         working-directory: docs
