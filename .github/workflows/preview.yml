@@ -151,12 +151,6 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Configure Fumadocs for preview
-        run: |
-          cd docs
-          # Update basePath for preview deployment
-          sed -i "s#basePath: ''#basePath: '/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs'#g" next.config.mjs
-
       - name: Install docs dependencies
         working-directory: docs
         run: pnpm install
@@ -172,6 +166,8 @@ jobs:
 
       - name: Build Fumadocs
         working-directory: docs
+        env:
+          BASE_PATH: /mineauth/${{ env.COMMIT_SHORT_SHA }}/docs
         run: pnpm run build
 
       - name: Upload docs artifacts
