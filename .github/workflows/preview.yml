@@ -195,17 +195,11 @@ jobs:
           name: gradle-artifacts
           path: ./artifacts
 
-      # 既存のプレビューリリースを削除（同じPRからの古いリリース）
-      - name: Delete existing preview release
-        run: |
-          gh release delete "preview-pr${{ github.event.pull_request.number }}" --yes || true
-          git push origin --delete "preview-pr${{ github.event.pull_request.number }}" || true
-
-      # プレビューリリースを作成
+      # プレビューリリースを作成（コミットSHAをタグに含めて各コミットを保持）
       - name: Create preview release
         id: create-release
         run: |
-          TAG_NAME="preview-pr${{ github.event.pull_request.number }}"
+          TAG_NAME="preview-pr${{ github.event.pull_request.number }}-${{ env.COMMIT_SHORT_SHA }}"
           RELEASE_URL=$(gh release create "$TAG_NAME" \
             --title "🧪 Preview: PR #${{ github.event.pull_request.number }} (${{ env.COMMIT_SHORT_SHA }})" \
             --notes "Preview build for PR #${{ github.event.pull_request.number }}
@@ -275,7 +269,7 @@ jobs:
       - name: Create comment file
         env:
           RELEASE_URL: "${{ needs.upload-release.outputs.release_url }}"
-          RELEASE_DOWNLOAD_BASE: "https://github.com/${{ github.repository }}/releases/download/preview-pr${{ github.event.pull_request.number }}"
+          RELEASE_DOWNLOAD_BASE: "https://github.com/${{ github.repository }}/releases/download/preview-pr${{ github.event.pull_request.number }}-${{ env.COMMIT_SHORT_SHA }}"
           JUNIT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
           DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
@@ -325,8 +319,16 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Delete preview release
+      - name: Delete all preview releases for this PR
         run: |
-          gh release delete "preview-pr${{ github.event.pull_request.number }}" --yes || true
-          git push origin --delete "preview-pr${{ github.event.pull_request.number }}" || true
-          echo "Preview release deleted"
+          # このPRに関連するすべてのプレビューリリースを取得して削除
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          RELEASES=$(gh release list --json tagName --jq ".[] | select(.tagName | startswith(\"preview-pr${PR_NUMBER}-\")) | .tagName")
+
+          for TAG in $RELEASES; do
+            echo "Deleting release: $TAG"
+            gh release delete "$TAG" --yes || true
+            git push origin --delete "$TAG" || true
+          done
+
+          echo "All preview releases for PR #${PR_NUMBER} deleted"
