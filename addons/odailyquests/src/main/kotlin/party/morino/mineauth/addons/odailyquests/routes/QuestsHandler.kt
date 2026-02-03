@@ -2,7 +2,6 @@ package party.morino.mineauth.addons.odailyquests.routes
 
 import com.ordwen.odailyquests.api.ODailyQuestsAPI
 import org.bukkit.OfflinePlayer
-import org.koin.core.component.KoinComponent
 import party.morino.mineauth.addons.odailyquests.data.PlayerQuestsResponse
 import party.morino.mineauth.addons.odailyquests.data.QuestProgressData
 import party.morino.mineauth.api.annotations.AuthedAccessUser
@@ -14,7 +13,7 @@ import party.morino.mineauth.api.http.HttpStatus
  * O'DailyQuestsのクエスト情報を提供するハンドラー
  * /api/v1/plugins/{plugin-name}/ 配下にエンドポイントを提供する
  */
-class QuestsHandler : KoinComponent {
+class QuestsHandler {
 
     /**
      * 自分のクエスト情報を取得する

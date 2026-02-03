@@ -52,8 +52,18 @@ jobs:
       - name: Rename artifacts
         run: |
           mv ./core/build/libs/core-*-all.jar ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
-          mv ./addons/quickshop-hikari/build/libs/quickshop-hikari-*-all.jar ./addons/quickshop-hikari/build/libs/MineAuth-addon-quickshop-hikari-${{ env.PLUGIN_VERSION }}.jar
-          mv ./addons/vault/build/libs/vault-*-all.jar ./addons/vault/build/libs/MineAuth-addon-vault-${{ env.PLUGIN_VERSION }}.jar
+
+          # 動的にすべてのaddonを検出してリネーム
+          for addon_dir in ./addons/*/; do
+            addon_name=$(basename "$addon_dir")
+            jar_file=$(find "${addon_dir}build/libs/" -name "${addon_name}-*-all.jar" 2>/dev/null | head -1)
+            if [ -n "$jar_file" ]; then
+              mv "$jar_file" "${addon_dir}build/libs/MineAuth-addon-${addon_name}-${{ env.PLUGIN_VERSION }}.jar"
+              echo "Renamed addon: ${addon_name}"
+            else
+              echo "No JAR found for addon: ${addon_name}"
+            fi
+          done
 
       # GitHub Attestations で署名（Core）
       - name: Attest Core JAR artifact
