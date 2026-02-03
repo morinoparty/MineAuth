@@ -21,7 +21,7 @@ mockBukkit = "4.68.0"
 hikari = "6.2.1"
 mysql = "9.2.0"
 micrometer = "1.14.4"
-opentelemetry = "1.45.0"
+opentelemetry = "1.58.0"
 opentelemetry-instrumentation = "2.22.0-alpha"
 
 [libraries]
