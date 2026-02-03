@@ -41,7 +41,7 @@ mccoroutine-bukkit-api = { group = "com.github.shynixn.mccoroutine", name = "mcc
 mccoroutine-bukkit-core = { group = "com.github.shynixn.mccoroutine", name = "mccoroutine-bukkit-core", version.ref = "mccoroutine" }
 
 ktor-server-core = { group = "io.ktor", name = "ktor-server-core", version.ref = "ktor" }
-ktor-server-netty = { group = "io.ktor", name = "ktor-server-netty", version.ref = "ktor" }
+ktor-server-jetty = { group = "io.ktor", name = "ktor-server-jetty-jakarta", version.ref = "ktor" }
 ktor-server-contentNegotiation = { group = "io.ktor", name = "ktor-server-content-negotiation", version.ref = "ktor" }
 ktor-serialization-kotlinxJson = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-server-auth = { group = "io.ktor", name = "ktor-server-auth", version.ref = "ktor" }
@@ -85,6 +85,7 @@ mysql-connector = { group = "com.mysql", name = "mysql-connector-j", version.ref
 vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1" }
 quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.10" }
 luckperms-api = { group = "net.luckperms", name = "api", version = "5.4" }
+odailyquests = { group = "com.github.Ordwen", name = "ODailyQuests", version = "3.0.1" }
 
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 mock-bukkit = { group = "org.mockbukkit.mockbukkit", name = "mockbukkit-v1.21", version.ref = "mockBukkit" }
@@ -110,6 +111,6 @@ securities = ["password4j", "nimbus-jose-jwt", "bcpkix-jdk18on"]
 coroutines = ["mccoroutine-bukkit-api", "mccoroutine-bukkit-core" , "kotlinx-coroutines-core"]
 exposed = ["exposed-core", "exposed-dao", "exposed-jdbc", "exposed-java-time"]
 ktor-client = ["ktor-client-core", "ktor-client-java", "ktor-client-logging", "ktor-client-contentNegotiation"]
-ktor-server = ["ktor-server-core", "ktor-server-netty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "ktor-server-velocity", "logback-classic","ktor-server-call-logging", "ktor-server-metrics-micrometer", "micrometer-registry-prometheus"]
+ktor-server = ["ktor-server-core", "ktor-server-jetty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "ktor-server-velocity", "logback-classic","ktor-server-call-logging", "ktor-server-metrics-micrometer", "micrometer-registry-prometheus"]
 junit-jupiter = ["junit-jupiter", "junit-platform-launcher"]
 koin-test = ["koin-test", "koin-test-junit5"]
