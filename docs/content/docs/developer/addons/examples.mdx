@@ -24,3 +24,59 @@ This addon provides HTTP endpoints for QuickShop-Hikari shop data:
 | GET | `/api/v1/plugins/quickshophikari/shops` | List all shops |
 | GET | `/api/v1/plugins/quickshophikari/shops/{id}` | Get shop by ID |
 | GET | `/api/v1/plugins/quickshophikari/users/{uuid}/shops` | Get shops by owner |
+
+## Vault Addon
+
+Provides HTTP endpoints for Vault economy operations:
+
+**[morinoparty/MineAuth/addons/vault](https://github.com/morinoparty/MineAuth/tree/master/addons/vault)**
+
+| File | Description |
+|------|-------------|
+| `VaultAddon.kt` | Main plugin class |
+| `routes/VaultHandler.kt` | HTTP handler with endpoints |
+| `data/RemittanceData.kt` | Data class for transfer requests |
+
+### Generated Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/plugins/vault-addon/balance/me` | Get own balance |
+| POST | `/api/v1/plugins/vault-addon/send` | Send money to another player |
+
+## ODailyQuests Addon
+
+Provides HTTP endpoints for O'DailyQuests quest data:
+
+**[morinoparty/MineAuth/addons/odailyquests](https://github.com/morinoparty/MineAuth/tree/master/addons/odailyquests)**
+
+| File | Description |
+|------|-------------|
+| `ODailyQuestsAddon.kt` | Main plugin class |
+| `routes/QuestsHandler.kt` | HTTP handler with endpoints |
+| `data/QuestProgressData.kt` | Data classes for quest information |
+
+### Generated Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/plugins/odailyquests-addon/quests/me` | Get own quest progress |
+
+### Response Example
+
+```json
+{
+  "quests": [
+    {
+      "name": "Mine 100 Stone",
+      "description": ["Mine stone blocks to progress"],
+      "category": "mining",
+      "type": "BREAK",
+      "advancement": 45,
+      "requiredAmount": 100,
+      "isAchieved": false
+    }
+  ],
+  "achievedQuests": 2,
+  "totalAchievedQuests": 15
+}
