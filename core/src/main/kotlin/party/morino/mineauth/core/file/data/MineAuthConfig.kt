@@ -87,8 +87,8 @@ data class ObservabilityConfig(
     // トレーシングを有効にするかどうか
     val enabled: Boolean = false,
 
-    // OTLPエンドポイント（Jaegerの場合は通常 http://localhost:4317）
-    val otlpEndpoint: String = "http://localhost:4317",
+    // OTLPエクスポーター設定のリスト（複数のバックエンドに送信可能）
+    val exporters: List<OtlpExporterConfig> = listOf(OtlpExporterConfig()),
 
     // サービス名（トレースに表示される名前）
     val serviceName: String = "mineauth",
@@ -98,4 +98,17 @@ data class ObservabilityConfig(
 
     // ヘルスチェックエンドポイント(/health)を有効にするかどうか
     val healthEnabled: Boolean = true
+)
+
+/**
+ * OTLPエクスポーター設定
+ * 各バックエンド（Jaeger, Tempo等）への送信設定
+ */
+@Serializable
+data class OtlpExporterConfig(
+    // OTLPエンドポイント（例: http://localhost:4317）
+    val endpoint: String = "http://localhost:4317",
+
+    // 認証用ヘッダー（例: Authorization -> Bearer xxx）
+    val headers: Map<String, String> = emptyMap()
 )

@@ -12,7 +12,12 @@ MineAuth supports observability features including distributed tracing with Open
 {
   "observability": {
     "enabled": true,
-    "otlpEndpoint": "http://localhost:4317",
+    "exporters": [
+      {
+        "endpoint": "http://localhost:4317",
+        "headers": {}
+      }
+    ],
     "serviceName": "mineauth",
     "metricsEnabled": true,
     "healthEnabled": true
@@ -25,10 +30,19 @@ MineAuth supports observability features including distributed tracing with Open
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable OpenTelemetry tracing |
-| `otlpEndpoint` | string | `http://localhost:4317` | OTLP gRPC endpoint (e.g., Jaeger, Grafana Tempo) |
+| `exporters` | array | `[{"endpoint": "http://localhost:4317", "headers": {}}]` | List of OTLP exporter configurations |
 | `serviceName` | string | `mineauth` | Service name displayed in traces |
 | `metricsEnabled` | boolean | `true` | Enable `/metrics` endpoint (Prometheus format) |
 | `healthEnabled` | boolean | `true` | Enable `/health` endpoint |
+
+### Exporter Configuration
+
+Each exporter in the `exporters` array supports:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `endpoint` | string | `http://localhost:4317` | OTLP gRPC endpoint (e.g., Jaeger, Grafana Tempo) |
+| `headers` | object | `{}` | Custom headers for authentication (e.g., `{"Authorization": "Bearer token"}`) |
 
 ## Endpoints
 
@@ -62,7 +76,7 @@ This endpoint provides:
 
 ## OpenTelemetry Tracing
 
-When `enabled` is `true`, MineAuth sends distributed traces to the configured OTLP endpoint.
+When `enabled` is `true`, MineAuth sends distributed traces to the configured OTLP endpoints.
 
 ### Supported Backends
 
@@ -70,7 +84,7 @@ When `enabled` is `true`, MineAuth sends distributed traces to the configured OT
 - **Grafana Tempo** - Default OTLP port: `4317`
 - **OpenTelemetry Collector** - Configure as needed
 
-### Jaeger Setup Example
+### Single Backend Example (Jaeger)
 
 1. Start Jaeger with Docker:
 
@@ -87,7 +101,12 @@ docker run -d --name jaeger \
 {
   "observability": {
     "enabled": true,
-    "otlpEndpoint": "http://localhost:4317",
+    "exporters": [
+      {
+        "endpoint": "http://localhost:4317",
+        "headers": {}
+      }
+    ],
     "serviceName": "mineauth"
   }
 }
@@ -95,10 +114,55 @@ docker run -d --name jaeger \
 
 3. Access Jaeger UI at `http://localhost:16686`
 
+### Multiple Backends Example (Jaeger + Grafana Tempo)
+
+You can send traces to multiple backends simultaneously:
+
+```json
+{
+  "observability": {
+    "enabled": true,
+    "exporters": [
+      {
+        "endpoint": "http://jaeger:4317",
+        "headers": {}
+      },
+      {
+        "endpoint": "http://tempo:4317",
+        "headers": {}
+      }
+    ],
+    "serviceName": "mineauth"
+  }
+}
+```
+
+### Authenticated Backend Example (Grafana Cloud)
+
+For backends that require authentication:
+
+```json
+{
+  "observability": {
+    "enabled": true,
+    "exporters": [
+      {
+        "endpoint": "https://tempo-prod-xx-xxx.grafana.net:443",
+        "headers": {
+          "Authorization": "Basic <base64-encoded-credentials>"
+        }
+      }
+    ],
+    "serviceName": "mineauth"
+  }
+}
+```
+
 ### Security
 
 - UUID values in span names are automatically masked to prevent player information leakage
 - Only the hostname of the OTLP endpoint is logged (no credentials)
+- Header values are not logged for security reasons
 
 ## Grafana Integration
 

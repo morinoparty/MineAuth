@@ -111,33 +111,67 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
         addonContinuationClass: Class<*>,
         original: Continuation<Any?>
     ): Any {
+        // アドオン側のクラスローダーからEmptyCoroutineContextを取得
+        // MineAuth側のCoroutineContextを返すとClassLoaderの互換性問題が発生するため
+        val addonClassLoader = addonContinuationClass.classLoader
+        val emptyContext = getEmptyCoroutineContext(addonClassLoader)
+
         return Proxy.newProxyInstance(
-            addonContinuationClass.classLoader,
+            addonClassLoader,
             arrayOf(addonContinuationClass)
         ) { _, method, args ->
             when (method.name) {
                 // Result型が異なるクラスローダーなので反射で中身を取り出す
                 "resumeWith" -> handleResumeWith(original, args?.get(0))
-                "getContext" -> original.context
+                // アドオン側のEmptyCoroutineContextを返す
+                // 実際の実行コンテキストはアドオン側でwithContext等で指定される
+                "getContext" -> emptyContext
                 else -> null
             }
         }
     }
 
     /**
+     * 指定されたクラスローダーからEmptyCoroutineContextを取得する
+     * ClassLoader間の互換性問題を回避するため、アドオン側のコンテキストを使用する
+     *
+     * @param classLoader アドオンのクラスローダー
+     * @return アドオン側のEmptyCoroutineContext
+     */
+    private fun getEmptyCoroutineContext(classLoader: ClassLoader): Any {
+        val emptyContextClass = classLoader.loadClass("kotlin.coroutines.EmptyCoroutineContext")
+        return emptyContextClass.getField("INSTANCE").get(null)
+    }
+
+    /**
      * resumeWithの引数を安全に変換してContinuationへ伝搬する
      * 異なるクラスローダー間でResult型を変換する
      *
+     * Kotlinの Result は inline value class なので：
+     * - 成功時で値がnullでない場合：値そのものが渡される（ボックス化されない）
+     * - 成功時で値がnullの場合：Result.success(null)がボックス化される
+     * - 失敗時：Result.failure(exception)がボックス化される
+     *
      * @param original 元のContinuation
-     * @param resultArg アドオン側のResult
+     * @param resultArg アドオン側のResult または直接の値
      */
     private fun handleResumeWith(original: Continuation<Any?>, resultArg: Any?) {
-        val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
-        val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
-        if (exception != null) {
-            original.resumeWith(Result.failure(exception))
+        // Result型かどうかをクラス名で判定（異なるクラスローダーのため instanceof は使えない）
+        val isResultType = resultArg?.javaClass?.name == "kotlin.Result"
+
+        if (isResultType) {
+            // Result型の場合は従来通りの処理
+            val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
+            val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
+            if (exception != null) {
+                original.resumeWith(Result.failure(exception))
+            } else {
+                original.resumeWith(Result.success(value))
+            }
         } else {
-            original.resumeWith(Result.success(value))
+            // inline value classがボックス化されずに値が直接渡された場合
+            // 成功として扱う
+            original.resumeWith(Result.success(resultArg))
         }
     }
 

@@ -20,6 +20,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.ObservabilityConfig
+import party.morino.mineauth.core.file.data.OtlpExporterConfig
 import java.net.URI
 
 /**
@@ -34,13 +35,18 @@ object TelemetryProvider : KoinComponent {
     /**
      * OpenTelemetryを初期化する
      * 設定でenabledがtrueの場合のみOTLPエクスポーターを設定
+     * 既に初期化済みの場合は一度シャットダウンしてから再初期化する
      *
      * @param config Observability設定
      * @return 初期化されたOpenTelemetryインスタンス
      */
+    @Synchronized
     fun initialize(config: ObservabilityConfig): OpenTelemetry {
-        // 既に初期化済みの場合はそのまま返す
-        openTelemetry?.let { return it }
+        // 既に初期化済みの場合は一度シャットダウンして再初期化
+        if (openTelemetry != null) {
+            plugin.logger.info("Reinitializing OpenTelemetry with new configuration")
+            shutdownInternal()
+        }
 
         if (!config.enabled) {
             // トレーシングが無効の場合はNoOpを返す
@@ -50,13 +56,23 @@ object TelemetryProvider : KoinComponent {
             return noop
         }
 
-        // セキュリティ: エンドポイントのホスト名のみをログに出力（資格情報の漏洩防止）
-        val endpointHost = try {
-            URI(config.otlpEndpoint).host ?: "unknown"
-        } catch (e: Exception) {
-            "invalid-endpoint"
+        // エクスポーターが設定されていない場合はNoOpを返す
+        if (config.exporters.isEmpty()) {
+            plugin.logger.info("No OTLP exporters configured, tracing disabled")
+            val noop = OpenTelemetry.noop()
+            openTelemetry = noop
+            return noop
         }
-        plugin.logger.info("Initializing OpenTelemetry with endpoint host: $endpointHost")
+
+        // セキュリティ: エンドポイントのホスト名のみをログに出力（資格情報の漏洩防止）
+        config.exporters.forEach { exporter ->
+            val endpointHost = try {
+                URI(exporter.endpoint).host ?: "unknown"
+            } catch (e: Exception) {
+                "invalid-endpoint"
+            }
+            plugin.logger.info("Initializing OpenTelemetry exporter for: $endpointHost")
+        }
 
         // リソース属性（サービス名など）を設定
         val resource = Resource.getDefault()
@@ -68,20 +84,21 @@ object TelemetryProvider : KoinComponent {
                 )
             )
 
-        // OTLPエクスポーターを作成（Jaegerへの送信用）
-        val spanExporter = OtlpGrpcSpanExporter.builder()
-            .setEndpoint(config.otlpEndpoint)
-            .build()
-
         // セキュリティ: UUID等の機密情報をマスクするSpanProcessor
         val sanitizingProcessor = SanitizingSpanProcessor()
 
         // TracerProviderを作成
-        val tracerProvider = SdkTracerProvider.builder()
+        val tracerProviderBuilder = SdkTracerProvider.builder()
             .addSpanProcessor(sanitizingProcessor)
-            .addSpanProcessor(BatchSpanProcessor.builder(spanExporter).build())
             .setResource(resource)
-            .build()
+
+        // 各エクスポーターを追加（複数バックエンドへの送信をサポート）
+        config.exporters.forEach { exporterConfig ->
+            val spanExporter = createSpanExporter(exporterConfig)
+            tracerProviderBuilder.addSpanProcessor(BatchSpanProcessor.builder(spanExporter).build())
+        }
+
+        val tracerProvider = tracerProviderBuilder.build()
 
         sdkTracerProvider = tracerProvider
 
@@ -117,14 +134,42 @@ object TelemetryProvider : KoinComponent {
     }
 
     /**
+     * OTLPエクスポーターを作成する
+     * ヘッダー設定をサポートして認証付きバックエンドにも対応
+     *
+     * @param config エクスポーター設定
+     * @return 設定済みのSpanExporter
+     */
+    private fun createSpanExporter(config: OtlpExporterConfig): OtlpGrpcSpanExporter {
+        val builder = OtlpGrpcSpanExporter.builder()
+            .setEndpoint(config.endpoint)
+
+        // ヘッダーを設定（認証用など）
+        config.headers.forEach { (key, value) ->
+            builder.addHeader(key, value)
+        }
+
+        return builder.build()
+    }
+
+    /**
      * シャットダウン処理
      * サーバー停止時に呼び出してリソースを解放する
      */
+    @Synchronized
     fun shutdown() {
+        shutdownInternal()
+        plugin.logger.info("OpenTelemetry shutdown completed")
+    }
+
+    /**
+     * 内部シャットダウン処理
+     * ログ出力なしでリソースを解放する（再初期化時に使用）
+     */
+    private fun shutdownInternal() {
         sdkTracerProvider?.shutdown()
         openTelemetry = null
         sdkTracerProvider = null
-        plugin.logger.info("OpenTelemetry shutdown completed")
     }
 }
 

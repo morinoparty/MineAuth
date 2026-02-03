@@ -47,6 +47,13 @@ tasks {
     }
     runServer {
         minecraftVersion("1.21.4")
+        val plugins = runPaper.downloadPluginsSpec {
+
+            url("https://repo.betonquest.org/betonquest/org/betonquest/betonquest/3.0.0-SNAPSHOT/betonquest-3.0.0-20260203.231415-573-shaded.jar")
+        }
+        downloadPlugins {
+            downloadPlugins.from(plugins)
+        }
     }
 }
 
