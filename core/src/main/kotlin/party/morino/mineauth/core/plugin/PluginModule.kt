@@ -1,6 +1,10 @@
 package party.morino.mineauth.core.plugin
 
 import org.koin.dsl.module
+import party.morino.mineauth.core.openapi.generator.OpenApiGenerator
+import party.morino.mineauth.core.openapi.generator.PathItemGenerator
+import party.morino.mineauth.core.openapi.generator.SchemaGenerator
+import party.morino.mineauth.core.openapi.registry.EndpointMetadataRegistry
 import party.morino.mineauth.core.plugin.annotation.AnnotationProcessor
 import party.morino.mineauth.core.plugin.execution.DefaultMethodExecutionHandlerFactory
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
@@ -35,4 +39,10 @@ val pluginModule = module {
 
     // ルート構築
     single { RouteBuilder(get()) }
+
+    // OpenAPI生成
+    single { EndpointMetadataRegistry() }
+    single { SchemaGenerator() }
+    single { PathItemGenerator() }
+    single { OpenApiGenerator() }
 }
