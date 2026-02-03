@@ -100,7 +100,7 @@ resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.3.0" }
 shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.2.10" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.2.10" }
-dokka = { id = "org.jetbrains.dokka", version = "2.0.0" }
+dokka = { id = "org.jetbrains.dokka", version = "2.1.0" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 
 [bundles]
