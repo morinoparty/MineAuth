@@ -1,0 +1,120 @@
+---
+title: API Documentation
+description: Interactive API documentation with OpenAPI and Scalar
+icon: FileText
+---
+
+MineAuth provides interactive API documentation through OpenAPI 3.1.0 specification and Scalar UI.
+
+## Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/openapi` | OpenAPI 3.1.0 specification in JSON format |
+| `/scalar` | Interactive API documentation UI |
+
+## Scalar UI
+
+Access the interactive API documentation at:
+
+```
+http://localhost:8080/scalar
+```
+
+Scalar provides:
+- Interactive API explorer
+- Request/response examples
+- Authentication testing with OAuth2
+- Schema visualization
+
+## OpenAPI Specification
+
+Get the raw OpenAPI specification:
+
+```bash
+curl http://localhost:8080/openapi
+```
+
+The specification includes:
+- All dynamically registered addon endpoints
+- OAuth2 security scheme definitions
+- Request/response schemas
+- Parameter definitions
+
+## Dynamic Endpoint Discovery
+
+MineAuth automatically generates OpenAPI documentation for all registered addons. When an addon registers endpoints using `@GetMapping`, `@PostMapping`, etc., they are automatically included in the OpenAPI specification.
+
+### Example
+
+If VaultAddon registers these endpoints:
+
+```kotlin
+@GetMapping("/balance/me")
+suspend fun getMyBalance(@AuthedAccessUser player: OfflinePlayer): BalanceResponse
+
+@PostMapping("/send")
+suspend fun sendMoney(
+    @AuthedAccessUser player: OfflinePlayer,
+    @RequestBody data: RemittanceData
+): TransferResponse
+```
+
+They will appear in the OpenAPI spec as:
+
+```json
+{
+  "paths": {
+    "/api/v1/plugins/vaultaddon/balance/me": {
+      "get": {
+        "summary": "Get My Balance",
+        "security": [{"oauth2": ["read.*", "write.*"]}],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "balance": {"type": "number"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Schema Generation
+
+MineAuth automatically generates JSON schemas from Kotlin data classes:
+
+| Kotlin Type | OpenAPI Type |
+|-------------|--------------|
+| `String` | `string` |
+| `Int` | `integer` (format: int32) |
+| `Long` | `integer` (format: int64) |
+| `Double` | `number` (format: double) |
+| `Boolean` | `boolean` |
+| `UUID` | `string` (format: uuid) |
+| `List<T>` | `array` |
+| `Map<K, V>` | `object` |
+| `@Serializable` class | `object` with properties |
+| `enum class` | `string` with enum values |
+
+## Security
+
+Endpoints with `@AuthedAccessUser` annotation are marked with OAuth2 security requirements in the OpenAPI spec. Public endpoints (without authentication) have no security requirements.
+
+## Integration with External Tools
+
+The OpenAPI specification can be used with:
+
+- **Postman** - Import `/openapi` URL
+- **Swagger Editor** - Paste JSON content
+- **Code Generators** - Generate client SDKs
+- **API Testing Tools** - Automated testing

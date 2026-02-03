@@ -1,0 +1,119 @@
+---
+title: Observability Settings
+description: OpenTelemetry tracing, Prometheus metrics, and health check configuration
+icon: Activity
+---
+
+MineAuth supports observability features including distributed tracing with OpenTelemetry, Prometheus metrics, and health check endpoints.
+
+## config.json Example
+
+```json5
+{
+  "observability": {
+    "enabled": true,
+    "otlpEndpoint": "http://localhost:4317",
+    "serviceName": "mineauth",
+    "metricsEnabled": true,
+    "healthEnabled": true
+  }
+}
+```
+
+## Configuration Options
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable OpenTelemetry tracing |
+| `otlpEndpoint` | string | `http://localhost:4317` | OTLP gRPC endpoint (e.g., Jaeger, Grafana Tempo) |
+| `serviceName` | string | `mineauth` | Service name displayed in traces |
+| `metricsEnabled` | boolean | `true` | Enable `/metrics` endpoint (Prometheus format) |
+| `healthEnabled` | boolean | `true` | Enable `/health` endpoint |
+
+## Endpoints
+
+### Health Check
+
+When `healthEnabled` is `true`, the `/health` endpoint returns the server status:
+
+```bash
+curl http://localhost:8080/health
+```
+
+Response:
+```json
+{
+  "status": "ok"
+}
+```
+
+### Prometheus Metrics
+
+When `metricsEnabled` is `true`, the `/metrics` endpoint returns Prometheus-formatted metrics:
+
+```bash
+curl http://localhost:8080/metrics
+```
+
+This endpoint provides:
+- HTTP request counts and latencies
+- JVM metrics (memory, threads, GC)
+- Custom application metrics
+
+## OpenTelemetry Tracing
+
+When `enabled` is `true`, MineAuth sends distributed traces to the configured OTLP endpoint.
+
+### Supported Backends
+
+- **Jaeger** - Default OTLP port: `4317`
+- **Grafana Tempo** - Default OTLP port: `4317`
+- **OpenTelemetry Collector** - Configure as needed
+
+### Jaeger Setup Example
+
+1. Start Jaeger with Docker:
+
+```bash
+docker run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+```
+
+2. Configure MineAuth:
+
+```json
+{
+  "observability": {
+    "enabled": true,
+    "otlpEndpoint": "http://localhost:4317",
+    "serviceName": "mineauth"
+  }
+}
+```
+
+3. Access Jaeger UI at `http://localhost:16686`
+
+### Security
+
+- UUID values in span names are automatically masked to prevent player information leakage
+- Only the hostname of the OTLP endpoint is logged (no credentials)
+
+## Grafana Integration
+
+For a complete observability stack, you can combine:
+
+1. **Prometheus** - Scrape `/metrics` endpoint
+2. **Jaeger/Tempo** - Receive traces via OTLP
+3. **Grafana** - Visualize metrics and traces
+
+Example Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: 'mineauth'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+```

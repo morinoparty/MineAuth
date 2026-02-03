@@ -35,6 +35,7 @@ import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.repository.OAuthClientRepository
 import party.morino.mineauth.core.repository.RevokedTokenRepository
+import party.morino.mineauth.core.openapi.OpenApiRouter.openApiRouter
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
@@ -126,7 +127,12 @@ internal fun Application.module() {
     }
 
     install(ContentNegotiation) {
-        json()
+        json(kotlinx.serialization.json.Json {
+            // nullフィールドをJSONに出力しない（OpenAPIドキュメント等で必要）
+            explicitNulls = false
+            // 未知のフィールドを無視
+            ignoreUnknownKeys = true
+        })
     }
 
     install(Velocity) {
@@ -187,6 +193,9 @@ internal fun Application.module() {
         }
 
         staticFiles("assets", plugin.dataFolder.resolve("assets"))
+
+        // OpenAPI/Scalar ドキュメントエンドポイント
+        openApiRouter()
 
         authRouter()
         route("/api/v1/commons") {

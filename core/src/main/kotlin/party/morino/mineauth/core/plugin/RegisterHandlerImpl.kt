@@ -3,6 +3,7 @@ package party.morino.mineauth.core.plugin
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.api.RegisterHandler
+import party.morino.mineauth.core.openapi.registry.EndpointMetadataRegistry
 import party.morino.mineauth.core.plugin.annotation.AnnotationProcessor
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.route.RouteBuilder
@@ -20,6 +21,7 @@ class RegisterHandlerImpl(
     private val annotationProcessor: AnnotationProcessor by inject()
     private val routeBuilder: RouteBuilder by inject()
     private val routeRegistry: PluginRouteRegistry by inject()
+    private val metadataRegistry: EndpointMetadataRegistry by inject()
 
     // 登録済みエンドポイントメタデータ
     private val registeredEndpoints = mutableListOf<EndpointMetadata>()
@@ -43,15 +45,6 @@ class RegisterHandlerImpl(
                 },
                 { metadata ->
                     this.registeredEndpoints.addAll(metadata)
-                    context.plugin.logger.info(
-                        "Registered ${metadata.size} endpoints from ${handler::class.simpleName}"
-                    )
-                    // 登録したエンドポイントのパスをログ出力
-                    metadata.forEach { endpoint ->
-                        context.plugin.logger.info(
-                            "  - ${endpoint.httpMethod} ${context.basePath}${endpoint.path}"
-                        )
-                    }
                 }
             )
         }
@@ -70,6 +63,10 @@ class RegisterHandlerImpl(
         val routeConfig: io.ktor.server.routing.Route.() -> Unit = {
             routeBuilder.buildRoutes(this, context, currentEndpoints)
         }
+        // ルートを登録
         routeRegistry.register(context.plugin.name, routeConfig)
+
+        // OpenAPI生成用にメタデータも登録
+        metadataRegistry.register(context.plugin.name, context.basePath, currentEndpoints)
     }
 }
