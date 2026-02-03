@@ -9,11 +9,12 @@ import kotlinx.serialization.Serializable
  *
  * スコープに応じて返却されるクレームが決定される：
  * - openid: sub（必須）
- * - profile: picture, preferred_username
+ * - profile: name, picture, preferred_username
  * - email: email, email_verified
  * - roles: roles（LuckPermsのグループ情報）
  *
  * @property sub Subject Identifier - ユーザーの一意識別子（UUID形式）
+ * @property name ユーザーのフルネーム（Minecraftではプレイヤー名と同一）
  * @property picture ユーザーのプロフィール画像URL（profileスコープが必要）
  * @property preferredUsername OIDC標準のユーザー名（profileスコープが必要）
  * @property email ユーザーのメールアドレス（emailスコープが必要）
@@ -24,6 +25,9 @@ import kotlinx.serialization.Serializable
 data class UserInfoResponse(
     // openid スコープ: 必須 - Subject Identifier
     val sub: String,
+
+    // profile スコープ: ユーザーのフルネーム（Minecraftではプレイヤー名と同一）
+    val name: String? = null,
 
     // profile スコープ: プロフィール画像URL
     val picture: String? = null,
@@ -72,6 +76,7 @@ data class UserInfoResponse(
 
             return UserInfoResponse(
                 sub = sub,
+                name = if (hasProfileScope) username else null,
                 picture = if (hasProfileScope) "$AVATAR_BASE_URL$sub" else null,
                 preferredUsername = if (hasProfileScope) username else null,
                 email = if (hasEmailScope) email else null,

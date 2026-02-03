@@ -44,39 +44,44 @@ Provides HTTP endpoints for Vault economy operations:
 | GET | `/api/v1/plugins/vault-addon/balance/me` | Get own balance |
 | POST | `/api/v1/plugins/vault-addon/send` | Send money to another player |
 
-## ODailyQuests Addon
+## BetonQuest Addon
 
-Provides HTTP endpoints for O'DailyQuests quest data:
+Provides HTTP endpoints for BetonQuest quest data:
 
-**[morinoparty/MineAuth/addons/odailyquests](https://github.com/morinoparty/MineAuth/tree/master/addons/odailyquests)**
+**[morinoparty/MineAuth/addons/betonquest](https://github.com/morinoparty/MineAuth/tree/master/addons/betonquest)**
 
 | File | Description |
 |------|-------------|
-| `ODailyQuestsAddon.kt` | Main plugin class |
+| `BetonQuestAddon.kt` | Main plugin class |
 | `routes/QuestsHandler.kt` | HTTP handler with endpoints |
-| `data/QuestProgressData.kt` | Data classes for quest information |
+| `data/QuestData.kt` | Data classes for quest information |
 
 ### Generated Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/plugins/odailyquests-addon/quests/me` | Get own quest progress |
+| GET | `/api/v1/plugins/betonquest-addon/quests` | Get available quests |
 
 ### Response Example
 
 ```json
 {
-  "quests": [
+  "packages": [
     {
-      "name": "Mine 100 Stone",
-      "description": ["Mine stone blocks to progress"],
-      "category": "mining",
-      "type": "BREAK",
-      "advancement": 45,
-      "requiredAmount": 100,
-      "isAchieved": false
+      "name": "default",
+      "quests": [
+        {
+          "id": "kill_zombies",
+          "name": "Kill 10 Zombies",
+          "description": null
+        },
+        {
+          "id": "welcome",
+          "name": "welcome",
+          "description": ["Welcome to the server! Talk to the NPC."]
+        }
+      ]
     }
   ],
-  "achievedQuests": 2,
-  "totalAchievedQuests": 15
+  "totalQuests": 2
 }
