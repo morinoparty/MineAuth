@@ -85,7 +85,7 @@ jobs:
           files: |
             ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
             ./addons/quickshop-hikari/build/libs/MineAuth-Addon-QuickShop-Hikari-${{ env.PLUGIN_VERSION }}.jar
-            ./addons/vault/build/libs/MineAuth-Addon-Vault-${{ env.PLUGIN_VERSION }}.jarwq
+            ./addons/vault/build/libs/MineAuth-Addon-Vault-${{ env.PLUGIN_VERSION }}.jar
           loaders: |
             paper
             purpur
