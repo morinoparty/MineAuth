@@ -35,6 +35,11 @@ tasks:
       - sleep 5 && echo "starting server..."
       - ./gradlew clean :addons:quickshop-hikari:runServer
     silent: true
+  clear:
+    cmds:
+      - rm ./core/run/**/session.lock
+      - rm ./addons/**/run/**/session.lock
+    silent: true
   commit:
     cmds:
       - task format

@@ -21,8 +21,6 @@ dependencies {
 
     implementation(libs.bundles.commands)
 
-    implementation(libs.koin.core)
-
     // Paperのlibraries機能またはMineAuthコアから提供されるライブラリ（compileOnly）
     compileOnly(libs.kotlinx.serialization.json)
     compileOnly(libs.bundles.coroutines)

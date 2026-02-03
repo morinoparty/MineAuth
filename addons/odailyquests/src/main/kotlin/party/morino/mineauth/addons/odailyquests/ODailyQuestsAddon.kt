@@ -1,7 +1,6 @@
 package party.morino.mineauth.addons.odailyquests
 
 import org.bukkit.plugin.java.JavaPlugin
-import org.koin.core.context.GlobalContext
 import party.morino.mineauth.addons.odailyquests.routes.QuestsHandler
 import party.morino.mineauth.api.MineAuthAPI
 
@@ -26,13 +25,6 @@ class ODailyQuestsAddon : JavaPlugin() {
         }
         mineAuthAPI = api
 
-        // Koinコンテキストの確認
-        if (!verifyKoin()) {
-            logger.severe("Koin is not initialized. MineAuth must be loaded before this addon.")
-            server.pluginManager.disablePlugin(this)
-            return
-        }
-
         // ODailyQuestsプラグインの存在確認
         if (!verifyODailyQuests()) {
             logger.severe("ODailyQuests plugin not found")
@@ -48,17 +40,6 @@ class ODailyQuestsAddon : JavaPlugin() {
 
     override fun onDisable() {
         logger.info("ODailyQuests Addon disabled")
-    }
-
-    /**
-     * Koinコンテキストの検証
-     * MineAuthが起動したKoinコンテキストが存在するか確認する
-     *
-     * @return Koinが初期化済みの場合はtrue
-     */
-    private fun verifyKoin(): Boolean {
-        val koinApp = GlobalContext.getOrNull()
-        return koinApp != null
     }
 
     /**

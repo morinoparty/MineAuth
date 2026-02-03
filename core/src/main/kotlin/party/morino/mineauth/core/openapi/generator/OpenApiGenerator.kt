@@ -3,6 +3,7 @@ package party.morino.mineauth.core.openapi.generator
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
+import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.openapi.model.Components
 import party.morino.mineauth.core.openapi.model.Info
 import party.morino.mineauth.core.openapi.model.License
@@ -11,6 +12,7 @@ import party.morino.mineauth.core.openapi.model.OAuthFlows
 import party.morino.mineauth.core.openapi.model.OpenApiDocument
 import party.morino.mineauth.core.openapi.model.PathItem
 import party.morino.mineauth.core.openapi.model.SecurityScheme
+import party.morino.mineauth.core.openapi.model.Server
 import party.morino.mineauth.core.openapi.model.Tag
 import party.morino.mineauth.core.openapi.registry.EndpointMetadataRegistry
 
@@ -23,6 +25,7 @@ class OpenApiGenerator : KoinComponent {
     private val plugin: MineAuth by inject()
     private val metadataRegistry: EndpointMetadataRegistry by inject()
     private val pathItemGenerator: PathItemGenerator by inject()
+    private val config: MineAuthConfig by inject()
 
     /**
      * 完全なOpenAPIドキュメントを生成する
@@ -36,6 +39,12 @@ class OpenApiGenerator : KoinComponent {
         return OpenApiDocument(
             openapi = "3.1.0",
             info = generateInfo(),
+            servers = listOf(
+                Server(
+                    url = config.server.baseUrl,
+                    description = "MineAuth API Server"
+                )
+            ),
             paths = dynamicPaths,
             components = generateComponents(),
             // グローバルsecurityは設定しない（各Operationで個別に設定）
@@ -115,6 +124,9 @@ class OpenApiGenerator : KoinComponent {
      * OAuth2セキュリティスキームを含む
      */
     private fun generateComponents(): Components {
+        // baseUrlから末尾のスラッシュを除去して正規化
+        val baseUrl = config.server.baseUrl.trimEnd('/')
+
         return Components(
             securitySchemes = mapOf(
                 "oauth2" to SecurityScheme(
@@ -122,8 +134,8 @@ class OpenApiGenerator : KoinComponent {
                     description = "OAuth2 Authorization Code Flow",
                     flows = OAuthFlows(
                         authorizationCode = OAuthFlow(
-                            authorizationUrl = "/oauth2/authorize",
-                            tokenUrl = "/oauth2/token",
+                            authorizationUrl = "$baseUrl/oauth2/authorize",
+                            tokenUrl = "$baseUrl/oauth2/token",
                             scopes = mapOf(
                                 "read.*" to "Grants read access for resources",
                                 "write.*" to "Grants write access for resources"

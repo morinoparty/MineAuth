@@ -3,8 +3,8 @@ package party.morino.mineauth.addons.vault
 import net.milkbowl.vault.economy.Economy
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
-import org.koin.core.context.GlobalContext
-import org.koin.core.context.loadKoinModules
+import org.koin.core.context.startKoin
+import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.vault.routes.VaultHandler
 import party.morino.mineauth.api.MineAuthAPI
@@ -30,7 +30,7 @@ class VaultAddon : JavaPlugin() {
         }
         mineAuthAPI = api
 
-        // Koinモジュールの設定
+        // Koinの初期化
         if (!setupKoin()) {
             logger.severe("Failed to setup Koin - Economy provider not found")
             server.pluginManager.disablePlugin(this)
@@ -44,24 +44,17 @@ class VaultAddon : JavaPlugin() {
     }
 
     override fun onDisable() {
+        stopKoin()
         logger.info("Vault Addon disabled")
     }
 
     /**
-     * Koinの設定
-     * MineAuthが起動したKoinコンテキストにEconomyモジュールを追加する
+     * Koinの初期化
+     * アドオン独自のKoinコンテキストを起動する
      *
      * @return 初期化に成功した場合はtrue、Economy providerが見つからない場合はfalse
      */
     private fun setupKoin(): Boolean {
-        // MineAuth側のKoinが起動済みであることを確認
-        // このアドオンはMineAuthのKoinコンテキストに依存するため、未起動時はエラー
-        val koinApp = GlobalContext.getOrNull()
-        if (koinApp == null) {
-            logger.severe("Koin is not initialized. MineAuth must be loaded before this addon.")
-            return false
-        }
-
         // VaultのEconomy providerを取得
         val rsp = Bukkit.getServicesManager().getRegistration(Economy::class.java)
         if (rsp == null) {
@@ -72,12 +65,14 @@ class VaultAddon : JavaPlugin() {
         val economy = rsp.provider
         logger.info("Economy provider found: ${economy.name}")
 
-        val vaultModule = module {
-            // Economyインスタンスをシングルトンとして登録
-            single<Economy> { economy }
+        startKoin {
+            modules(
+                module {
+                    // Economyインスタンスをシングルトンとして登録
+                    single<Economy> { economy }
+                }
+            )
         }
-
-        loadKoinModules(vaultModule)
         return true
     }
 
