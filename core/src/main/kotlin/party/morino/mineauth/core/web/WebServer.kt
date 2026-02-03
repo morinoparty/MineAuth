@@ -8,7 +8,7 @@ import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.engine.*
 import io.ktor.server.http.content.*
-import io.ktor.server.netty.*
+import io.ktor.server.jetty.jakarta.*
 import io.ktor.server.metrics.micrometer.*
 import io.ktor.server.plugins.calllogging.*
 import io.ktor.server.plugins.contentnegotiation.*
@@ -46,7 +46,7 @@ import java.util.concurrent.TimeUnit
 
 object WebServer : KoinComponent {
     private val plugin: MineAuth by inject()
-    var originalServer: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine. Configuration>? = null
+    var originalServer: EmbeddedServer<JettyApplicationEngine, JettyApplicationEngineBase.Configuration>? = null
     fun settingServer() {
         val webServerConfigData: WebServerConfigData = get()
         plugin.logger.info("Setting up web server")
@@ -54,11 +54,11 @@ object WebServer : KoinComponent {
 
 
         }
-        originalServer = embeddedServer(Netty, environment = environment, configure = {
+        originalServer = embeddedServer(Jetty, environment = environment, configure = {
             connector {
                 port = webServerConfigData.port
             }
-            if (webServerConfigData.ssl!=null) {
+            if (webServerConfigData.ssl != null) {
                 val keyStoreFile = plugin.dataFolder.resolve("keystore.jks")
                 val keystore = KeyStore.getInstance(keyStoreFile, webServerConfigData.ssl.keyStorePassword.toCharArray())
                 sslConnector(keyStore = keystore, keyAlias = webServerConfigData.ssl.keyAlias, keyStorePassword = { webServerConfigData.ssl.keyStorePassword.toCharArray() }, privateKeyPassword = { webServerConfigData.ssl.privateKeyPassword.toCharArray() }) {
