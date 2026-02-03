@@ -9,9 +9,16 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.engine.*
 import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
+import io.ktor.server.metrics.micrometer.*
+import io.ktor.server.plugins.calllogging.*
 import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.micrometer.prometheusmetrics.PrometheusConfig
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
+import io.opentelemetry.instrumentation.ktor.v3_0.KtorServerTelemetry
+import org.slf4j.event.Level
 import io.ktor.server.velocity.*
 import org.apache.velocity.runtime.RuntimeConstants
 import org.apache.velocity.runtime.resource.loader.FileResourceLoader
@@ -22,6 +29,7 @@ import org.koin.java.KoinJavaComponent.get
 import org.koin.java.KoinJavaComponent.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
+import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
@@ -31,6 +39,7 @@ import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
 import party.morino.mineauth.core.plugin.PluginRouteRegistry
+import party.morino.mineauth.core.web.telemetry.TelemetryProvider
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 
@@ -65,12 +74,57 @@ object WebServer : KoinComponent {
 
     fun stopServer() {
         originalServer?.stop(0, 0, TimeUnit.SECONDS)
+        // OpenTelemetryのリソースを解放
+        TelemetryProvider.shutdown()
     }
 }
 
 internal fun Application.module() {
     val plugin: MineAuth by inject(MineAuth::class.java)
     val jwtConfigData: JWTConfigData = get(JWTConfigData::class.java)
+    val mineAuthConfig: MineAuthConfig = get(MineAuthConfig::class.java)
+    val observabilityConfig = mineAuthConfig.observability
+
+    // OpenTelemetryトレーシングを初期化
+    val openTelemetry = TelemetryProvider.initialize(observabilityConfig)
+
+    // トレーシングが有効な場合、KtorServerTelemetryをインストール
+    // KtorServerTelemetryは他のロギング/テレメトリプラグインより先にインストールする必要がある
+    if (observabilityConfig.enabled) {
+        install(KtorServerTelemetry) {
+            setOpenTelemetry(openTelemetry)
+        }
+    }
+
+    // Prometheusメトリクスレジストリ
+    val appMicrometerRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+
+    // HTTPリクエスト/レスポンスのロギング
+    install(CallLogging) {
+        level = Level.INFO
+        // リクエスト情報をログに出力
+        format { call ->
+            val status = call.response.status()
+            val httpMethod = call.request.httpMethod.value
+            val path = call.request.path()
+            val duration = call.processingTimeMillis()
+            "HTTP $httpMethod $path - $status [${duration}ms]"
+        }
+        // ヘルスチェックやアセット、メトリクスへのリクエストは除外
+        filter { call ->
+            !call.request.path().startsWith("/assets") &&
+                call.request.path() != "/health" &&
+                call.request.path() != "/metrics"
+        }
+    }
+
+    // Micrometerメトリクス
+    install(MicrometerMetrics) {
+        registry = appMicrometerRegistry
+        // メトリクス収集対象から除外するパス
+        distinctNotRegisteredRoutes = false
+    }
+
     install(ContentNegotiation) {
         json()
     }
@@ -116,6 +170,22 @@ internal fun Application.module() {
                 call.respondText("Hello MineAuth!")
             }
         }
+
+        // Prometheusメトリクスエンドポイント（metricsEnabledが有効な場合のみ）
+        if (observabilityConfig.metricsEnabled) {
+            get("/metrics") {
+                call.respond(appMicrometerRegistry.scrape())
+            }
+        }
+
+        // ヘルスチェックエンドポイント（healthEnabledが有効な場合のみ）
+        // 本番環境ではロードバランサーからのみアクセス可能にすることを推奨
+        if (observabilityConfig.healthEnabled) {
+            get("/health") {
+                call.respond(mapOf("status" to "ok"))
+            }
+        }
+
         staticFiles("assets", plugin.dataFolder.resolve("assets"))
 
         authRouter()

@@ -87,7 +87,19 @@ jobs:
           mkdir -p ./gradle-artifacts/detekt
           mv ./core/build/libs/core-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
           mv ./api/build/libs/api-*.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
-          mv ./addons/quickshop-hikari/build/libs/quickshop-hikari-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-quickshop-hikari-${{ env.COMMIT_SHORT_SHA }}.jar || echo "No quickshop-hikari JAR"
+
+          # 動的にすべてのaddonを検出してリネーム
+          for addon_dir in ./addons/*/; do
+            addon_name=$(basename "$addon_dir")
+            jar_file=$(find "${addon_dir}build/libs/" -name "${addon_name}-*-all.jar" 2>/dev/null | head -1)
+            if [ -n "$jar_file" ]; then
+              mv "$jar_file" "./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-addon-${addon_name}-${{ env.COMMIT_SHORT_SHA }}.jar"
+              echo "Moved addon: ${addon_name}"
+            else
+              echo "No JAR found for addon: ${addon_name}"
+            fi
+          done
+
           cp -r ./core/build/reports/tests/test/* ./gradle-artifacts/junit/ || echo "No JUnit reports found"
           cp -r ./build/reports/detekt/* ./gradle-artifacts/detekt/
 
@@ -260,6 +272,12 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Download JAR artifacts for comment generation
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: gradle-artifacts
+          path: ./artifacts/gradle-artifacts
+
       - name: Get limit time
         id: limit-time
         run: |
@@ -277,7 +295,21 @@ jobs:
           OPENAPI_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/openapi/index.html"
           LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
-          cat  << EOF > comment.md
+          # 動的にaddonの行を生成
+          ADDON_ROWS=""
+          for jar in ./artifacts/gradle-artifacts/jars/${{ env.PROJECT_NAME }}-addon-*.jar; do
+            if [ -f "$jar" ]; then
+              jar_name=$(basename "$jar")
+              # addon名を抽出 (MineAuth-addon-xxx-SHA.jar -> xxx)
+              addon_name=$(echo "$jar_name" | sed "s/${{ env.PROJECT_NAME }}-addon-//" | sed "s/-${{ env.COMMIT_SHORT_SHA }}.jar//")
+              # 表示名を整形 (quickshop-hikari -> QuickShop Hikari)
+              display_name=$(echo "$addon_name" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
+              ADDON_ROWS="${ADDON_ROWS}| Addon: ${display_name} | [${jar_name}]($RELEASE_DOWNLOAD_BASE/${jar_name}) |
+          "
+            fi
+          done
+
+          cat << EOF > comment.md
           ## 🚀 Preview of ${{ github.event.repository.name }}
 
           ### 📦 Preview JARs ([Release Page]($RELEASE_URL))
@@ -285,8 +317,7 @@ jobs:
           |----------|----------|
           | Core | [${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar) |
           | API | [${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar) |
-          | QuickShop | [${{ env.PROJECT_NAME }}-quickshop-hikari-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-quickshop-hikari-${{ env.COMMIT_SHORT_SHA }}.jar) |
-
+          ${ADDON_ROWS}
           > 📜 **Attestation**: \`gh attestation verify <jar-file> --owner morinoparty\`
 
           ### 📖 Documentation & Reports

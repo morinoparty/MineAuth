@@ -34,8 +34,9 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew :core:build -x test
+      # Core と Addons を並列ビルド
+      - name: Build with Gradle (parallel)
+        run: ./gradlew build -x test --parallel
 
       - uses: release-drafter/release-drafter@b1476f6e6eb133afa41ed8589daba6dc69b4d3f5 # v6.1.0
         id: release-drafter

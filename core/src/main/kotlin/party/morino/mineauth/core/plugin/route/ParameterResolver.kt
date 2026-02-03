@@ -7,6 +7,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.principal
 import io.ktor.server.request.receiveText
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
 import org.bukkit.Bukkit
@@ -22,8 +23,15 @@ import kotlin.reflect.jvm.jvmErasure
  * 各パラメータタイプに対応した解決ロジックを提供する
  */
 class ParameterResolver(
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val maxBodySize: Int = MAX_BODY_SIZE
 ) : KoinComponent {
+
+    companion object {
+        // リクエストボディの最大サイズ（1MB）
+        // DoS攻撃防止のため、過度に大きなボディを拒否する
+        const val MAX_BODY_SIZE = 1024 * 1024
+    }
 
     /**
      * Ktorのコンテキストからパラメータ値を解決する
@@ -83,6 +91,7 @@ class ParameterResolver(
 
     /**
      * リクエストボディをデシリアライズする
+     * セキュリティ: ボディサイズを制限してDoS攻撃を防止する
      *
      * @param call ApplicationCall
      * @param paramInfo ボディパラメータ情報
@@ -93,9 +102,31 @@ class ParameterResolver(
         paramInfo: ParameterInfo.Body
     ): Either<ResolveError, Any> = either {
         try {
+            // セキュリティ: Content-Lengthヘッダーを先にチェックしてDoS攻撃を防止
+            // メモリに読み込む前に拒否することで、巨大ボディによるメモリ消費を防ぐ
+            val contentLength = call.request.headers["Content-Length"]?.toLongOrNull()
+            if (contentLength != null && contentLength > maxBodySize) {
+                raise(ResolveError.InvalidBodyFormat(
+                    IllegalArgumentException("Request body too large (max: $maxBodySize bytes)")
+                ))
+            }
+
             val bodyText = call.receiveText()
+
+            // セキュリティ: 実際のボディサイズもチェック（Content-Lengthが偽装された場合に備える）
+            // バイト数でチェック（マルチバイト文字対応）
+            val bodyByteSize = bodyText.toByteArray(Charsets.UTF_8).size
+            if (bodyByteSize > maxBodySize) {
+                raise(ResolveError.InvalidBodyFormat(
+                    IllegalArgumentException("Request body too large (max: $maxBodySize bytes)")
+                ))
+            }
+
             val serializer = serializer(paramInfo.type)
             json.decodeFromString(serializer, bodyText) as Any
+        } catch (e: CancellationException) {
+            // コルーチンのキャンセルは再送出して適切に伝播させる
+            throw e
         } catch (e: Exception) {
             raise(ResolveError.InvalidBodyFormat(e))
         }
@@ -163,7 +194,7 @@ class ParameterResolver(
                 Long::class -> value.toLong()
                 Double::class -> value.toDouble()
                 Float::class -> value.toFloat()
-                Boolean::class -> value.toBoolean()
+                Boolean::class -> value.toBooleanStrict()
                 UUID::class -> UUID.fromString(value)
                 else -> value // デフォルトは文字列として返す
             }

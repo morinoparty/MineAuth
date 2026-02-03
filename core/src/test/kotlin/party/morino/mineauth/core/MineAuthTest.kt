@@ -16,6 +16,8 @@ import org.mockbukkit.mockbukkit.MockBukkit
 import org.mockbukkit.mockbukkit.ServerMock
 import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.file.data.JWTConfigData
+import party.morino.mineauth.core.file.data.MineAuthConfig
+import party.morino.mineauth.core.file.data.ObservabilityConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.mocks.config.PluginDirectoryMock
 import party.morino.mineauth.core.plugin.pluginModule
@@ -64,6 +66,12 @@ class MineAuthTest :
                     realm = "test-realm",
                     privateKeyFile = "privateKey.pem",
                     keyId = UUID.randomUUID()
+                )
+            }
+            single {
+                MineAuthConfig(
+                    // テスト用のデフォルト設定（トレーシングは無効）
+                    observability = ObservabilityConfig(enabled = false)
                 )
             }
             single<ServerMock> { server }

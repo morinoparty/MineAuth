@@ -27,9 +27,6 @@ import java.util.*
 class ShopHandler : KoinComponent {
     private val quickShopAPI: QuickShopAPI by inject()
 
-    // ========================================
-    // 認証不要エンドポイント
-    // ========================================
 
     /**
      * ショップ詳細を取得する
@@ -53,10 +50,7 @@ class ShopHandler : KoinComponent {
             throw HttpError(HttpStatus.BAD_REQUEST, "Invalid UUID format")
         }
 
-        return quickShopAPI.shopManager.allShops.asSequence()
-            .filter { it.owner.uniqueId == playerUuid }
-            .map { it.shopId }
-            .toList()
+        return shopIdsFor(playerUuid)
     }
 
     // ========================================
@@ -69,10 +63,7 @@ class ShopHandler : KoinComponent {
      */
     @GetMapping("/users/me/shops")
     suspend fun getMyShops(@AuthedAccessUser player: OfflinePlayer): List<Long> {
-        return quickShopAPI.shopManager.allShops.asSequence()
-            .filter { it.owner.uniqueId == player.uniqueId }
-            .map { it.shopId }
-            .toList()
+        return shopIdsFor(player.uniqueId)
     }
 
     /**
@@ -161,6 +152,19 @@ class ShopHandler : KoinComponent {
     private fun parseShopId(shopId: String): Long {
         return shopId.toLongOrNull()
             ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
+    }
+
+    /**
+     * 指定ユーザーのショップID一覧を取得する
+     *
+     * @param ownerUuid ショップオーナーのUUID
+     * @return ショップIDのリスト
+     */
+    private fun shopIdsFor(ownerUuid: UUID): List<Long> {
+        return quickShopAPI.shopManager.allShops.asSequence()
+            .filter { it.owner.uniqueId == ownerUuid }
+            .map { it.shopId }
+            .toList()
     }
 
     /**

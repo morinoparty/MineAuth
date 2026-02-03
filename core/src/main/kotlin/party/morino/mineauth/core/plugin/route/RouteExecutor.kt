@@ -6,6 +6,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.component.KoinComponent
+import org.slf4j.LoggerFactory
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
@@ -117,11 +118,12 @@ class RouteExecutor(
 
     /**
      * 実行エラーをHTTPレスポンスに変換する
+     * セキュリティ: 内部エラー詳細はログにのみ出力し、クライアントには汎用メッセージを返す
      *
      * @param call ApplicationCall
      * @param error 実行エラー
-     * @param metadata エンドポイントメタデータ（エラーメッセージ用）
-     * @param resolvedParams 解決済みパラメータ（エラーメッセージ用）
+     * @param metadata エンドポイントメタデータ（ログ用）
+     * @param resolvedParams 解決済みパラメータ（ログ用）
      */
     private suspend fun handleExecutionError(
         call: ApplicationCall,
@@ -131,15 +133,19 @@ class RouteExecutor(
     ) {
         when (error) {
             is ExecutionError.InvocationFailed -> {
-                System.err.println(
-                    "[RouteExecutor] InvocationFailed: ${error.cause.javaClass.name}: ${error.cause.message}"
+                // 詳細はログにのみ出力（サニタイズしてログ注入を防止）
+                logger.error(
+                    "InvocationFailed: {}: {}",
+                    sanitizeForLog(error.cause.javaClass.name),
+                    sanitizeForLog(error.cause.message)
                 )
-                respondInternalServerError(call, error.cause.message ?: "Unknown error")
+                // クライアントには汎用メッセージを返す
+                respondInternalServerError(call)
             }
 
             is ExecutionError.MethodNotFound -> {
-                System.err.println("[RouteExecutor] MethodNotFound: ${error.methodName}")
-                respondInternalServerError(call, "Method not found: ${error.methodName}")
+                logger.error("MethodNotFound: {}", sanitizeForLog(error.methodName))
+                respondInternalServerError(call)
             }
 
             is ExecutionError.ArgumentTypeMismatch -> {
@@ -149,24 +155,17 @@ class RouteExecutor(
                 val actualParams = resolvedParams.mapIndexed { index, value ->
                     "arg$index: ${value?.let { it::class.simpleName } ?: "null"}"
                 }.joinToString(", ")
-                System.err.println(
-                    "[RouteExecutor] ArgumentTypeMismatch: Method=${metadata.method.name}, " +
-                        "Expected=[$expectedParams], Actual=[$actualParams]"
+                // 詳細はログにのみ出力
+                logger.error(
+                    "ArgumentTypeMismatch: Method={}, Expected=[{}], Actual=[{}]",
+                    metadata.method.name, expectedParams, actualParams
                 )
-                call.respond(
-                    HttpStatusCode.InternalServerError,
-                    ErrorResponse(
-                        error = "argument type mismatch",
-                        details = mapOf(
-                            "method" to JsonPrimitive(metadata.method.name),
-                            "expectedParams" to JsonPrimitive(expectedParams),
-                            "actualParams" to JsonPrimitive(actualParams)
-                        )
-                    )
-                )
+                // クライアントには汎用メッセージを返す
+                respondInternalServerError(call)
             }
 
             is ExecutionError.HttpErrorThrown -> {
+                // HttpErrorは意図的にスローされたものなのでメッセージを返す
                 call.respond(
                     HttpStatusCode.fromValue(error.status),
                     ErrorResponse.fromDetails(error.message, error.details ?: emptyMap())
@@ -175,14 +174,15 @@ class RouteExecutor(
 
             is ExecutionError.UnexpectedError -> {
                 val errorMessage = error.cause?.message ?: error.message
-                System.err.println("[RouteExecutor] UnexpectedError: $errorMessage")
-                respondInternalServerError(call, errorMessage)
+                logger.error("UnexpectedError: {}", sanitizeForLog(errorMessage))
+                respondInternalServerError(call)
             }
         }
     }
 
     /**
      * 認証エラーをHTTPレスポンスに変換する
+     * セキュリティ: トークンの詳細やパーミッション名は漏洩させない
      *
      * @param call ApplicationCall
      * @param error 認証エラー
@@ -192,16 +192,23 @@ class RouteExecutor(
             is AuthError.NotAuthenticated ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Authentication required"))
 
-            is AuthError.InvalidToken ->
-                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Invalid token: ${error.reason}"))
+            is AuthError.InvalidToken -> {
+                // 詳細はログにのみ出力
+                logger.warn("InvalidToken: {}", sanitizeForLog(error.reason))
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Invalid token"))
+            }
 
-            is AuthError.PermissionDenied ->
-                call.respond(HttpStatusCode.Forbidden, ErrorResponse("Permission denied: ${error.permission}"))
+            is AuthError.PermissionDenied -> {
+                // パーミッション名はログにのみ出力
+                logger.warn("PermissionDenied: {}", sanitizeForLog(error.permission))
+                call.respond(HttpStatusCode.Forbidden, ErrorResponse("Permission denied"))
+            }
         }
     }
 
     /**
      * パラメータ解決エラーをHTTPレスポンスに変換する
+     * セキュリティ: 詳細な型情報や値はログにのみ出力
      *
      * @param call ApplicationCall
      * @param error 解決エラー
@@ -211,52 +218,78 @@ class RouteExecutor(
             is ResolveError.MissingPathParameter ->
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse("Missing path parameter: ${error.name}")
+                    ErrorResponse("Missing required parameter")
                 )
 
-            is ResolveError.InvalidBodyFormat ->
+            is ResolveError.InvalidBodyFormat -> {
+                // 詳細はログにのみ出力
+                logger.warn("InvalidBodyFormat: {}", sanitizeForLog(error.cause.message))
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse(
-                        error = "Invalid request body format",
-                        details = mapOf("details" to JsonPrimitive(error.cause.message ?: ""))
-                    )
+                    ErrorResponse("Invalid request body format")
                 )
+            }
 
             is ResolveError.AuthenticationRequired ->
                 call.respond(
                     HttpStatusCode.Unauthorized,
-                    ErrorResponse(error.message)
+                    ErrorResponse("Authentication required")
                 )
 
-            is ResolveError.PlayerNotFound ->
+            is ResolveError.PlayerNotFound -> {
+                // UUIDはログにのみ出力
+                logger.warn("PlayerNotFound: {}", sanitizeForLog(error.uuid))
                 call.respond(
                     HttpStatusCode.NotFound,
-                    ErrorResponse("Player not found: ${error.uuid}")
+                    ErrorResponse("Player not found")
                 )
+            }
 
-            is ResolveError.TypeConversionFailed ->
+            is ResolveError.TypeConversionFailed -> {
+                // 詳細はログにのみ出力（サニタイズしてログ注入を防止）
+                logger.warn(
+                    "TypeConversionFailed: parameter={}, expected={}, actual={}",
+                    sanitizeForLog(error.parameterName),
+                    sanitizeForLog(error.expectedType),
+                    sanitizeForLog(error.actualValue)
+                )
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse(
-                        error = "Type conversion failed",
-                        details = mapOf(
-                            "parameter" to JsonPrimitive(error.parameterName),
-                            "expectedType" to JsonPrimitive(error.expectedType),
-                            "actualValue" to JsonPrimitive(error.actualValue ?: "null")
-                        )
-                    )
+                    ErrorResponse("Invalid parameter format")
                 )
+            }
         }
     }
 
     /**
      * 500エラーの共通レスポンス
+     * セキュリティ: 内部エラーには常に汎用メッセージを返す
      *
      * @param call ApplicationCall
-     * @param message エラーメッセージ
      */
-    private suspend fun respondInternalServerError(call: ApplicationCall, message: String) {
-        call.respond(HttpStatusCode.InternalServerError, ErrorResponse(message))
+    private suspend fun respondInternalServerError(call: ApplicationCall) {
+        call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error"))
+    }
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(RouteExecutor::class.java)
+
+        /**
+         * セキュリティ: ログ出力用に文字列をサニタイズする
+         * 改行や制御文字を除去してログ注入攻撃を防止する
+         *
+         * @param input サニタイズする文字列
+         * @return サニタイズされた文字列
+         */
+        fun sanitizeForLog(input: String?): String {
+            if (input == null) return "null"
+            // 改行、キャリッジリターン、タブ、その他の制御文字を除去または置換
+            return input
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace(Regex("[\\x00-\\x1F\\x7F]"), "")
+                .take(500) // 長すぎる入力を切り詰める
+        }
     }
 }

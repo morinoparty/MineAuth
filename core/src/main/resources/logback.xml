@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 環境変数でログレベルを制御可能にする -->
+    <variable name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}" />
+
+    <!-- コンソール出力 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Ktorのログレベルを設定 -->
+    <logger name="io.ktor" level="${LOG_LEVEL}" />
+
+    <!-- MineAuthのログレベルを設定 -->
+    <logger name="party.morino.mineauth" level="${LOG_LEVEL}" />
+
+    <!-- Nettyのログを抑制（接続ノイズを減らす） -->
+    <logger name="io.netty" level="WARN" />
+
+    <!-- Exposedのログを抑制 -->
+    <logger name="Exposed" level="WARN" />
+
+    <!-- HikariCPのログを抑制 -->
+    <logger name="com.zaxxer.hikari" level="WARN" />
+
+    <!-- ルートロガー設定 -->
+    <root level="${LOG_LEVEL}">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration>

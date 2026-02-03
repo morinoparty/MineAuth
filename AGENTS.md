@@ -72,14 +72,28 @@ OAuth2, OpenID Connectを使用した認証システムを提供し、他のプ�
 
 - コードを記述した後に、docs/content/にmdxファイルを作成または、既存のmdxファイルに追記して、ドキュメントを作成してください。
 - なお、文章の文体について、その他の部分で支持があったとしても、ドキュメントに関しては、あくまでも文章の文体で記載してください。
-- 見やすくするために、iconを付けることが推奨されますが、最上位のみにしてください。
+- 見やすくするために、iconを付けることが推奨されますが、最上位のみにしてください。 fuma docsの絵文字を利用してください
 
 
-# Gitのルール
+# Version Control
 
 - ブランチを切る際は、masterブランチから切り、プルリクエストは必ず masterブランチに対して行うこと
 - ブランチを切ってから、作業を始める前に、masterブランチの最新の状態を取り込み、ブランチを切って作業をすること
 - また、pushやprを作成する前に確認すること
+- 基本的にはすべてのファイルを対象としてください
+
+## 基本
+
+- **gitコマンドは使わない** → `jj`を使用
+
+## 主要コマンド
+
+jj status # 状態確認
+jj diff # 差分表示
+jj describe -m "msg" # コミットメッセージ設定
+jj new # 新しい変更セット作成
+jj bookmark set main -r @ # ブックマーク設定
+jj git push # リモートにプッシュ
 
 ## Repository
 - [MineAuth](https://github.com/morinoparty/MineAuth)
@@ -96,7 +110,6 @@ emoji コミットの概要
 ```
 🎨 Add new method to get fish
 ```
-commitの絵文字などに関しては、changelog.config.jsを参考にしてください
 
 ## Issueについて
 - 新しい機能を追加する場合は、Issueを作成してください。

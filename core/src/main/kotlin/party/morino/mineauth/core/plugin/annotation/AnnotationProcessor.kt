@@ -41,11 +41,11 @@ class AnnotationProcessor : KoinComponent {
             // パラメータを解析
             val parameters = analyzeParameters(method).bind()
 
-            // 認証が必要かどうか判定
-            val requiresAuth = requiresAuthentication(method)
-
             // パーミッションを取得（メソッドレベルが優先）
             val permission = method.findAnnotation<Permission>()?.value ?: classPermission
+
+            // 認証が必要かどうか判定（@Permissionがあれば必ず認証必須）
+            val requiresAuth = requiresAuthentication(method, permission != null)
 
             // EndpointMetadataを構築
             endpoints.add(
@@ -109,12 +109,24 @@ class AnnotationProcessor : KoinComponent {
 
     /**
      * メソッドが認証を必要とするか判定する
-     * @AuthedAccessUserまたは@Authenticatedアノテーションが付いたパラメータがあれば認証必須
+     * 以下のいずれかの条件で認証必須:
+     * - @AuthedAccessUserまたは@Authenticatedアノテーションが付いたパラメータがある
+     * - @Permissionアノテーションがメソッドまたはクラスに付いている
+     *
+     * セキュリティ: @Permissionが付いている場合は必ず認証を要求する
+     * これにより、権限チェックをバイパスする攻撃を防止する
      *
      * @param method 対象のメソッド
+     * @param hasPermission メソッドまたはクラスに@Permissionが設定されているか
      * @return 認証が必要な場合true
      */
-    private fun requiresAuthentication(method: KFunction<*>): Boolean {
+    private fun requiresAuthentication(method: KFunction<*>, hasPermission: Boolean): Boolean {
+        // @Permissionが付いていれば必ず認証必須
+        if (hasPermission) {
+            return true
+        }
+
+        // @AuthedAccessUserまたは@Authenticatedがあれば認証必須
         return method.parameters.any { param ->
             param.hasAnnotation<AuthedAccessUser>() || param.hasAnnotation<Authenticated>()
         }
