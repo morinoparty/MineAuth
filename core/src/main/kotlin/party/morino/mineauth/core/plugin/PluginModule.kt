@@ -1,7 +1,13 @@
 package party.morino.mineauth.core.plugin
 
 import org.koin.dsl.module
+import party.morino.mineauth.core.openapi.generator.OpenApiGenerator
+import party.morino.mineauth.core.openapi.generator.PathItemGenerator
+import party.morino.mineauth.core.openapi.generator.SchemaGenerator
+import party.morino.mineauth.core.openapi.registry.EndpointMetadataRegistry
 import party.morino.mineauth.core.plugin.annotation.AnnotationProcessor
+import party.morino.mineauth.core.plugin.execution.DefaultMethodExecutionHandlerFactory
+import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
 import party.morino.mineauth.core.plugin.route.AuthenticationHandler
 import party.morino.mineauth.core.plugin.route.ParameterResolver
 import party.morino.mineauth.core.plugin.route.RouteBuilder
@@ -9,6 +15,7 @@ import party.morino.mineauth.core.plugin.route.RouteExecutor
 
 /**
  * プラグインルート登録システム用のKoinモジュール
+ * Cloud (Incendo/cloud) パターンに基づくファクトリを使用した構成
  * 各コンポーネントをシングルトンとして登録する
  */
 val pluginModule = module {
@@ -24,9 +31,18 @@ val pluginModule = module {
     // 認証・認可
     single { AuthenticationHandler() }
 
-    // ルート実行
-    single { RouteExecutor(get(), get()) }
+    // メソッド実行ハンドラーファクトリ（ファクトリパターン）
+    single<MethodExecutionHandlerFactory> { DefaultMethodExecutionHandlerFactory() }
+
+    // ルート実行（ファクトリ経由でハンドラーを取得）
+    single { RouteExecutor(get(), get(), get()) }
 
     // ルート構築
     single { RouteBuilder(get()) }
+
+    // OpenAPI生成
+    single { EndpointMetadataRegistry() }
+    single { SchemaGenerator() }
+    single { PathItemGenerator() }
+    single { OpenApiGenerator() }
 }

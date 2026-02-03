@@ -20,3 +20,4 @@ buildCache {
 include("core")
 include("api")
 include("addons:quickshop-hikari")
+include("addons:vault")

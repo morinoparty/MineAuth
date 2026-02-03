@@ -45,6 +45,7 @@ class AuthenticationHandler : KoinComponent {
 
     /**
      * パーミッションを検証する
+     * セキュリティ上の理由から、オフラインプレイヤーはパーミッションチェック不可とする
      *
      * @param playerUuid プレイヤーUUID
      * @param permission 必要なパーミッション文字列
@@ -56,16 +57,19 @@ class AuthenticationHandler : KoinComponent {
     ): Either<AuthError, Unit> = either {
         val offlinePlayer = Bukkit.getOfflinePlayer(playerUuid)
 
-        // オンラインプレイヤーの場合のみパーミッションチェック可能
+        // オンラインプレイヤーを取得
         val onlinePlayer = offlinePlayer.player
-        if (onlinePlayer != null) {
-            ensure(onlinePlayer.hasPermission(permission)) {
-                AuthError.PermissionDenied(permission)
-            }
+
+        // セキュリティ: オフラインプレイヤーはパーミッションチェック不可
+        // オフライン時にパーミッションチェックをスキップすると認可バイパスの脆弱性となる
+        ensure(onlinePlayer != null) {
+            AuthError.PermissionDenied("Player must be online to check permissions: $permission")
         }
-        // オフラインの場合は許可（サーバー管理者が適切な設計をすることを期待）
-        // 注: 厳格なチェックが必要な場合は、PermissionExプラグインなどの
-        // オフラインパーミッションチェックをサポートするプラグインとの連携が必要
+
+        // オンラインプレイヤーのパーミッションをチェック
+        ensure(onlinePlayer.hasPermission(permission)) {
+            AuthError.PermissionDenied(permission)
+        }
     }
 
     /**

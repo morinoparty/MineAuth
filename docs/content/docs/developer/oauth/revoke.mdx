@@ -1,0 +1,97 @@
+---
+title: Token Revocation Endpoint
+description: Token revocation endpoint specification based on RFC 7009
+---
+
+The Token Revocation endpoint allows clients to notify the authorization server that a token is no longer needed, enabling the server to invalidate the token immediately.
+
+## Endpoint
+
+```
+POST /oauth2/revoke
+```
+
+## Authentication
+
+Client authentication is required. Only confidential clients can revoke tokens.
+
+## Request
+
+### Content-Type
+
+```
+application/x-www-form-urlencoded
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `token` | Yes | The token to be revoked |
+| `token_type_hint` | No | A hint about the type of the token (`access_token` or `refresh_token`) |
+| `client_id` | Yes | The client identifier |
+| `client_secret` | Yes | The client secret |
+
+### Example Request
+
+```http
+POST /oauth2/revoke HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+token=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...&
+token_type_hint=refresh_token&
+client_id=your-client-id&
+client_secret=your-client-secret
+```
+
+## Response
+
+### Success Response
+
+The server responds with HTTP status code 200 even if the token was invalid, already revoked, or issued to another client. This prevents information leakage about the token's validity.
+
+```http
+HTTP/1.1 200 OK
+```
+
+### Error Response
+
+| Error Code | Description |
+|------------|-------------|
+| `invalid_request` | Missing required parameter |
+| `invalid_client` | Client authentication failed |
+
+Example error response:
+
+```json
+{
+  "error": "invalid_request",
+  "error_description": "Missing required parameter: token"
+}
+```
+
+## Security Considerations
+
+### Token Ownership Verification
+
+The server verifies that the token was issued to the requesting client. Attempts to revoke tokens belonging to other clients are silently ignored to prevent information leakage.
+
+### Cascading Revocation
+
+When a refresh token is revoked, associated access tokens derived from it should also be considered revoked. The server maintains a revoked token list to enforce this.
+
+### Token Validation After Revocation
+
+Once a token is revoked, it cannot be used for:
+- Accessing protected resources (access tokens)
+- Obtaining new access tokens (refresh tokens)
+
+## Implementation Notes
+
+- The server uses a database table (`revoked_tokens`) to track revoked tokens
+- Revoked token records are automatically cleaned up after their expiration time
+- Token validation checks the revocation list for every protected request
+
+## References
+
+- [RFC 7009 - OAuth 2.0 Token Revocation](https://datatracker.ietf.org/doc/html/rfc7009)

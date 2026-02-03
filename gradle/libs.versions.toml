@@ -20,6 +20,9 @@ junit = "5.12.1"
 mockBukkit = "4.68.0"
 hikari = "6.2.1"
 mysql = "9.2.0"
+micrometer = "1.14.4"
+opentelemetry = "1.45.0"
+opentelemetry-instrumentation = "2.22.0-alpha"
 
 [libraries]
 arrow-core = { group = "io.arrow-kt", name = "arrow-core", version.ref = "arrow" }
@@ -47,6 +50,15 @@ ktor-network-tlsCertificates = { group = "io.ktor", name = "ktor-network-tls-cer
 ktor-server-velocity = { group = "io.ktor", name = "ktor-server-velocity", version.ref = "ktor" }
 ktor-server-openapi = { group = "io.ktor", name = "ktor-server-openapi", version.ref = "ktor" }
 ktor-server-call-logging = { group = "io.ktor", name = "ktor-server-call-logging", version.ref = "ktor" }
+ktor-server-metrics-micrometer = { group = "io.ktor", name = "ktor-server-metrics-micrometer", version.ref = "ktor" }
+
+micrometer-registry-prometheus = { group = "io.micrometer", name = "micrometer-registry-prometheus", version.ref = "micrometer" }
+
+opentelemetry-api = { group = "io.opentelemetry", name = "opentelemetry-api", version.ref = "opentelemetry" }
+opentelemetry-sdk = { group = "io.opentelemetry", name = "opentelemetry-sdk", version.ref = "opentelemetry" }
+opentelemetry-exporter-otlp = { group = "io.opentelemetry", name = "opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
+opentelemetry-semconv = { group = "io.opentelemetry.semconv", name = "opentelemetry-semconv", version = "1.29.0-alpha" }
+opentelemetry-ktor = { group = "io.opentelemetry.instrumentation", name = "opentelemetry-ktor-3.0", version.ref = "opentelemetry-instrumentation" }
 
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
 ktor-client-java = { group = "io.ktor", name = "ktor-client-java", version.ref = "ktor" }
@@ -93,10 +105,11 @@ ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 
 [bundles]
 commands = ["cloud", "cloudPaper", "cloud-annotations", "cloud-kotlin-coroutines-annotations"]
+opentelemetry = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp", "opentelemetry-semconv", "opentelemetry-ktor"]
 securities = ["password4j", "nimbus-jose-jwt", "bcpkix-jdk18on"]
 coroutines = ["mccoroutine-bukkit-api", "mccoroutine-bukkit-core" , "kotlinx-coroutines-core"]
 exposed = ["exposed-core", "exposed-dao", "exposed-jdbc", "exposed-java-time"]
 ktor-client = ["ktor-client-core", "ktor-client-java", "ktor-client-logging", "ktor-client-contentNegotiation"]
-ktor-server = ["ktor-server-core", "ktor-server-netty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "ktor-server-velocity", "logback-classic","ktor-server-call-logging"]
+ktor-server = ["ktor-server-core", "ktor-server-netty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "ktor-server-velocity", "logback-classic","ktor-server-call-logging", "ktor-server-metrics-micrometer", "micrometer-registry-prometheus"]
 junit-jupiter = ["junit-jupiter", "junit-platform-launcher"]
 koin-test = ["koin-test", "koin-test-junit5"]

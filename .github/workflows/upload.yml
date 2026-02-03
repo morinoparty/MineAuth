@@ -4,12 +4,17 @@ on:
   release:
     types: [ published ]
 
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
 jobs:
   build:
-    env: 
+    runs-on: ubuntu-latest
+    env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_ACTOR: ${{ secrets.GITHUB_ACTOR }}
-    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -18,11 +23,12 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-          cache: 'gradle'
+
+      # Gradle キャッシュの設定（setup-gradle を使用）
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
-
 
       - name: Set version env
         run: |
@@ -35,16 +41,33 @@ jobs:
           echo "バージョンは ${{ env.PLUGIN_VERSION }} なのだ！"
           sed -i "s/VersionPlaceholder/${{ env.PLUGIN_VERSION }}/" ./gradle.properties
 
-      - name: Build with Gradle
-        run: ./gradlew :core:build -x test
+      # Core と Addons を並列ビルド
+      - name: Build with Gradle (parallel)
+        run: ./gradlew build -x test --parallel
 
       - name: Upload package
         run: ./gradlew publish
 
-      - name: Change file name
-        run: 
+      # ファイル名を変更
+      - name: Rename artifacts
+        run: |
           mv ./core/build/libs/core-*-all.jar ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
-          
+          mv ./addons/quickshop-hikari/build/libs/quickshop-hikari-*-all.jar ./addons/quickshop-hikari/build/libs/MineAuth-addon-quickshop-hikari-${{ env.PLUGIN_VERSION }}.jar
+          mv ./addons/vault/build/libs/vault-*-all.jar ./addons/vault/build/libs/MineAuth-addon-vault-${{ env.PLUGIN_VERSION }}.jar
+
+      # GitHub Attestations で署名（Core）
+      - name: Attest Core JAR artifact
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: './core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar'
+
+      # GitHub Attestations で署名（Addons - 動的に検出）
+      - name: Attest Addon JAR artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: './addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar'
+
+      # Core を Modrinth と GitHub にアップロード
       - uses: Kir-Antipov/mc-publish@995edadc13559a8b28d0b7e6571229f067ec7659 # v3.3.0
         with:
           modrinth-id: 9LoU3yUC
@@ -55,14 +78,23 @@ jobs:
           github-draft: false
           files: |
             ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
+            ./addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar
           loaders: |
             paper
             purpur
           game-versions: |
             >=1.21.8
           game-version-filter: releases
-          modrinth-dependencies: |
-            LuckPerms(require){modrinth:Vebnzrzj}
+          dependencies: |
+            LuckPerms(required){modrinth:Vebnzrzj}
             QuickShop-Hikari(optional){modrinth:ijC5dDkD}
+            Vault(optional)
           java: |
             21
+
+      # Addons を GitHub リリースにのみアップロード（動的に検出）
+      - name: Upload Addons to GitHub Release
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} \
+            ./addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar \
+            --clobber

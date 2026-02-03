@@ -22,7 +22,10 @@ data class MineAuthConfig(
     val oauth: OAuthConfig = OAuthConfig(),
 
     // データベース設定
-    val database: DatabaseConfig = DatabaseConfig.SQLite()
+    val database: DatabaseConfig = DatabaseConfig.SQLite(),
+
+    // Observability設定（メトリクス・トレーシング）
+    val observability: ObservabilityConfig = ObservabilityConfig()
 )
 
 /**
@@ -73,4 +76,26 @@ data class OAuthConfig(
 
     // 認可画面に表示するロゴURL
     val logoUrl: String = "/assets/lock.svg"
+)
+
+/**
+ * Observability設定（トレーシング・メトリクス）
+ * OpenTelemetryを使用してJaegerなどのバックエンドに送信
+ */
+@Serializable
+data class ObservabilityConfig(
+    // トレーシングを有効にするかどうか
+    val enabled: Boolean = false,
+
+    // OTLPエンドポイント（Jaegerの場合は通常 http://localhost:4317）
+    val otlpEndpoint: String = "http://localhost:4317",
+
+    // サービス名（トレースに表示される名前）
+    val serviceName: String = "mineauth",
+
+    // メトリクスエンドポイント(/metrics)を有効にするかどうか
+    val metricsEnabled: Boolean = true,
+
+    // ヘルスチェックエンドポイント(/health)を有効にするかどうか
+    val healthEnabled: Boolean = true
 )

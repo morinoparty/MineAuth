@@ -1,30 +1,20 @@
-"use client";
+import Link from "next/link";
 
-import { ApiReferenceReact } from "@scalar/api-reference-react";
-import "@scalar/api-reference-react/style.css";
-
+// TODO: Scalar API Reference はTurbopack と互換性がないため、一時的に無効化
+// https://github.com/scalar/scalar/issues でTurbopack対応を確認
 export default function OpenAPIPage() {
 	return (
-		<div className="h-screen w-full">
-			<ApiReferenceReact
-				configuration={{
-					url: "/openapi/openapi-mineauth.yaml",
-					theme: "kepler",
-					layout: "modern",
-					darkMode: true,
-					metaData: {
-						title: "MineAuth API Reference",
-						description:
-							"OAuth2 and OpenID Connect authentication API for Minecraft",
-					},
-					hideDownloadButton: false,
-					hideModels: false,
-					defaultHttpClient: {
-						targetKey: "js",
-						clientKey: "fetch",
-					},
-				}}
-			/>
+		<div className="flex h-screen w-full flex-col items-center justify-center gap-4 p-8">
+			<h1 className="text-2xl font-bold">MineAuth API Reference</h1>
+			<p className="text-muted-foreground">
+				OpenAPI specification is available for download.
+			</p>
+			<Link
+				href="/openapi/openapi-mineauth.yaml"
+				className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+			>
+				Download OpenAPI Spec (YAML)
+			</Link>
 		</div>
 	);
 }

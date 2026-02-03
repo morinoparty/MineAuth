@@ -1,65 +1,167 @@
 name: preview.yml
 on:
   pull_request:
+    types: [opened, synchronize, closed]
   workflow_dispatch:
 
 permissions:
   pull-requests: write
   contents: write
+  id-token: write
+  attestations: write
 
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_EC2_METADATA_DISABLED: true
+  AWS_REGION: auto
+  AWS_CLI_FILE_ENCODING: UTF-8
+  AWS_DEFAULT_S3_SIGNATURE_VERSION: s3v4
+  S3_UPLOAD_BUCKET: ${{ secrets.S3_UPLOAD_BUCKET }}
+  S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+  PREVIEW_BASE_URL: https://moripa-ci.nikomaru.dev/mineauth
+  PROJECT_NAME: MineAuth
 
 jobs:
-  build:
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_EC2_METADATA_DISABLED: true
-      AWS_REGION: auto
-      AWS_CLI_FILE_ENCODING: UTF-8
-      AWS_DEFAULT_S3_SIGNATURE_VERSION: s3v4
-      S3_UPLOAD_BUCKET: ${{ secrets.S3_UPLOAD_BUCKET }}
-      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-      PREVIEW_BASE_URL: https://moripa-ci.nikomaru.dev/mineauth
-      PROJECT_NAME: MineAuth
+  # 共通の前処理：コミットSHAを取得
+  setup:
+    if: ${{ github.event.action != 'closed' }}
     runs-on: ubuntu-latest
-
+    outputs:
+      commit_sha: ${{ steps.vars.outputs.commit_sha }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-
-      - uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'gradle'
-
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        with:
-          node-version: '22'
-
-      - uses: pnpm/action-setup@b9e1dbc72ff7358f971cc0b7c62c7a0d83f1068b # v4.0.0
-        name: Install pnpm
-        with:
-          version: 10
-          run_install: false
-
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set short git commit SHA
         id: vars
         run: |
           calculatedSha=$(git rev-parse --short HEAD)
-          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
+          echo "commit_sha=$calculatedSha" >> $GITHUB_OUTPUT
+
+  # Gradle ビルドジョブ（docs と並列実行）
+  build-gradle:
+    needs: setup
+    runs-on: ubuntu-latest
+    outputs:
+      test_total: ${{ steps.publish-test-results.outputs.total }}
+      test_passed: ${{ steps.publish-test-results.outputs.passed }}
+      test_skipped: ${{ steps.publish-test-results.outputs.skipped }}
+      test_failed: ${{ steps.publish-test-results.outputs.failed }}
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # Gradle キャッシュの設定（setup-gradle を使用）
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
 
       - name: change plugin.yml version
         run: |
           sed -i "s/VersionPlaceholder/${{ env.COMMIT_SHORT_SHA }}/" ./gradle.properties
 
-      - name: Configure Fumadocs for preview
+      - name: Build with Gradle
+        continue-on-error: true
+        run: ./gradlew build
+
+      - name: Publish test results
+        id: publish-test-results
+        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
+        if: success() || failure()
+        with:
+          report_paths: './**/build/test-results/test/TEST-*.xml'
+
+      - name: Prepare Gradle artifacts
         run: |
-          cd docs
-          # Update basePath for preview deployment
-          sed -i "s#basePath: ''#basePath: '/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs'#g" next.config.mjs
+          mkdir -p ./gradle-artifacts/jars
+          mkdir -p ./gradle-artifacts/junit
+          mkdir -p ./gradle-artifacts/detekt
+          mv ./core/build/libs/core-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
+          mv ./api/build/libs/api-*.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
+
+          # 動的にすべてのaddonを検出してリネーム
+          for addon_dir in ./addons/*/; do
+            addon_name=$(basename "$addon_dir")
+            jar_file=$(find "${addon_dir}build/libs/" -name "${addon_name}-*-all.jar" 2>/dev/null | head -1)
+            if [ -n "$jar_file" ]; then
+              mv "$jar_file" "./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-addon-${addon_name}-${{ env.COMMIT_SHORT_SHA }}.jar"
+              echo "Moved addon: ${addon_name}"
+            else
+              echo "No JAR found for addon: ${addon_name}"
+            fi
+          done
+
+          cp -r ./core/build/reports/tests/test/* ./gradle-artifacts/junit/ || echo "No JUnit reports found"
+          cp -r ./build/reports/detekt/* ./gradle-artifacts/detekt/
+
+      # GitHub Attestations で署名
+      - name: Attest JAR artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: './gradle-artifacts/jars/*.jar'
+
+      - name: Upload Gradle artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gradle-artifacts
+          path: ./gradle-artifacts
+          retention-days: 1
+
+  # Docs ビルドジョブ（gradle と並列実行）
+  build-docs:
+    needs: setup
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # Gradle キャッシュの設定（Dokka 生成用）
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        name: Install pnpm
+        with:
+          version: 10
+          run_install: false
+
+      # pnpm キャッシュの設定
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
 
       - name: Install docs dependencies
         working-directory: docs
@@ -76,33 +178,105 @@ jobs:
 
       - name: Build Fumadocs
         working-directory: docs
+        env:
+          BASE_PATH: /mineauth/${{ env.COMMIT_SHORT_SHA }}/docs
         run: pnpm run build
 
-      - name: Build with Gradle
-        continue-on-error: true
-        run: ./gradlew build
+      - name: Upload docs artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-artifacts
+          path: ./docs/out
+          retention-days: 1
 
-      - name: Upload build artifacts
-        id: upload-artifacts
+  # GitHub Release にプレビュー版としてアップロード
+  upload-release:
+    needs: [setup, build-gradle]
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      release_url: ${{ steps.create-release.outputs.release_url }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download JAR artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: gradle-artifacts
+          path: ./artifacts
+
+      # プレビューリリースを作成（コミットSHAをタグに含めて各コミットを保持）
+      - name: Create preview release
+        id: create-release
+        run: |
+          TAG_NAME="preview-pr${{ github.event.pull_request.number }}-${{ env.COMMIT_SHORT_SHA }}"
+          RELEASE_URL=$(gh release create "$TAG_NAME" \
+            --title "🧪 Preview: PR #${{ github.event.pull_request.number }} (${{ env.COMMIT_SHORT_SHA }})" \
+            --notes "Preview build for PR #${{ github.event.pull_request.number }}
+
+          **Commit:** ${{ github.sha }}
+          **Branch:** ${{ github.head_ref }}
+
+          > ⚠️ This is a preview build and may be unstable.
+          > 📜 Verify with: \`gh attestation verify <jar-file> --owner morinoparty\`" \
+            --prerelease \
+            ./artifacts/jars/*.jar)
+          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/$TAG_NAME" >> $GITHUB_OUTPUT
+
+  # S3 アップロードジョブ（Docs とレポートのみ）
+  upload-s3:
+    needs: [setup, build-gradle, build-docs]
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: ./artifacts
+
+      - name: Prepare upload directory
         run: |
           mkdir -p ./upload
-          mkdir -p ./upload/jars
-          mv ./core/build/libs/core-*-all.jar ./upload/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
-          mv ./api/build/libs/api-*.jar ./upload/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
-          mkdir -p ./upload/junit
-          cp -r ./core/build/reports/tests/test/* ./upload/junit/ || echo "No JUnit reports found"
-          mkdir -p ./upload/detekt
-          cp -r ./build/reports/detekt/* ./upload/detekt/
+          cp -r ./artifacts/gradle-artifacts/junit ./upload/ || echo "No JUnit reports"
+          cp -r ./artifacts/gradle-artifacts/detekt ./upload/ || echo "No Detekt reports"
           mkdir -p ./upload/docs
-          cp -r ./docs/out/* ./upload/docs/
-          aws s3 cp ./upload --endpoint-url ${S3_ENDPOINT} s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }} --recursive --checksum-algorithm=CRC32 || echo "S3 upload completed with warnings"
+          mv ./artifacts/docs-artifacts/* ./upload/docs/
 
-      - name: Publish test results
-        id: publish-test-results
-        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
-        if: success() || failure()
+      - name: Upload to S3 (parallel)
+        run: |
+          # AWS CLIの並列リクエスト数を増やす
+          aws configure set default.s3.max_concurrent_requests 50
+
+          S3_BASE="s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}"
+          S3_OPTS="--endpoint-url ${S3_ENDPOINT} --only-show-errors"
+
+          # Docs と レポートを並列でアップロード
+          aws s3 cp ./upload/junit $S3_BASE/junit $S3_OPTS --recursive &
+          aws s3 cp ./upload/detekt $S3_BASE/detekt $S3_OPTS --recursive &
+          aws s3 cp ./upload/docs $S3_BASE/docs $S3_OPTS --recursive &
+
+          # 全ての並列アップロードを待機
+          wait
+          echo "S3 upload completed"
+
+  # コメント作成ジョブ
+  comment:
+    needs: [setup, build-gradle, upload-s3, upload-release]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.action == 'opened' || github.event.action == 'synchronize' }}
+    env:
+      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download JAR artifacts for comment generation
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          report_paths: './**/build/test-results/test/TEST-*.xml'
+          name: gradle-artifacts
+          path: ./artifacts/gradle-artifacts
 
       - name: Get limit time
         id: limit-time
@@ -111,10 +285,9 @@ jobs:
           echo "LIMIT_TIME=$limit_time" >> $GITHUB_ENV
 
       - name: Create comment file
-        id: create-comment-file
         env:
-          ARTIFACT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar"
-          ARTIFACT_URL_API: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar"
+          RELEASE_URL: "${{ needs.upload-release.outputs.release_url }}"
+          RELEASE_DOWNLOAD_BASE: "https://github.com/${{ github.repository }}/releases/download/preview-pr${{ github.event.pull_request.number }}-${{ env.COMMIT_SHORT_SHA }}"
           JUNIT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
           DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
@@ -122,61 +295,71 @@ jobs:
           OPENAPI_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/openapi/index.html"
           LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
-          cat  << EOF > comment.md
+          # 動的にaddonの行を生成
+          ADDON_ROWS=""
+          for jar in ./artifacts/gradle-artifacts/jars/${{ env.PROJECT_NAME }}-addon-*.jar; do
+            if [ -f "$jar" ]; then
+              jar_name=$(basename "$jar")
+              # addon名を抽出 (MineAuth-addon-xxx-SHA.jar -> xxx)
+              addon_name=$(echo "$jar_name" | sed "s/${{ env.PROJECT_NAME }}-addon-//" | sed "s/-${{ env.COMMIT_SHORT_SHA }}.jar//")
+              # 表示名を整形 (quickshop-hikari -> QuickShop Hikari)
+              display_name=$(echo "$addon_name" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
+              ADDON_ROWS="${ADDON_ROWS}| Addon: ${display_name} | [${jar_name}]($RELEASE_DOWNLOAD_BASE/${jar_name}) |
+          "
+            fi
+          done
+
+          cat << EOF > comment.md
           ## 🚀 Preview of ${{ github.event.repository.name }}
-          This preview file are availalble for 7 days. (until $LIMIT_TIME)
-          <table>
-            <tr>
-              <th scope="row">📖 Documentation Preview</th>
-              <td><a href="$DOCS_PREVIEW_URL">$DOCS_PREVIEW_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">📦 Preview Jars Core</th>
-              <td><a href="$ARTIFACT_URL">$ARTIFACT_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">🔌 Preview Jars API</th>
-              <td><a href="$ARTIFACT_URL_API">$ARTIFACT_URL_API</a></td>
-            </tr>
-            <tr>
-              <th scope="row">📖 Dokka API Documentation</th>
-              <td><a href="$DOKKA_URL">$DOKKA_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">📖 OpenAPI Documentation</th>
-              <td><a href="$OPENAPI_URL">$OPENAPI_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">🧪 JUnit Report</th>
-              <td><a href="$JUNIT_REPORT_URL">$JUNIT_REPORT_URL</a></td>
-            </tr>
-            <tr>
-              <th scope="row">🔍 Detekt Report</th>
-              <td><a href="$DETEKT_REPORT_URL">$DETEKT_REPORT_URL</a></td>
-            </tr>
-          </table>
 
-          ## Test summary
+          ### 📦 Preview JARs ([Release Page]($RELEASE_URL))
+          | Artifact | Download |
+          |----------|----------|
+          | Core | [${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar) |
+          | API | [${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar) |
+          ${ADDON_ROWS}
+          > 📜 **Attestation**: \`gh attestation verify <jar-file> --owner morinoparty\`
 
-          <table>
-              <tr>
-              <th>
-                <th>Tests 💯</th>
-                <th>Passed ✅</th>
-                <th>Skipped ⏭️</th>
-                <th>Failed ❌</th>
-              </tr>
-              <tr>
-                <td>JUnit Test Report</td>
-                <td>${{ steps.publish-test-results.outputs.total }} ran</td>
-                <td>${{ steps.publish-test-results.outputs.passed }} passed</td>
-                <td>${{ steps.publish-test-results.outputs.skipped }} skipped</td>
-                <td>${{ steps.publish-test-results.outputs.failed }} failed</td>
-              </tr>
-            </table>
+          ### 📖 Documentation & Reports
+          Available for 7 days (until $LIMIT_TIME)
+          | Resource | Link |
+          |----------|------|
+          | 📖 Documentation | [Preview]($DOCS_PREVIEW_URL) |
+          | 📖 Dokka API | [Preview]($DOKKA_URL) |
+          | 📖 OpenAPI | [Preview]($OPENAPI_URL) |
+          | 🧪 JUnit Report | [Report]($JUNIT_REPORT_URL) |
+          | 🔍 Detekt Report | [Report]($DETEKT_REPORT_URL) |
+
+          ### 🧪 Test Summary
+          | Tests | Passed | Skipped | Failed |
+          |-------|--------|---------|--------|
+          | ${{ needs.build-gradle.outputs.test_total }} | ${{ needs.build-gradle.outputs.test_passed }} ✅ | ${{ needs.build-gradle.outputs.test_skipped }} ⏭️ | ${{ needs.build-gradle.outputs.test_failed }} ❌ |
           EOF
+
       - name: Create PR comment
-        if: ${{ job.status == 'success' && (github.event.action == 'opened' || github.event.action == 'synchronize') }}
         run: gh pr comment ${{ github.event.number }} --body-file comment.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # PRクローズ時にプレビューリリースを削除
+  cleanup:
+    if: ${{ github.event.action == 'closed' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Delete all preview releases for this PR
+        run: |
+          # このPRに関連するすべてのプレビューリリースを取得して削除
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          RELEASES=$(gh release list --json tagName --jq ".[] | select(.tagName | startswith(\"preview-pr${PR_NUMBER}-\")) | .tagName")
+
+          for TAG in $RELEASES; do
+            echo "Deleting release: $TAG"
+            gh release delete "$TAG" --yes || true
+            git push origin --delete "$TAG" || true
+          done
+
+          echo "All preview releases for PR #${PR_NUMBER} deleted"
