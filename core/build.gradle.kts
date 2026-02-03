@@ -34,8 +34,8 @@ dependencies {
     implementation(libs.koin.core)
     implementation(libs.bundles.ktor.server)
     implementation(libs.bundles.ktor.client)
+    implementation(libs.bundles.opentelemetry)
 
-    compileOnly(libs.vault.api)
     compileOnly(libs.luckperms.api)
 
     // テスト依存関係
@@ -137,7 +137,7 @@ sourceSets.main {
                 add(libs.hikari.asString())
                 add(libs.mysql.connector.asString())
             }
-            softDepend = listOf("Vault", "LuckPerms")
+            softDepend = listOf("LuckPerms")
         }
     }
 }

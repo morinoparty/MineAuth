@@ -41,22 +41,39 @@ jobs:
           echo "バージョンは ${{ env.PLUGIN_VERSION }} なのだ！"
           sed -i "s/VersionPlaceholder/${{ env.PLUGIN_VERSION }}/" ./gradle.properties
 
-      - name: Build with Gradle
-        run: ./gradlew :core:build -x test
+      # Core と Addons を並列ビルド
+      - name: Build with Gradle (parallel)
+        run: ./gradlew build -x test --parallel
 
       - name: Upload package
         run: ./gradlew publish
 
-      - name: Change file name
-        run:
+      # ファイル名を変更
+      - name: Rename artifacts
+        run: |
           mv ./core/build/libs/core-*-all.jar ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
+          mv ./addons/quickshop-hikari/build/libs/quickshop-hikari-*-all.jar ./addons/quickshop-hikari/build/libs/MineAuth-Addon-QuickShop-Hikari-${{ env.PLUGIN_VERSION }}.jar
+          mv ./addons/vault/build/libs/vault-*-all.jar ./addons/vault/build/libs/MineAuth-Addon-Vault-${{ env.PLUGIN_VERSION }}.jar
 
-      # GitHub Attestations で署名
-      - name: Attest JAR artifact
+      # GitHub Attestations で署名（Core）
+      - name: Attest Core JAR artifact
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: './core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar'
 
+      # GitHub Attestations で署名（QuickShop-Hikari Addon）
+      - name: Attest QuickShop-Hikari Addon JAR artifact
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: './addons/quickshop-hikari/build/libs/MineAuth-Addon-QuickShop-Hikari-${{ env.PLUGIN_VERSION }}.jar'
+
+      # GitHub Attestations で署名（Vault Addon）
+      - name: Attest Vault Addon JAR artifact
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: './addons/vault/build/libs/MineAuth-Addon-Vault-${{ env.PLUGIN_VERSION }}.jar'
+
+      # Core を Modrinth と GitHub にアップロード
       - uses: Kir-Antipov/mc-publish@995edadc13559a8b28d0b7e6571229f067ec7659 # v3.3.0
         with:
           modrinth-id: 9LoU3yUC
@@ -67,14 +84,25 @@ jobs:
           github-draft: false
           files: |
             ./core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar
+            ./addons/quickshop-hikari/build/libs/MineAuth-Addon-QuickShop-Hikari-${{ env.PLUGIN_VERSION }}.jar
+            ./addons/vault/build/libs/MineAuth-Addon-Vault-${{ env.PLUGIN_VERSION }}.jarwq
           loaders: |
             paper
             purpur
           game-versions: |
             >=1.21.8
           game-version-filter: releases
-          modrinth-dependencies: |
-            LuckPerms(require){modrinth:Vebnzrzj}
+          dependencies: |
+            LuckPerms(required){modrinth:Vebnzrzj}
             QuickShop-Hikari(optional){modrinth:ijC5dDkD}
+            Vault(optional)
           java: |
             21
+
+      # Addons を GitHub リリースにのみアップロード
+      - name: Upload Addons to GitHub Release
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} \
+            ./addons/quickshop-hikari/build/libs/MineAuth-Addon-QuickShop-Hikari-${{ env.PLUGIN_VERSION }}.jar \
+            ./addons/vault/build/libs/MineAuth-Addon-Vault-${{ env.PLUGIN_VERSION }}.jar \
+            --clobber
