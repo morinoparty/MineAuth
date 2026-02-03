@@ -304,6 +304,15 @@ object TokenRouter: KoinComponent {
     ): String {
         val configData = get<JWTConfigData>()
         val now = Date()
+        // profileスコープが含まれる場合、nameとpreferred_usernameを含める
+        val scopes = data.scope.split(" ").filter { it.isNotBlank() }
+        val hasProfileScope = scopes.contains("profile")
+
+        // プレイヤー名を取得（profileスコープが必要な場合のみ）
+        // 名前が取得できない場合はnullのまま（クレームに含めない）
+        val playerName = if (hasProfileScope) {
+            org.bukkit.Bukkit.getOfflinePlayer(data.uniqueId).name
+        } else null
 
         return JWT.create()
             // JWTヘッダー
@@ -319,6 +328,11 @@ object TokenRouter: KoinComponent {
             .apply {
                 // nonceが存在する場合のみ含める（リプレイ攻撃防止用）
                 data.nonce?.let { withClaim("nonce", it) }
+                // profileスコープが含まれる場合、nameとpreferred_usernameを含める
+                if (hasProfileScope && playerName != null) {
+                    withClaim("name", playerName)
+                    withClaim("preferred_username", playerName)
+                }
             }
             // 任意クレーム（Authorization Code Flowでは任意だが、検証に有用）
             .withClaim("at_hash", calculateAtHash(accessToken))      // at_hash: Access Token hash
