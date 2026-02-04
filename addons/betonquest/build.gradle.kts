@@ -9,10 +9,11 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "odailyquests-addon"
+val addonName = "betonquest-addon"
 
 repositories {
-    maven("https://jitpack.io")
+    maven("https://repo.betonquest.org/betonquest/")
+    maven("https://repo.minebench.de/")  // MineDown依存関係用
 }
 
 dependencies {
@@ -27,7 +28,7 @@ dependencies {
     compileOnly(libs.bundles.exposed)
     compileOnly(kotlin("stdlib-jdk8"))
 
-    compileOnly(libs.odailyquests)
+    compileOnly(libs.betonquest)
 }
 
 tasks {
@@ -45,14 +46,7 @@ tasks {
         }
     }
     runServer {
-        minecraftVersion("1.21.8")
-        val plugins = runPaper.downloadPluginsSpec {
-            // ODailyQuests
-            modrinth("odailyquests", "3.0.1")
-        }
-        downloadPlugins {
-            downloadPlugins.from(plugins)
-        }
+        minecraftVersion("1.21.4")
     }
 }
 
@@ -63,10 +57,10 @@ sourceSets.main {
             name = rootProject.name + "-" + addonName
             version = project.version.toString()
             website = "https://github.com/morinoparty/MineAuth"
-            main = "$group.mineauth.addons.odailyquests.ODailyQuestsAddon"
+            main = "$group.mineauth.addons.betonquest.BetonQuestAddon"
             apiVersion = "1.20"
             libraries = libs.bundles.coroutines.asString()
-            depend = listOf("MineAuth", "ODailyQuests")
+            depend = listOf("MineAuth", "BetonQuest")
         }
     }
 }
