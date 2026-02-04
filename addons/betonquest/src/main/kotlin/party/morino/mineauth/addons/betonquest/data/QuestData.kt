@@ -3,36 +3,28 @@ package party.morino.mineauth.addons.betonquest.data
 import kotlinx.serialization.Serializable
 
 /**
- * クエストパッケージの情報を表すデータクラス
+ * プレイヤーのクエストデータレスポンス
+ * GET /quests/me で返却される
  */
 @Serializable
-data class QuestPackageData(
-    // パッケージ名（識別子）
-    val name: String,
-    // クエスト一覧
-    val quests: List<QuestData>
+data class PlayerQuestDataResponse(
+    // プレイヤーが持っているタグ一覧
+    val tags: List<String>,
+    // ポイントカテゴリとポイント数のマップ
+    val points: Map<String, Int>,
+    // ジャーナルエントリ一覧
+    val journal: List<JournalEntryData>,
+    // 進行中のオブジェクティブ（ID -> データ）
+    val objectives: Map<String, String>
 )
 
 /**
- * 個別クエストの情報を表すデータクラス
+ * ジャーナルエントリのデータクラス
  */
 @Serializable
-data class QuestData(
-    // クエストID
-    val id: String,
-    // クエスト名（表示名）
-    val name: String?,
-    // クエストの説明
-    val description: List<String>?
-)
-
-/**
- * 利用可能なクエスト一覧のレスポンス
- */
-@Serializable
-data class AvailableQuestsResponse(
-    // クエストパッケージ一覧
-    val packages: List<QuestPackageData>,
-    // 総クエスト数
-    val totalQuests: Int
+data class JournalEntryData(
+    // エントリのポインタ（パッケージ.エントリ名）
+    val pointer: String,
+    // タイムスタンプ（エポックミリ秒）
+    val timestamp: Long
 )

@@ -3,10 +3,11 @@ package party.morino.mineauth.addons.betonquest.routes
 import com.github.shynixn.mccoroutine.bukkit.minecraftDispatcher
 import kotlinx.coroutines.withContext
 import org.betonquest.betonquest.BetonQuest
+import org.bukkit.OfflinePlayer
 import org.bukkit.plugin.Plugin
-import party.morino.mineauth.addons.betonquest.data.AvailableQuestsResponse
-import party.morino.mineauth.addons.betonquest.data.QuestData
-import party.morino.mineauth.addons.betonquest.data.QuestPackageData
+import party.morino.mineauth.addons.betonquest.data.JournalEntryData
+import party.morino.mineauth.addons.betonquest.data.PlayerQuestDataResponse
+import party.morino.mineauth.api.annotations.Authenticated
 import party.morino.mineauth.api.annotations.GetMapping
 
 /**
@@ -18,69 +19,48 @@ import party.morino.mineauth.api.annotations.GetMapping
 class QuestsHandler(private val plugin: Plugin) {
 
     /**
-     * 利用可能なクエスト一覧を取得する
-     * GET /quests
+     * 認証済みプレイヤーのクエストデータを取得する
+     * GET /quests/me
      *
-     * @return 利用可能なクエストパッケージとクエストの一覧
+     * @param player 認証済みプレイヤー（JWTから自動解決）
+     * @return プレイヤーのクエストデータ（タグ、ポイント、ジャーナル、オブジェクティブ）
      */
-    @GetMapping("/quests")
-    suspend fun getAvailableQuests(): AvailableQuestsResponse {
+    @GetMapping("/quests/me")
+    suspend fun getMyQuests(@Authenticated player: OfflinePlayer): PlayerQuestDataResponse {
         // Bukkit APIはメインスレッドで実行する必要がある
         return withContext(plugin.minecraftDispatcher) {
-            // BetonQuest APIから直接パッケージマネージャーを取得
-            val questPackageManager = BetonQuest.getInstance().questPackageManager
+            val betonQuest = BetonQuest.getInstance()
 
-            val packages = mutableListOf<QuestPackageData>()
-            var totalQuests = 0
+            // UUIDからProfileを取得
+            val profile = betonQuest.profileProvider.getProfile(player.uniqueId)
 
-            // 全てのクエストパッケージを取得
-            for ((packageName, questPackage) in questPackageManager.packages) {
-                val quests = mutableListOf<QuestData>()
+            // PlayerDataを取得（オフラインプレイヤーにも対応）
+            val playerData = betonQuest.playerDataStorage.getOffline(profile)
 
-                // パッケージの設定を取得
-                val config = questPackage.config
+            // タグ一覧を取得
+            val tags = playerData.tags.toList()
 
-                // パッケージ内のクエスト（objectives）を取得
-                val objectives = config.getConfigurationSection("objectives")
-                objectives?.getKeys(false)?.forEach { objectiveId ->
-                    // labelがない場合はobjectiveIdをフォールバックとして使用
-                    val label = objectives.getString("$objectiveId.label") ?: objectiveId
-                    quests.add(
-                        QuestData(
-                            id = objectiveId,
-                            name = label,
-                            description = null
-                        )
-                    )
-                }
+            // ポイント一覧を取得（カテゴリ名 -> ポイント数）
+            val points = playerData.points.associate { point ->
+                point.category to point.count
+            }
 
-                // パッケージ内のjournal entries（クエストログ）を取得
-                val journal = config.getConfigurationSection("journal")
-                journal?.getKeys(false)?.forEach { journalId ->
-                    val text = journal.getString(journalId)
-                    if (text != null && !quests.any { it.id == journalId }) {
-                        quests.add(
-                            QuestData(
-                                id = journalId,
-                                name = journalId,
-                                description = listOf(text)
-                            )
-                        )
-                    }
-                }
-
-                totalQuests += quests.size
-                packages.add(
-                    QuestPackageData(
-                        name = packageName,
-                        quests = quests
-                    )
+            // ジャーナルエントリを取得
+            val journal = playerData.entries.map { pointer ->
+                JournalEntryData(
+                    pointer = pointer.pointer().toString(),
+                    timestamp = pointer.timestamp()
                 )
             }
 
-            AvailableQuestsResponse(
-                packages = packages,
-                totalQuests = totalQuests
+            // 進行中のオブジェクティブを取得
+            val objectives = playerData.rawObjectives
+
+            PlayerQuestDataResponse(
+                tags = tags,
+                points = points,
+                journal = journal,
+                objectives = objectives
             )
         }
     }
