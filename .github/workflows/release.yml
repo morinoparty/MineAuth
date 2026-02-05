@@ -8,38 +8,13 @@ on:
 
 permissions:
   contents: write
-  packages: write
-  checks: write
+  pull-requests: write
 
 jobs:
-  build:
-    permissions:
-      contents: write
-      pull-requests: write
+  release-drafter:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      # Gradle キャッシュの設定（setup-gradle を使用）
-      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
-
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
-
-      # Core と Addons を並列ビルド
-      - name: Build with Gradle (parallel)
-        run: ./gradlew build -x test --parallel
-
       - uses: release-drafter/release-drafter@b1476f6e6eb133afa41ed8589daba6dc69b4d3f5 # v6.1.0
-        id: release-drafter
         with:
           publish: false
         env:
