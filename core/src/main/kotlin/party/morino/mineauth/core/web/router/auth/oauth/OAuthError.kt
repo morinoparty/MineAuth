@@ -1,10 +1,14 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
 import io.ktor.http.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import party.morino.mineauth.core.MineAuth
 
 /**
  * OAuth 2.0 エラーレスポンス
@@ -54,6 +58,14 @@ enum class OAuthErrorCode(val code: String) {
 }
 
 /**
+ * OAuthエラーログ出力用のKoinComponent
+ * 拡張関数からKoinのDIを利用するためのヘルパーオブジェクト
+ */
+private object OAuthErrorLogger : KoinComponent {
+    val plugin: MineAuth by inject()
+}
+
+/**
  * OAuth 2.0エラーレスポンスを返すための拡張関数
  * RFC 6749 Section 5.2に基づき、適切なHTTPステータスコードを設定
  *
@@ -71,5 +83,12 @@ suspend fun RoutingCall.respondOAuthError(
         OAuthErrorCode.INVALID_CLIENT -> HttpStatusCode.Unauthorized
         else -> HttpStatusCode.BadRequest
     }
+
+    // エラーログを出力（デバッグ用）
+    val endpoint = request.local.uri
+    val logMessage = "OAuth error at $endpoint: ${errorCode.code}" +
+        (description?.let { " - $it" } ?: "")
+    OAuthErrorLogger.plugin.logger.warning(logMessage)
+
     respond(statusCode, errorCode.toResponse(description))
 }

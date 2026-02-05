@@ -7,8 +7,8 @@ import io.ktor.server.routing.*
 import io.ktor.server.velocity.*
 import org.apache.commons.lang3.RandomStringUtils
 import org.koin.core.component.KoinComponent
-import org.koin.core.component.get
 import org.koin.core.component.inject
+import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.OAuthConfigData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
@@ -25,6 +25,7 @@ import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validate
  * 認可コードフローを実装しています
  */
 object AuthorizeRouter: KoinComponent {
+    private val plugin: MineAuth by inject()
     private val oauthConfig: OAuthConfigData by inject()
     private val config: MineAuthConfig by inject()
 
@@ -49,12 +50,14 @@ object AuthorizeRouter: KoinComponent {
 
             // 必須パラメータのバリデーション
             if (clientId == null || redirectUri == null || scope == null || responseType != "code" || state == null) {
+                plugin.logger.warning("Authorize error: Invalid request - missing required parameters")
                 call.respond(HttpStatusCode.BadRequest, "Invalid request")
                 return@get
             }
 
             // PKCE(Proof Key for Code Exchange)のバリデーション
             if (!validatePKCE(codeChallenge, codeChallengeMethod)) {
+                plugin.logger.warning("Authorize error: Unsupported PKCE method - client_id=$clientId")
                 call.respond(HttpStatusCode.BadRequest, "This server only supports S256 code_challenge_method")
                 return@get
             }
@@ -62,11 +65,13 @@ object AuthorizeRouter: KoinComponent {
             // クライアントの存在確認とリダイレクトURIの検証
             val clientData = OAuthService.getClientData(clientId)
             if (clientData == null) {
+                plugin.logger.warning("Authorize error: Invalid client - client_id=$clientId")
                 call.respond(HttpStatusCode.BadRequest, "Invalid client")
                 return@get
             }
 
             if (!OAuthService.validateClientAndRedirectUri(clientData, redirectUri)) {
+                plugin.logger.warning("Authorize error: Invalid redirect_uri - client_id=$clientId, redirect_uri=$redirectUri")
                 call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
                 return@get
             }
