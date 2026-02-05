@@ -68,6 +68,6 @@ class BetonQuestAddon : JavaPlugin() {
      */
     private fun setupMineAuth() {
         mineAuthAPI.createHandler(this)
-            .register(QuestsHandler(this))
+            .register(QuestsHandler())
     }
 }

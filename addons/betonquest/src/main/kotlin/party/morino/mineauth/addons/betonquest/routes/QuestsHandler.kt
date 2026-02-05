@@ -1,22 +1,20 @@
 package party.morino.mineauth.addons.betonquest.routes
 
-import com.github.shynixn.mccoroutine.bukkit.minecraftDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.betonquest.betonquest.BetonQuest
 import org.bukkit.OfflinePlayer
-import org.bukkit.plugin.Plugin
 import party.morino.mineauth.addons.betonquest.data.JournalEntryData
 import party.morino.mineauth.addons.betonquest.data.PlayerQuestDataResponse
+import party.morino.mineauth.addons.betonquest.utils.coroutines.minecraft
 import party.morino.mineauth.api.annotations.Authenticated
 import party.morino.mineauth.api.annotations.GetMapping
 
 /**
  * BetonQuestのクエスト情報を提供するハンドラー
  * /api/v1/plugins/{plugin-name}/ 配下にエンドポイントを提供する
- *
- * @property plugin プラグインインスタンス（メインスレッド実行用）
  */
-class QuestsHandler(private val plugin: Plugin) {
+class QuestsHandler {
 
     /**
      * 認証済みプレイヤーのクエストデータを取得する
@@ -28,7 +26,8 @@ class QuestsHandler(private val plugin: Plugin) {
     @GetMapping("/quests/me")
     suspend fun getMyQuests(@Authenticated player: OfflinePlayer): PlayerQuestDataResponse {
         // Bukkit APIはメインスレッドで実行する必要がある
-        return withContext(plugin.minecraftDispatcher) {
+        // MCCoroutineではなく独自のディスパッチャーを使用してクラスローダー問題を回避
+        return withContext(Dispatchers.minecraft) {
             val betonQuest = BetonQuest.getInstance()
 
             // UUIDからProfileを取得

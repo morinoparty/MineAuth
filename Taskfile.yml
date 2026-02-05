@@ -2,23 +2,12 @@
 
 version: '3'
 
-vars:
-  GREETING: Hello, World!
-
 tasks:
-  default:
-    cmds:
-      - echo "{{.GREETING}}"
-    silent: true
   docs:
     dir: docs
     cmds:
       - pnpm install
       - pnpm dev
-    silent: true
-  format:
-    cmds:
-      - ./gradlew clean ktlintFormat
     silent: true
   build:
     cmds:
@@ -35,27 +24,20 @@ tasks:
       - sleep 5 && echo "starting server..."
       - ./gradlew clean :addons:quickshop-hikari:runServer
     silent: true
+  "run:quest":
+    cmds:
+      - ./gradlew clean :core:build --no-build-cache --rerun-tasks -x test
+      - cp ./core/build/libs/core-*-all.jar ./addons/betonquest/run/plugins/
+      - sleep 5 && echo "starting server..."
+      - ./gradlew clean :addons:betonquest:runServer
   clear:
     cmds:
       - rm ./core/run/**/session.lock
       - rm ./addons/**/run/**/session.lock
     silent: true
-  commit:
-    cmds:
-      - task format
-      - pnpm dlx git-cz
-  dokka:
-    cmds:
-      - ./gradlew clean dokkaGenerate
-    silent: true
-  typespec:
-    dir: typespec
-    cmds:
-      - tsp compile .
-    silent: true
   check:
     cmds:
-      - task format
+      - ./gradlew clean ktlintFormat
       - task build
     silent: false
 
