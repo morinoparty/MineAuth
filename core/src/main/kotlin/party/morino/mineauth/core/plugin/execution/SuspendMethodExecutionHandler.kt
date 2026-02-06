@@ -158,23 +158,29 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
     private fun handleResumeWith(original: Continuation<Any?>, resultArg: Any?) {
         val className = resultArg?.javaClass?.name ?: ""
 
-        // Result型かどうかをクラス名で判定（異なるクラスローダーのため instanceof は使えない）
-        // kotlin.Result または kotlin.Result$Failure のどちらもResult型として扱う
-        val isResultType = className == "kotlin.Result" || className.startsWith("kotlin.Result\$")
-
-        if (isResultType) {
-            // Result型の場合：getOrNullとexceptionOrNullで値と例外を取得
-            val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
-            val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
-            if (exception != null) {
+        when {
+            // Result$Failure: inline value classの展開により内部のFailureオブジェクトが直接渡される場合
+            // Failureクラスにはexceptionフィールドのみ存在し、getOrNull等のメソッドはない
+            className.startsWith("kotlin.Result\$") -> {
+                val exceptionField = resultArg!!.javaClass.getDeclaredField("exception")
+                exceptionField.isAccessible = true
+                val exception = exceptionField.get(resultArg) as Throwable
                 original.resumeWith(Result.failure(exception))
-            } else {
-                original.resumeWith(Result.success(value))
             }
-        } else {
-            // inline value classがボックス化されずに値が直接渡された場合
-            // 成功として扱う
-            original.resumeWith(Result.success(resultArg))
+            // ボックス化されたResult型: getOrNull/exceptionOrNullメソッドが利用可能
+            className == "kotlin.Result" -> {
+                val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
+                val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
+                if (exception != null) {
+                    original.resumeWith(Result.failure(exception))
+                } else {
+                    original.resumeWith(Result.success(value))
+                }
+            }
+            // inline value classがボックス化されずに値が直接渡された場合（成功として扱う）
+            else -> {
+                original.resumeWith(Result.success(resultArg))
+            }
         }
     }
 
