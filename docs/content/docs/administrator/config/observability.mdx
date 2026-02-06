@@ -14,6 +14,7 @@ MineAuth supports observability features including distributed tracing with Open
     "enabled": true,
     "exporters": [
       {
+        "protocol": "GRPC",
         "endpoint": "http://localhost:4317",
         "headers": {}
       }
@@ -30,7 +31,7 @@ MineAuth supports observability features including distributed tracing with Open
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable OpenTelemetry tracing |
-| `exporters` | array | `[{"endpoint": "http://localhost:4317", "headers": {}}]` | List of OTLP exporter configurations |
+| `exporters` | array | `[{"protocol": "GRPC", "endpoint": "http://localhost:4317", "headers": {}}]` | List of OTLP exporter configurations |
 | `serviceName` | string | `mineauth` | Service name displayed in traces |
 | `metricsEnabled` | boolean | `true` | Enable `/metrics` endpoint (Prometheus format) |
 | `healthEnabled` | boolean | `true` | Enable `/health` endpoint |
@@ -41,8 +42,14 @@ Each exporter in the `exporters` array supports:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `protocol` | string | `GRPC` | OTLP transport protocol (`GRPC` or `HTTP`) |
 | `endpoint` | string | `http://localhost:4317` | OTLP gRPC endpoint (e.g., Jaeger, Grafana Tempo) |
 | `headers` | object | `{}` | Custom headers for authentication (e.g., `{"Authorization": "Bearer token"}`) |
+
+#### Protocol Notes
+
+- `GRPC` uses port `4317` and no path (e.g., `https://otlp-gateway...:4317`)
+- `HTTP` uses port `4318` with `/otlp/v1/traces` (e.g., `https://otlp-gateway...:4318/otlp/v1/traces`)
 
 ## Endpoints
 
@@ -103,6 +110,7 @@ docker run -d --name jaeger \
     "enabled": true,
     "exporters": [
       {
+        "protocol": "GRPC",
         "endpoint": "http://localhost:4317",
         "headers": {}
       }
@@ -124,10 +132,12 @@ You can send traces to multiple backends simultaneously:
     "enabled": true,
     "exporters": [
       {
+        "protocol": "GRPC",
         "endpoint": "http://jaeger:4317",
         "headers": {}
       },
       {
+        "protocol": "GRPC",
         "endpoint": "http://tempo:4317",
         "headers": {}
       }
@@ -147,6 +157,7 @@ For backends that require authentication:
     "enabled": true,
     "exporters": [
       {
+        "protocol": "GRPC",
         "endpoint": "https://tempo-prod-xx-xxx.grafana.net:443",
         "headers": {
           "Authorization": "Basic <base64-encoded-credentials>"

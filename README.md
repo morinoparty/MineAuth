@@ -1,7 +1,30 @@
 # MineAuth
 
-This is a plugin for accessing all moripa from the web. 
+OAuth2 / OpenID Connect authentication plugin for Minecraft servers.
 
-## Attention for developers
-It is hard to create an API and register it for each plugin, so use softdepend and implement it in hard coding. <br>
-Also, when converting from normal class to json, if you make your own encoder, it will be buggy when outputting in openAPI format, so use the data class.
+## 📌 Overview
+
+MineAuth is a Minecraft plugin that provides OAuth2 / OpenID Connect (OIDC) authentication.
+It also enables other plugins to safely expose their data through an HTTP API.
+
+## ✨ Features
+
+- **OAuth2 / OIDC** - Standards-based authentication
+- **Plugin API** - Let other plugins register HTTP endpoints
+- **Scalar UI** - Interactive API docs at `/scalar`
+- **OpenTelemetry** - Observability and tracing support
+
+## 🚀 Quick Start
+
+1. Put `MineAuth-<version>.jar` into your server's `plugins/`
+2. Start the server (MineAuth generates config files)
+3. Configure OAuth2 / OIDC settings
+4. Open `http://localhost:8080/scalar` (if you kept the default port)
+
+## 📚 Documentation
+
+Docs: https://mineauth.plugin.morino.party
+
+## 📄 License
+
+GPL-3.0

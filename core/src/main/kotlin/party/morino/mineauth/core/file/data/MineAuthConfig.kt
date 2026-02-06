@@ -106,9 +106,24 @@ data class ObservabilityConfig(
  */
 @Serializable
 data class OtlpExporterConfig(
+    // OTLP通信プロトコル（gRPC/HTTP）
+    val protocol: OtlpExporterProtocol = OtlpExporterProtocol.GRPC,
+
     // OTLPエンドポイント（例: http://localhost:4317）
     val endpoint: String = "http://localhost:4317",
 
     // 認証用ヘッダー（例: Authorization -> Bearer xxx）
     val headers: Map<String, String> = emptyMap()
 )
+
+/**
+ * OTLP通信プロトコル
+ */
+@Serializable
+enum class OtlpExporterProtocol {
+    // gRPCで送信する
+    GRPC,
+
+    // HTTPで送信する
+    HTTP
+}

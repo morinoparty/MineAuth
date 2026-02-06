@@ -8,6 +8,7 @@ import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.Context
 import io.opentelemetry.context.propagation.ContextPropagators
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.sdk.trace.ReadWriteSpan
@@ -15,12 +16,14 @@ import io.opentelemetry.sdk.trace.ReadableSpan
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.SpanProcessor
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import io.opentelemetry.semconv.ServiceAttributes
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.ObservabilityConfig
 import party.morino.mineauth.core.file.data.OtlpExporterConfig
+import party.morino.mineauth.core.file.data.OtlpExporterProtocol
 import java.net.URI
 
 /**
@@ -71,7 +74,12 @@ object TelemetryProvider : KoinComponent {
             } catch (e: Exception) {
                 "invalid-endpoint"
             }
-            plugin.logger.info("Initializing OpenTelemetry exporter for: $endpointHost")
+            plugin.logger.info("Initializing OpenTelemetry ${exporter.protocol} exporter for: $endpointHost")
+
+            // HTTPプロトコルで/v1/tracesが含まれている場合は警告
+            if (exporter.protocol == OtlpExporterProtocol.HTTP && exporter.endpoint.contains("/v1/traces")) {
+                plugin.logger.warning("HTTP endpoint contains '/v1/traces' suffix - this will be automatically removed (SDK appends it)")
+            }
         }
 
         // リソース属性（サービス名など）を設定
@@ -140,16 +148,42 @@ object TelemetryProvider : KoinComponent {
      * @param config エクスポーター設定
      * @return 設定済みのSpanExporter
      */
-    private fun createSpanExporter(config: OtlpExporterConfig): OtlpGrpcSpanExporter {
-        val builder = OtlpGrpcSpanExporter.builder()
-            .setEndpoint(config.endpoint)
+    private fun createSpanExporter(config: OtlpExporterConfig): SpanExporter {
+        // プロトコルに応じてOTLPエクスポーターを切り替える
+        return when (config.protocol) {
+            OtlpExporterProtocol.GRPC -> {
+                // gRPCエクスポーターを構築
+                val builder = OtlpGrpcSpanExporter.builder()
+                    .setEndpoint(config.endpoint)
+                    .setTimeout(java.time.Duration.ofSeconds(30)) // タイムアウトを30秒に設定
 
-        // ヘッダーを設定（認証用など）
-        config.headers.forEach { (key, value) ->
-            builder.addHeader(key, value)
+                // ヘッダーを設定（認証用など）
+                config.headers.forEach { (key, value) ->
+                    builder.addHeader(key, value)
+                }
+
+                builder.build()
+            }
+            OtlpExporterProtocol.HTTP -> {
+                // HTTPエクスポーターを構築
+                // 注意: OtlpHttpSpanExporterは自動的に/v1/tracesを追加する
+                // ユーザーが誤って/v1/tracesを含めた場合は除去する
+                val normalizedEndpoint = config.endpoint
+                    .removeSuffix("/v1/traces")
+                    .removeSuffix("/")
+
+                val builder = OtlpHttpSpanExporter.builder()
+                    .setEndpoint(normalizedEndpoint)
+                    .setTimeout(java.time.Duration.ofSeconds(30)) // タイムアウトを30秒に設定
+
+                // ヘッダーを設定（認証用など）
+                config.headers.forEach { (key, value) ->
+                    builder.addHeader(key, value)
+                }
+
+                builder.build()
+            }
         }
-
-        return builder.build()
     }
 
     /**

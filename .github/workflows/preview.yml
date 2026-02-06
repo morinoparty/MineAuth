@@ -170,12 +170,6 @@ jobs:
       - name: Generate Dokka API documentation
         run: ./gradlew dokkaGenerate
 
-      - name: TypeSpec
-        working-directory: typespec
-        run: |
-          pnpm install
-          pnpm compile
-
       - name: Build Fumadocs
         working-directory: docs
         env:
@@ -292,7 +286,6 @@ jobs:
           DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
           DOKKA_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
-          OPENAPI_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/openapi/index.html"
           LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
           # 動的にaddonの行を生成
@@ -326,7 +319,6 @@ jobs:
           |----------|------|
           | 📖 Documentation | [Preview]($DOCS_PREVIEW_URL) |
           | 📖 Dokka API | [Preview]($DOKKA_URL) |
-          | 📖 OpenAPI | [Preview]($OPENAPI_URL) |
           | 🧪 JUnit Report | [Report]($JUNIT_REPORT_URL) |
           | 🔍 Detekt Report | [Report]($DETEKT_REPORT_URL) |
 

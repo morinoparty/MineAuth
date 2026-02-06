@@ -1,5 +1,5 @@
 [versions]
-arrow = "2.1.0"
+arrow = "2.1.2"
 paper = "1.21.8-R0.1-SNAPSHOT"
 mccoroutine = "2.22.0"
 cloud = "2.1.0-SNAPSHOT"
@@ -18,9 +18,9 @@ ktlint = "14.0.1"
 mockk = "1.14.5"
 junit = "5.12.1"
 mockBukkit = "4.68.0"
-hikari = "6.2.1"
+hikari = "6.3.0"
 mysql = "9.2.0"
-micrometer = "1.14.4"
+micrometer = "1.15.0"
 opentelemetry = "1.58.0"
 opentelemetry-instrumentation = "2.22.0-alpha"
 
@@ -98,7 +98,7 @@ ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", ver
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.1" }
 resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.3.0" }
-shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
+shadow = { id = "com.gradleup.shadow", version = "9.0.0-beta4" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.2.10" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.2.10" }
 dokka = { id = "org.jetbrains.dokka", version = "2.1.0" }

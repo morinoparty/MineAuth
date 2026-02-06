@@ -218,7 +218,7 @@ class RouteExecutor(
             is ResolveError.MissingPathParameter ->
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse("Missing required parameter")
+                    ErrorResponse("Missing required parameter: ${error.name}")
                 )
 
             is ResolveError.InvalidBodyFormat -> {

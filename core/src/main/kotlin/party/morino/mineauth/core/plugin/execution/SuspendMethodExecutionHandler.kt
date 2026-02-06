@@ -150,28 +150,37 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
      * Kotlinの Result は inline value class なので：
      * - 成功時で値がnullでない場合：値そのものが渡される（ボックス化されない）
      * - 成功時で値がnullの場合：Result.success(null)がボックス化される
-     * - 失敗時：Result.failure(exception)がボックス化される
+     * - 失敗時：Result.failure(exception)がボックス化される（内部クラス Result$Failure）
      *
      * @param original 元のContinuation
      * @param resultArg アドオン側のResult または直接の値
      */
     private fun handleResumeWith(original: Continuation<Any?>, resultArg: Any?) {
-        // Result型かどうかをクラス名で判定（異なるクラスローダーのため instanceof は使えない）
-        val isResultType = resultArg?.javaClass?.name == "kotlin.Result"
+        val className = resultArg?.javaClass?.name ?: ""
 
-        if (isResultType) {
-            // Result型の場合は従来通りの処理
-            val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
-            val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
-            if (exception != null) {
+        when {
+            // Result$Failure: inline value classの展開により内部のFailureオブジェクトが直接渡される場合
+            // Failureクラスにはexceptionフィールドのみ存在し、getOrNull等のメソッドはない
+            className.startsWith("kotlin.Result\$") -> {
+                val exceptionField = resultArg!!.javaClass.getDeclaredField("exception")
+                exceptionField.isAccessible = true
+                val exception = exceptionField.get(resultArg) as Throwable
                 original.resumeWith(Result.failure(exception))
-            } else {
-                original.resumeWith(Result.success(value))
             }
-        } else {
-            // inline value classがボックス化されずに値が直接渡された場合
-            // 成功として扱う
-            original.resumeWith(Result.success(resultArg))
+            // ボックス化されたResult型: getOrNull/exceptionOrNullメソッドが利用可能
+            className == "kotlin.Result" -> {
+                val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
+                val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
+                if (exception != null) {
+                    original.resumeWith(Result.failure(exception))
+                } else {
+                    original.resumeWith(Result.success(value))
+                }
+            }
+            // inline value classがボックス化されずに値が直接渡された場合（成功として扱う）
+            else -> {
+                original.resumeWith(Result.success(resultArg))
+            }
         }
     }
 
