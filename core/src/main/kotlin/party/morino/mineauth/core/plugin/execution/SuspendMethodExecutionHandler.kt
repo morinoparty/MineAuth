@@ -150,17 +150,20 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
      * Kotlinの Result は inline value class なので：
      * - 成功時で値がnullでない場合：値そのものが渡される（ボックス化されない）
      * - 成功時で値がnullの場合：Result.success(null)がボックス化される
-     * - 失敗時：Result.failure(exception)がボックス化される
+     * - 失敗時：Result.failure(exception)がボックス化される（内部クラス Result$Failure）
      *
      * @param original 元のContinuation
      * @param resultArg アドオン側のResult または直接の値
      */
     private fun handleResumeWith(original: Continuation<Any?>, resultArg: Any?) {
+        val className = resultArg?.javaClass?.name ?: ""
+
         // Result型かどうかをクラス名で判定（異なるクラスローダーのため instanceof は使えない）
-        val isResultType = resultArg?.javaClass?.name == "kotlin.Result"
+        // kotlin.Result または kotlin.Result$Failure のどちらもResult型として扱う
+        val isResultType = className == "kotlin.Result" || className.startsWith("kotlin.Result\$")
 
         if (isResultType) {
-            // Result型の場合は従来通りの処理
+            // Result型の場合：getOrNullとexceptionOrNullで値と例外を取得
             val value = resultArg?.javaClass?.getMethod("getOrNull")?.invoke(resultArg)
             val exception = resultArg?.javaClass?.getMethod("exceptionOrNull")?.invoke(resultArg) as? Throwable
             if (exception != null) {

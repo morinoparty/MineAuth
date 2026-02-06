@@ -9,7 +9,7 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "betonquest-addon"
+val addonName = "addon-betonquest"
 
 repositories {
     maven("https://repo.betonquest.org/betonquest/")

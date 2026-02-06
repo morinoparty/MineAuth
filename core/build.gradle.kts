@@ -79,8 +79,12 @@ tasks {
         // Paperのlibrariesでダウンロードするので除外
         dependencies {
             exclude(dependency("org.jetbrains.kotlin:.*:.*"))
-            // kotlinx-ioはKtorが必要なので除外しない
-            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-.*:.*"))
+            // kotlinx-coroutines: coreとjdk8は除外、slf4jはrelocateするため含める
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-bom:.*"))
+            // kotlinx-coroutines-slf4jは除外しない（relocateするため）
             exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*:.*"))
             exclude(dependency("org.jetbrains.exposed:.*:.*"))
             exclude(dependency("io.arrow-kt:.*:.*"))
@@ -90,6 +94,11 @@ tasks {
             exclude(dependency("org.bouncycastle:.*:.*"))
             exclude(dependency("com.fasterxml.uuid:.*:.*"))
         }
+
+        // クラスローダー競合を防ぐためにrelocate
+        // 他プラグインがkotlinx-coroutines-slf4jをバンドルしていても影響を受けない
+        relocate("io.ktor", "party.morino.mineauth.shadow.io.ktor")
+        relocate("kotlinx.coroutines.slf4j", "party.morino.mineauth.shadow.kotlinx.coroutines.slf4j")
     }
     test {
         useJUnitPlatform()

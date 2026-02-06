@@ -53,7 +53,12 @@ class QuestsHandler {
             }
 
             // 進行中のオブジェクティブを取得
-            val objectives = playerData.rawObjectives
+            // rawObjectivesがMap<String, String>を返すことを確認
+            val objectives = try {
+                playerData.rawObjectives.mapValues { it.value.toString() }
+            } catch (e: Exception) {
+                emptyMap()
+            }
 
             PlayerQuestDataResponse(
                 tags = tags,
