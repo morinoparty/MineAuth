@@ -85,7 +85,7 @@ mysql-connector = { group = "com.mysql", name = "mysql-connector-j", version.ref
 vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1" }
 quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.10" }
 luckperms-api = { group = "net.luckperms", name = "api", version = "5.4" }
-betonquest = { group = "org.betonquest", name = "betonquest", version = "3.0.0-SNAPSHOT" }
+betonquest = { group = "org.betonquest", name = "betonquest", version = "3.0.0-20250818.215240-364" }
 
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 mock-bukkit = { group = "org.mockbukkit.mockbukkit", name = "mockbukkit-v1.21", version.ref = "mockBukkit" }
