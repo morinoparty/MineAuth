@@ -19,10 +19,11 @@ mockk = "1.14.5"
 junit = "5.12.1"
 mockBukkit = "4.68.0"
 hikari = "6.3.0"
-mysql = "9.2.0"
-micrometer = "1.15.0"
-opentelemetry = "1.58.0"
-opentelemetry-instrumentation = "2.22.0-alpha"
+mysql = "9.6.0"
+micrometer = "1.16.2"
+opentelemetry = "1.59.0"
+opentelemetry-instrumentation = "2.25.0-alpha-SNAPSHOT"
+
 
 [libraries]
 arrow-core = { group = "io.arrow-kt", name = "arrow-core", version.ref = "arrow" }
