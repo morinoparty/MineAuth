@@ -6,6 +6,7 @@ import org.betonquest.betonquest.BetonQuest
 import org.bukkit.OfflinePlayer
 import party.morino.mineauth.addons.betonquest.data.JournalEntryData
 import party.morino.mineauth.addons.betonquest.data.PlayerQuestDataResponse
+import party.morino.mineauth.addons.betonquest.utils.DailyQuestExtractor
 import party.morino.mineauth.addons.betonquest.utils.coroutines.minecraft
 import party.morino.mineauth.api.annotations.Authenticated
 import party.morino.mineauth.api.annotations.GetMapping
@@ -53,18 +54,25 @@ class QuestsHandler {
             }
 
             // 進行中のオブジェクティブを取得
-            // rawObjectivesがMap<String, String>を返すことを確認
             val objectives = try {
                 playerData.rawObjectives.mapValues { it.value.toString() }
             } catch (e: Exception) {
                 emptyMap()
             }
 
+            // デイリークエスト情報をrawObjectivesのvariable objectiveデータから抽出
+            val dailyQuests = try {
+                DailyQuestExtractor.extract(objectives)
+            } catch (e: Exception) {
+                emptyList()
+            }
+
             PlayerQuestDataResponse(
                 tags = tags,
                 points = points,
                 journal = journal,
-                objectives = objectives
+                objectives = objectives,
+                dailyQuests = dailyQuests
             )
         }
     }
