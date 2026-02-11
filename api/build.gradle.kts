@@ -12,15 +12,15 @@ dependencies {
     implementation(kotlin("stdlib-jdk8"))
 }
 
-group = project.group
+group = "party.morino"
 version = project.version.toString()
 
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            groupId = group.toString()
+            groupId = "party.morino"
             artifactId = "mineauth-api"
-            version = version
+            version = project.version.toString()
             from(components["kotlin"])
         }
     }
