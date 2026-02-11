@@ -9,7 +9,7 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "betonquest-addon"
+val addonName = "addon-betonquest"
 
 repositories {
     maven("https://repo.betonquest.org/betonquest/")
@@ -49,7 +49,7 @@ tasks {
         minecraftVersion("1.21.4")
         val plugins = runPaper.downloadPluginsSpec {
 
-            url("https://repo.betonquest.org/betonquest/org/betonquest/betonquest/3.0.0-SNAPSHOT/betonquest-3.0.0-20260203.231415-573-shaded.jar")
+            url("https://repo.betonquest.org/betonquest/org/betonquest/betonquest/3.0.0-SNAPSHOT/betonquest-3.0.0-20250818.215240-364-shaded.jar")
         }
         downloadPlugins {
             downloadPlugins.from(plugins)

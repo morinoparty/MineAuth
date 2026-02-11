@@ -108,3 +108,14 @@ jobs:
           gh release upload ${{ github.event.release.tag_name }} \
             ./addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar \
             --clobber
+
+      # JitPack でAPIモジュールのビルドをトリガー（キャッシュウォームアップ）
+      - name: Trigger JitPack build for API
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Triggering JitPack build for MineAuth API tag: $TAG"
+          # JitPack APIにリクエストしてビルドを開始させる
+          curl -s "https://jitpack.io/api/builds/com.github.morinoparty/MineAuth/$TAG" || true
+          # ビルドログをリクエストしてビルドをキックする
+          curl -s "https://jitpack.io/com/github/morinoparty/MineAuth/api/$TAG/api-$TAG.pom" > /dev/null 2>&1 || true
+          echo "JitPack build triggered for MineAuth API"

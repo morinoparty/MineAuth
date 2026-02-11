@@ -132,47 +132,60 @@ object TokenRouter: KoinComponent {
                 }
                 authorizedData.remove(code)
 
-                if (code == null || redirectUri == null || clientId == null || codeVerifier == null) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters")
+                // 不足しているパラメータを特定してエラーメッセージに含める
+                val missingParams = buildList {
+                    if (code == null) add("code")
+                    if (redirectUri == null) add("redirect_uri")
+                    if (clientId == null) add("client_id")
+                    if (codeVerifier == null) add("code_verifier")
+                }
+                if (missingParams.isNotEmpty()) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters: ${missingParams.joinToString(", ")}")
                     return@post
                 }
+
+                // nullチェック済みのためnon-null変数に再代入
+                val validClientId = clientId!!
+                val validRedirectUri = redirectUri!!
+                val validCodeVerifier = codeVerifier!!
+
                 if(clientSecret != null){
                     // Confidentialクライアントの場合：クライアント認証を実行
                     val clientData = try {
-                        ClientData.getClientData(clientId)
+                        ClientData.getClientData(validClientId)
                     } catch (e: Exception) {
-                        plugin.logger.warning("Client not found: $clientId")
+                        plugin.logger.warning("Client not found: $validClientId")
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
                         return@post
                     }
                     if (clientData !is ClientData.ConfidentialClientData) {
-                        plugin.logger.warning("Client type mismatch for $clientId: expected Confidential, got ${clientData::class.simpleName}")
+                        plugin.logger.warning("Client type mismatch for $validClientId: expected Confidential, got ${clientData::class.simpleName}")
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
                         return@post
                     }
                     // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
                     if (!clientData.verifySecret(clientSecret)) {
-                        plugin.logger.warning("Client authentication failed for $clientId: invalid secret")
+                        plugin.logger.warning("Client authentication failed for $validClientId: invalid secret")
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }
                 }
 
-                if (data.clientId != clientId || data.redirectUri != redirectUri) {
+                if (data.clientId != validClientId || data.redirectUri != validRedirectUri) {
                     call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid client_id or redirect_uri")
                     return@post
                 }
 
-                if (!validateCodeVerifier(data.codeChallenge, codeVerifier)) {
+                if (!validateCodeVerifier(data.codeChallenge, validCodeVerifier)) {
                     call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The code_verifier is invalid")
                     return@post
                 }
 
-                val token = issueToken(data, clientId)
-                val refreshToken = issueRefreshToken(data, clientId)
+                val token = issueToken(data, validClientId)
+                val refreshToken = issueRefreshToken(data, validClientId)
                 // scopeに"openid"が含まれる場合のみID Tokenを発行（OIDC準拠）
                 val idToken = if (data.scope.contains("openid")) {
-                    issueIdToken(data, clientId, token)
+                    issueIdToken(data, validClientId, token)
                 } else null
 
                 call.respond(

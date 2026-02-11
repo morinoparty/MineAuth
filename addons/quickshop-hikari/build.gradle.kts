@@ -9,7 +9,7 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "quickshop-hikari-addon"
+val addonName = "addon-quickshop-hikari"
 
 dependencies {
     compileOnly(project(":api"))

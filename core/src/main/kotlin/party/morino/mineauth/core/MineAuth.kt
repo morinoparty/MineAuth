@@ -24,6 +24,7 @@ import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.commands.OAuthClientCommand
 import party.morino.mineauth.core.commands.RegisterCommand
 import party.morino.mineauth.core.commands.ReloadCommand
+import party.morino.mineauth.core.commands.VersionCommand
 import party.morino.mineauth.core.commands.parser.ClientIdParser
 import party.morino.mineauth.core.file.load.FileUtils
 import party.morino.mineauth.core.integration.IntegrationInitializer
@@ -92,6 +93,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
                 RegisterCommand(),
                 ReloadCommand(),
                 OAuthClientCommand(),
+                VersionCommand(),
             )
         }
     }

@@ -9,7 +9,7 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "vault-addon"
+val addonName = "addon-vault"
 
 dependencies {
     compileOnly(project(":api"))

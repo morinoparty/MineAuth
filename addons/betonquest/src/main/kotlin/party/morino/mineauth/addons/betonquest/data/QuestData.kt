@@ -15,7 +15,7 @@ data class PlayerQuestDataResponse(
     // ジャーナルエントリ一覧
     val journal: List<JournalEntryData>,
     // 進行中のオブジェクティブ（ID -> データ）
-    val objectives: Map<String, String>
+    val objectives: Map<String, String>,
 )
 
 /**
