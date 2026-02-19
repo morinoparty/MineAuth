@@ -9,6 +9,7 @@ import net.milkbowl.vault.economy.Economy
 import org.bukkit.OfflinePlayer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import party.morino.mineauth.addons.griefprevention.config.GriefPreventionConfig
 import party.morino.mineauth.addons.griefprevention.data.*
 import party.morino.mineauth.addons.griefprevention.utils.coroutines.minecraft
 import party.morino.mineauth.api.annotations.AuthedAccessUser
@@ -25,11 +26,7 @@ import party.morino.mineauth.api.http.HttpStatus
 class ClaimHandler : KoinComponent {
     private val dataStore: DataStore by inject()
     private val economy: Economy by inject()
-
-    companion object {
-        // 一度に購入できるクレームブロックの上限
-        private const val MAX_PURCHASE_BLOCKS = 100_000
-    }
+    private val config: GriefPreventionConfig by inject()
 
     /**
      * 認証済みプレイヤーのクレーム一覧を取得する
@@ -76,8 +73,8 @@ class ClaimHandler : KoinComponent {
         if (request.blockCount <= 0) {
             throw HttpError(HttpStatus.BAD_REQUEST, "Block count must be greater than 0")
         }
-        if (request.blockCount > MAX_PURCHASE_BLOCKS) {
-            throw HttpError(HttpStatus.BAD_REQUEST, "Block count exceeds maximum limit of $MAX_PURCHASE_BLOCKS")
+        if (request.blockCount > config.maxPurchaseBlocks) {
+            throw HttpError(HttpStatus.BAD_REQUEST, "Block count exceeds maximum limit of ${config.maxPurchaseBlocks}")
         }
 
         return withContext(Dispatchers.minecraft) {

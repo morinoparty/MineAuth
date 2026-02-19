@@ -1,11 +1,14 @@
 package party.morino.mineauth.addons.vault
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import net.milkbowl.vault.economy.Economy
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+import party.morino.mineauth.addons.vault.config.VaultConfig
 import party.morino.mineauth.addons.vault.routes.VaultHandler
 import party.morino.mineauth.api.MineAuthAPI
 
@@ -14,6 +17,12 @@ import party.morino.mineauth.api.MineAuthAPI
  * MineAuthのHTTP API経由でVaultの経済機能にアクセス可能にする
  */
 class VaultAddon : JavaPlugin() {
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        prettyPrint = true
+    }
 
     private lateinit var mineAuthAPI: MineAuthAPI
 
@@ -49,6 +58,26 @@ class VaultAddon : JavaPlugin() {
     }
 
     /**
+     * 設定ファイルを読み込む
+     * 存在しない場合はデフォルト値で作成する
+     *
+     * @return 読み込んだ設定
+     */
+    private fun loadConfig(): VaultConfig {
+        val configFile = dataFolder.resolve("config.json")
+        if (!configFile.exists()) {
+            configFile.parentFile.mkdirs()
+            configFile.writeText(json.encodeToString(VaultConfig()))
+        }
+        return runCatching {
+            json.decodeFromString<VaultConfig>(configFile.readText())
+        }.getOrElse { e ->
+            logger.warning("Failed to load config.json: ${e.message}. Using default config.")
+            VaultConfig()
+        }
+    }
+
+    /**
      * Koinの初期化
      * アドオン独自のKoinコンテキストを起動する
      *
@@ -65,11 +94,15 @@ class VaultAddon : JavaPlugin() {
         val economy = rsp.provider
         logger.info("Economy provider found: ${economy.name}")
 
+        val config = loadConfig()
+
         startKoin {
             modules(
                 module {
                     // Economyインスタンスをシングルトンとして登録
                     single<Economy> { economy }
+                    // 設定をシングルトンとして登録
+                    single { config }
                 }
             )
         }

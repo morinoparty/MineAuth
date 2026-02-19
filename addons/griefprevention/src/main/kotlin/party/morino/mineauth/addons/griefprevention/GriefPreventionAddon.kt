@@ -1,5 +1,7 @@
 package party.morino.mineauth.addons.griefprevention
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import me.ryanhamshire.GriefPrevention.GriefPrevention
 import me.ryanhamshire.GriefPrevention.DataStore
 import net.milkbowl.vault.economy.Economy
@@ -8,6 +10,7 @@ import org.bukkit.plugin.java.JavaPlugin
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+import party.morino.mineauth.addons.griefprevention.config.GriefPreventionConfig
 import party.morino.mineauth.addons.griefprevention.routes.ClaimHandler
 import party.morino.mineauth.api.MineAuthAPI
 
@@ -16,6 +19,12 @@ import party.morino.mineauth.api.MineAuthAPI
  * MineAuthのHTTP API経由でGriefPreventionのクレーム情報にアクセス可能にする
  */
 class GriefPreventionAddon : JavaPlugin() {
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        prettyPrint = true
+    }
 
     private lateinit var mineAuthAPI: MineAuthAPI
 
@@ -71,6 +80,26 @@ class GriefPreventionAddon : JavaPlugin() {
     }
 
     /**
+     * 設定ファイルを読み込む
+     * 存在しない場合はデフォルト値で作成する
+     *
+     * @return 読み込んだ設定
+     */
+    private fun loadConfig(): GriefPreventionConfig {
+        val configFile = dataFolder.resolve("config.json")
+        if (!configFile.exists()) {
+            configFile.parentFile.mkdirs()
+            configFile.writeText(json.encodeToString(GriefPreventionConfig()))
+        }
+        return runCatching {
+            json.decodeFromString<GriefPreventionConfig>(configFile.readText())
+        }.getOrElse { e ->
+            logger.warning("Failed to load config.json: ${e.message}. Using default config.")
+            GriefPreventionConfig()
+        }
+    }
+
+    /**
      * Koinの初期化
      * GriefPreventionのDataStoreとVaultのEconomyをシングルトンとして登録する
      *
@@ -87,6 +116,8 @@ class GriefPreventionAddon : JavaPlugin() {
         val economy = rsp.provider
         logger.info("Economy provider found: ${economy.name}")
 
+        val config = loadConfig()
+
         startKoin {
             modules(
                 module {
@@ -94,6 +125,8 @@ class GriefPreventionAddon : JavaPlugin() {
                     single<DataStore> { GriefPrevention.instance.dataStore }
                     // Economyインスタンスをシングルトンとして登録
                     single<Economy> { economy }
+                    // 設定をシングルトンとして登録
+                    single { config }
                 }
             )
         }

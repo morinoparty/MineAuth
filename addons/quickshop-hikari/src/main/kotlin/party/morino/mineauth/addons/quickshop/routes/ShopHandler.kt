@@ -10,6 +10,7 @@ import org.bukkit.Material
 import org.bukkit.OfflinePlayer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import party.morino.mineauth.addons.quickshop.config.QuickShopConfig
 import party.morino.mineauth.addons.quickshop.data.PaginatedShopsResponse
 import party.morino.mineauth.addons.quickshop.data.ShopData
 import party.morino.mineauth.addons.quickshop.data.ShopMode
@@ -32,14 +33,7 @@ import party.morino.mineauth.api.model.bukkit.LocationData
  */
 class ShopHandler : KoinComponent {
     private val quickShopAPI: QuickShopAPI by inject()
-
-    companion object {
-        // ページネーションのデフォルト取得件数
-        private const val DEFAULT_LIMIT = 200
-
-        // ページネーションの最大取得件数
-        private const val MAX_LIMIT = 1000
-    }
+    private val config: QuickShopConfig by inject()
 
     /**
      * サーバー全体のショップ一覧をカーソルベースページネーションで取得する
@@ -194,12 +188,12 @@ class ShopHandler : KoinComponent {
      * limitパラメータをパースし、範囲内に制限する
      */
     private fun parseLimit(limit: String?): Int {
-        if (limit.isNullOrBlank()) return DEFAULT_LIMIT
+        if (limit.isNullOrBlank()) return config.defaultLimit
         val parsed = limit.toIntOrNull() ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid limit format")
         if (parsed <= 0) {
             throw HttpError(HttpStatus.BAD_REQUEST, "Limit must be greater than 0")
         }
-        return parsed.coerceAtMost(MAX_LIMIT)
+        return parsed.coerceAtMost(config.maxLimit)
     }
 
     /**
