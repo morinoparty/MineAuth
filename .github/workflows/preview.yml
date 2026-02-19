@@ -86,7 +86,9 @@ jobs:
           mkdir -p ./gradle-artifacts/junit
           mkdir -p ./gradle-artifacts/detekt
           mv ./core/build/libs/core-*-all.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar
-          mv ./api/build/libs/api-*.jar ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
+          # sourcesJARを除外してメインJARのみ移動
+          api_jar=$(find ./api/build/libs/ -name "api-*.jar" ! -name "*-sources.jar" | head -1)
+          mv "$api_jar" ./gradle-artifacts/jars/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar
 
           # 動的にすべてのaddonを検出してリネーム
           for addon_dir in ./addons/*/; do
