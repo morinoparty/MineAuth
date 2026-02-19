@@ -15,6 +15,7 @@ nimbus = "10.7"
 logback = "1.5.18"
 bouncycastle = "1.83"
 ktlint = "14.0.1"
+mavenPublish = "0.30.0"
 mockk = "1.14.5"
 junit = "6.0.3"
 mockBukkit = "4.68.0"
@@ -87,6 +88,7 @@ vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1
 quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.10" }
 luckperms-api = { group = "net.luckperms", name = "api", version = "5.5" }
 betonquest = { group = "org.betonquest", name = "betonquest", version = "3.0.0-20250818.215240-364" }
+griefprevention = { group = "com.github.TechFortress", name = "GriefPrevention", version = "17.0.0" }
 
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 mock-bukkit = { group = "org.mockbukkit.mockbukkit", name = "mockbukkit-v1.21", version.ref = "mockBukkit" }
@@ -104,6 +106,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.2.10" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.2.10" }
 dokka = { id = "org.jetbrains.dokka", version = "2.1.0" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
 
 [bundles]
 commands = ["cloud", "cloudPaper", "cloud-annotations", "cloud-kotlin-coroutines-annotations"]
