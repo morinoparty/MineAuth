@@ -57,19 +57,9 @@ sourceSets.main {
             website = "https://github.com/morinoparty/MineAuth"
             main = "$group.mineauth.addons.griefprevention.GriefPreventionAddon"
             apiVersion = "1.20"
-            libraries = libs.bundles.coroutines.asString()
+            // librariesはMineAuthコアから提供されるため宣言しない
+            // （別クラスローダーでの重複ロードによるLinkageError防止）
             depend = listOf("MineAuth", "GriefPrevention", "Vault")
         }
-    }
-}
-
-fun Provider<MinimalExternalModuleDependency>.asString(): String {
-    val dependency = this.get()
-    return dependency.module.toString() + ":" + dependency.versionConstraint.toString()
-}
-
-fun Provider<ExternalModuleDependencyBundle>.asString(): List<String> {
-    return this.get().map { dependency ->
-        "${dependency.group}:${dependency.name}:${dependency.version}"
     }
 }
