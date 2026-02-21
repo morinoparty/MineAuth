@@ -1,10 +1,13 @@
 package party.morino.mineauth.addons.quickshop
 
 import com.ghostchu.quickshop.api.QuickShopAPI
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.bukkit.plugin.java.JavaPlugin
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+import party.morino.mineauth.addons.quickshop.config.QuickShopConfig
 import party.morino.mineauth.addons.quickshop.routes.ShopHandler
 import party.morino.mineauth.api.MineAuthAPI
 
@@ -13,6 +16,12 @@ import party.morino.mineauth.api.MineAuthAPI
  * MineAuthのHTTP API経由でQuickShopのショップ情報にアクセス可能にする
  */
 class QuickShopHikariAddon : JavaPlugin() {
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        prettyPrint = true
+    }
 
     private lateinit var mineAuthAPI: MineAuthAPI
 
@@ -66,15 +75,39 @@ class QuickShopHikariAddon : JavaPlugin() {
     }
 
     /**
+     * 設定ファイルを読み込む
+     * 存在しない場合はデフォルト値で作成する
+     *
+     * @return 読み込んだ設定
+     */
+    private fun loadConfig(): QuickShopConfig {
+        val configFile = dataFolder.resolve("config.json")
+        if (!configFile.exists()) {
+            configFile.parentFile.mkdirs()
+            configFile.writeText(json.encodeToString(QuickShopConfig()))
+        }
+        return runCatching {
+            json.decodeFromString<QuickShopConfig>(configFile.readText())
+        }.getOrElse { e ->
+            logger.warning("Failed to load config.json: ${e.message}. Using default config.")
+            QuickShopConfig()
+        }
+    }
+
+    /**
      * Koinの初期化
      * アドオン独自のKoinコンテキストを起動する
      */
     private fun setupKoin() {
+        val config = loadConfig()
+
         startKoin {
             modules(
                 module {
                     // QuickShopAPIをシングルトンとして登録
                     single<QuickShopAPI> { QuickShopAPI.getInstance() }
+                    // 設定をシングルトンとして登録
+                    single { config }
                 }
             )
         }

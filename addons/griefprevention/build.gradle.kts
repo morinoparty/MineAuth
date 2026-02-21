@@ -9,7 +9,7 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "addon-vault"
+val addonName = "addon-griefprevention"
 
 dependencies {
     compileOnly(project(":api"))
@@ -25,6 +25,7 @@ dependencies {
     compileOnly(libs.bundles.exposed)
     compileOnly(kotlin("stdlib-jdk8"))
 
+    compileOnly(libs.griefprevention)
     compileOnly(libs.vault.api)
 }
 
@@ -44,15 +45,6 @@ tasks {
     }
     runServer {
         minecraftVersion("1.21.8")
-        val plugins = runPaper.downloadPluginsSpec {
-            // Vault
-            url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")
-            // EssentialsX
-            url("https://ci.ender.zone/job/EssentialsX/1576/artifact/jars/EssentialsX-2.21.0-dev+93-3a6fdd9.jar")
-        }
-        downloadPlugins {
-            downloadPlugins.from(plugins)
-        }
     }
 }
 
@@ -63,11 +55,11 @@ sourceSets.main {
             name = rootProject.name + "-" + addonName
             version = project.version.toString()
             website = "https://github.com/morinoparty/MineAuth"
-            main = "$group.mineauth.addons.vault.VaultAddon"
+            main = "$group.mineauth.addons.griefprevention.GriefPreventionAddon"
             apiVersion = "1.20"
             // librariesはMineAuthコアから提供されるため宣言しない
             // （別クラスローダーでの重複ロードによるLinkageError防止）
-            depend = listOf("MineAuth", "Vault")
+            depend = listOf("MineAuth", "GriefPrevention", "Vault")
         }
     }
 }

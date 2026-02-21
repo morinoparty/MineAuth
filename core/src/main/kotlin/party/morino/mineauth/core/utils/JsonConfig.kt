@@ -1,9 +1,9 @@
-package party.morino.mineauth.api.utils
+package party.morino.mineauth.core.utils
 
 import kotlinx.serialization.json.Json
 
 /**
- * 共通のJSON設定オブジェクト
+ * コア用の共通JSON設定オブジェクト
  * 不明なキーを無視し、デフォルト値をエンコード、寛容な解析、見やすい形式で出力する
  */
 val json = Json {

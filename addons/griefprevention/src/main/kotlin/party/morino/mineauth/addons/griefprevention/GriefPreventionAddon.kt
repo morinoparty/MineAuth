@@ -1,22 +1,24 @@
-package party.morino.mineauth.addons.vault
+package party.morino.mineauth.addons.griefprevention
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import me.ryanhamshire.GriefPrevention.GriefPrevention
+import me.ryanhamshire.GriefPrevention.DataStore
 import net.milkbowl.vault.economy.Economy
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
-import party.morino.mineauth.addons.vault.config.VaultConfig
-import party.morino.mineauth.addons.vault.routes.VaultHandler
+import party.morino.mineauth.addons.griefprevention.config.GriefPreventionConfig
+import party.morino.mineauth.addons.griefprevention.routes.ClaimHandler
 import party.morino.mineauth.api.MineAuthAPI
 
 /**
- * Vault連携アドオン
- * MineAuthのHTTP API経由でVaultの経済機能にアクセス可能にする
+ * GriefPrevention連携アドオン
+ * MineAuthのHTTP API経由でGriefPreventionのクレーム情報にアクセス可能にする
  */
-class VaultAddon : JavaPlugin() {
+class GriefPreventionAddon : JavaPlugin() {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -27,9 +29,9 @@ class VaultAddon : JavaPlugin() {
     private lateinit var mineAuthAPI: MineAuthAPI
 
     override fun onEnable() {
-        logger.info("Vault Addon enabling...")
+        logger.info("GriefPrevention Addon enabling...")
 
-        // MineAuthAPIの取得（safe castを使用してgraceful disableに対応）
+        // MineAuthAPIの取得
         val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
         val api = mineAuthPlugin as? MineAuthAPI
         if (api == null) {
@@ -39,9 +41,16 @@ class VaultAddon : JavaPlugin() {
         }
         mineAuthAPI = api
 
+        // GriefPreventionプラグインの検証
+        if (!verifyGriefPrevention()) {
+            logger.severe("GriefPrevention plugin not found or not enabled")
+            server.pluginManager.disablePlugin(this)
+            return
+        }
+
         // Koinの初期化
         if (!setupKoin()) {
-            logger.severe("Failed to setup Koin - Economy provider not found")
+            logger.severe("Failed to setup Koin - required providers not found")
             server.pluginManager.disablePlugin(this)
             return
         }
@@ -49,12 +58,25 @@ class VaultAddon : JavaPlugin() {
         // MineAuthにハンドラーを登録
         setupMineAuth()
 
-        logger.info("Vault Addon enabled")
+        logger.info("GriefPrevention Addon enabled")
     }
 
     override fun onDisable() {
         stopKoin()
-        logger.info("Vault Addon disabled")
+        logger.info("GriefPrevention Addon disabled")
+    }
+
+    /**
+     * GriefPreventionプラグインの存在を検証する
+     */
+    private fun verifyGriefPrevention(): Boolean {
+        val gpPlugin = server.pluginManager.getPlugin("GriefPrevention")
+        if (gpPlugin == null || !gpPlugin.isEnabled) {
+            logger.warning("GriefPrevention plugin not found or not enabled")
+            return false
+        }
+        logger.info("GriefPrevention plugin found: ${gpPlugin.pluginMeta.version}")
+        return true
     }
 
     /**
@@ -63,25 +85,25 @@ class VaultAddon : JavaPlugin() {
      *
      * @return 読み込んだ設定
      */
-    private fun loadConfig(): VaultConfig {
+    private fun loadConfig(): GriefPreventionConfig {
         val configFile = dataFolder.resolve("config.json")
         if (!configFile.exists()) {
             configFile.parentFile.mkdirs()
-            configFile.writeText(json.encodeToString(VaultConfig()))
+            configFile.writeText(json.encodeToString(GriefPreventionConfig()))
         }
         return runCatching {
-            json.decodeFromString<VaultConfig>(configFile.readText())
+            json.decodeFromString<GriefPreventionConfig>(configFile.readText())
         }.getOrElse { e ->
             logger.warning("Failed to load config.json: ${e.message}. Using default config.")
-            VaultConfig()
+            GriefPreventionConfig()
         }
     }
 
     /**
      * Koinの初期化
-     * アドオン独自のKoinコンテキストを起動する
+     * GriefPreventionのDataStoreとVaultのEconomyをシングルトンとして登録する
      *
-     * @return 初期化に成功した場合はtrue、Economy providerが見つからない場合はfalse
+     * @return 初期化に成功した場合はtrue
      */
     private fun setupKoin(): Boolean {
         // VaultのEconomy providerを取得
@@ -99,6 +121,8 @@ class VaultAddon : JavaPlugin() {
         startKoin {
             modules(
                 module {
+                    // DataStoreをシングルトンとして登録
+                    single<DataStore> { GriefPrevention.instance.dataStore }
                     // Economyインスタンスをシングルトンとして登録
                     single<Economy> { economy }
                     // 設定をシングルトンとして登録
@@ -111,10 +135,9 @@ class VaultAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
-     * 登録されたハンドラーは /api/v1/plugins/vault-addon/ 配下で利用可能
      */
     private fun setupMineAuth() {
         mineAuthAPI.createHandler(this)
-            .register(VaultHandler())
+            .register(ClaimHandler())
     }
 }

@@ -5,6 +5,7 @@ import net.milkbowl.vault.economy.Economy
 import org.bukkit.OfflinePlayer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import party.morino.mineauth.addons.vault.config.VaultConfig
 import party.morino.mineauth.addons.vault.data.RemittanceData
 import party.morino.mineauth.api.annotations.AuthedAccessUser
 import party.morino.mineauth.api.annotations.GetMapping
@@ -39,10 +40,9 @@ data class TransferResponse(
  */
 class VaultHandler : KoinComponent {
     private val economy: Economy by inject()
+    private val config: VaultConfig by inject()
 
     companion object {
-        // 送金額の上限（サーバー設定で変更可能にする場合は設定ファイルから読み込む）
-        private const val MAX_TRANSFER_AMOUNT = 1_000_000_000.0
         private val logger: Logger = Logger.getLogger(VaultHandler::class.java.name)
     }
 
@@ -114,7 +114,7 @@ class VaultHandler : KoinComponent {
         }
 
         // 金額の上限チェック
-        if (amount > MAX_TRANSFER_AMOUNT) {
+        if (amount > config.maxTransferAmount) {
             throw HttpError(
                 HttpStatus.BAD_REQUEST,
                 "Amount exceeds maximum transfer limit"

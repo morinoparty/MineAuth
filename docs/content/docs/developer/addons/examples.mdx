@@ -21,9 +21,38 @@ This addon provides HTTP endpoints for QuickShop-Hikari shop data:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/plugins/quickshophikari/shops` | List all shops |
+| GET | `/api/v1/plugins/quickshophikari/shops` | List all shops (cursor-based pagination) |
 | GET | `/api/v1/plugins/quickshophikari/shops/{id}` | Get shop by ID |
 | GET | `/api/v1/plugins/quickshophikari/users/{uuid}/shops` | Get shops by owner |
+| GET | `/api/v1/plugins/quickshophikari/users/me/shops` | Get own shops |
+
+#### Pagination Example
+
+The `/shops` endpoint supports cursor-based pagination with `cursor` and `limit` query parameters.
+
+```
+GET /api/v1/plugins/quickshophikari/shops?limit=200
+GET /api/v1/plugins/quickshophikari/shops?cursor=12345&limit=200
+```
+
+```json
+{
+  "shops": [
+    {
+      "shopId": 1,
+      "owner": "550e8400-e29b-41d4-a716-446655440000",
+      "mode": "SELL",
+      "stackingAmount": 64,
+      "remaining": 128,
+      "location": { "world": "world", "x": 100.0, "y": 64.0, "z": 200.0, "yaw": 0.0, "pitch": 0.0 },
+      "price": 10.0,
+      "item": { "type": { "name": "DIAMOND", "type": "item" }, "amount": 1, "lore": [], "meta": {} }
+    }
+  ],
+  "nextCursor": "12345",
+  "hasMore": true
+}
+```
 
 ## Vault Addon
 
@@ -43,6 +72,63 @@ Provides HTTP endpoints for Vault economy operations:
 |--------|------|-------------|
 | GET | `/api/v1/plugins/vault-addon/balance/me` | Get own balance |
 | POST | `/api/v1/plugins/vault-addon/send` | Send money to another player |
+
+## GriefPrevention Addon
+
+Provides HTTP endpoints for GriefPrevention claim data and claim block purchasing:
+
+**[morinoparty/MineAuth/addons/griefprevention](https://github.com/morinoparty/MineAuth/tree/master/addons/griefprevention)**
+
+| File | Description |
+|------|-------------|
+| `GriefPreventionAddon.kt` | Main plugin class |
+| `routes/ClaimHandler.kt` | HTTP handler with endpoints |
+| `data/*.kt` | Data classes for claim information |
+
+### Generated Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/plugins/mineauth-addon-griefprevention/claims/me` | Get own claims |
+| POST | `/api/v1/plugins/mineauth-addon-griefprevention/claims/purchase` | Purchase claim blocks |
+
+### Response Example
+
+`GET /claims/me`:
+
+```json
+{
+  "claims": [
+    {
+      "claimId": 1,
+      "owner": "550e8400-e29b-41d4-a716-446655440000",
+      "world": "world",
+      "lesserCorner": { "world": "world", "x": 100, "y": -64, "z": 200 },
+      "greaterCorner": { "world": "world", "x": 200, "y": 320, "z": 300 },
+      "area": 10000
+    }
+  ],
+  "totalClaimCount": 1,
+  "accruedClaimBlocks": 5000,
+  "bonusClaimBlocks": 1000,
+  "remainingClaimBlocks": -4000
+}
+```
+
+`POST /claims/purchase`:
+
+```json
+// Request
+{ "blockCount": 100 }
+
+// Response
+{
+  "purchased": 100,
+  "totalCost": 1000.0,
+  "newBalance": 9000.0,
+  "remainingClaimBlocks": -3900
+}
+```
 
 ## BetonQuest Addon
 

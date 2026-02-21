@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 import org.bukkit.Bukkit
 import org.bukkit.OfflinePlayer
 import party.morino.mineauth.api.utils.UUIDSerializer
-import party.morino.mineauth.api.utils.json
+import party.morino.mineauth.core.utils.json
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import java.util.*
 
