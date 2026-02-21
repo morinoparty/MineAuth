@@ -23,8 +23,8 @@ mavenPublishing {
 
         licenses {
             license {
-                name.set("GPL-3.0")
-                url.set("https://www.gnu.org/licenses/gpl-3.0.html")
+                name.set("CC0-1.0")
+                url.set("https://creativecommons.org/publicdomain/zero/1.0/")
             }
         }
 

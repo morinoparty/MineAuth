@@ -27,14 +27,20 @@ class OpenApiGenerator : KoinComponent {
     private val pathItemGenerator: PathItemGenerator by inject()
     private val config: MineAuthConfig by inject()
 
+    private val corePathsGenerator = CorePathsGenerator()
+
     /**
      * 完全なOpenAPIドキュメントを生成する
      *
      * @return OpenAPI 3.1.0仕様のドキュメント
      */
     fun generate(): OpenApiDocument {
-        // 動的エンドポイントからパスを生成
+        // コアエンドポイントのパスを生成
+        val corePaths = corePathsGenerator.generate()
+        // 動的エンドポイント（アドオン）からパスを生成
         val dynamicPaths = generateDynamicPaths()
+        // コアパスとアドオンパスをマージ（アドオンが優先）
+        val allPaths = corePaths + dynamicPaths
 
         return OpenApiDocument(
             openapi = "3.1.0",
@@ -45,7 +51,7 @@ class OpenApiGenerator : KoinComponent {
                     description = "MineAuth API Server"
                 )
             ),
-            paths = dynamicPaths,
+            paths = allPaths,
             components = generateComponents(),
             // グローバルsecurityは設定しない（各Operationで個別に設定）
             // グローバルで設定すると、認証不要なエンドポイントも認証必須に見えてしまう
@@ -149,11 +155,14 @@ class OpenApiGenerator : KoinComponent {
 
     /**
      * タグ一覧を生成する
-     * 各プラグインに対応するタグを動的に生成
+     * コアタグと各プラグインに対応するタグを動的に生成
      * PathItemGeneratorと同じロジックでタグ名を生成し一貫性を保つ
      */
     private fun generateTags(): List<Tag> {
         val tags = mutableListOf<Tag>()
+
+        // コアエンドポイント用のタグ
+        tags.addAll(corePathsGenerator.generateTags())
 
         // 動的タグ（プラグインごと）
         for ((pluginName, registeredEndpoints) in metadataRegistry.getAllEndpoints()) {
@@ -167,7 +176,7 @@ class OpenApiGenerator : KoinComponent {
             )
         }
 
-        return tags.takeIf { it.isNotEmpty() } ?: emptyList()
+        return tags
     }
 
     /**
