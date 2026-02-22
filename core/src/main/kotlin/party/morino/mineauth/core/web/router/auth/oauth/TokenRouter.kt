@@ -16,6 +16,7 @@ import party.morino.mineauth.core.web.components.auth.ClientData
 import party.morino.mineauth.core.web.components.auth.TokenData
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractBasicCredentials
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.TokenType
@@ -31,28 +32,6 @@ object TokenRouter: KoinComponent {
     private const val EXPIRES_IN = 300
     // RFC 6749 Section 4.1.2: 認可コードの最大有効期間（10分推奨）
     private const val AUTHORIZATION_CODE_LIFETIME_MS = 10 * 60 * 1000L
-
-    /**
-     * Authorization: Basic ヘッダーからclient_idとclient_secretを取得する
-     * RFC 6749 Section 2.3.1 (client_secret_basic) 準拠
-     *
-     * @return Pair(client_id, client_secret) または null（ヘッダーが存在しない/不正な場合）
-     */
-    private fun io.ktor.server.routing.RoutingContext.extractBasicCredentials(): Pair<String, String>? {
-        val authHeader = call.request.header(HttpHeaders.Authorization) ?: return null
-        if (!authHeader.startsWith("Basic ", ignoreCase = true)) return null
-        return try {
-            // Base64デコードして "client_id:client_secret" 形式を分割
-            val decoded = String(Base64.getDecoder().decode(authHeader.substring(6)), Charsets.UTF_8)
-            val colonIndex = decoded.indexOf(':')
-            if (colonIndex < 0) return null
-            val id = decoded.substring(0, colonIndex)
-            val secret = decoded.substring(colonIndex + 1)
-            Pair(id, secret)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
-    }
 
     fun Route.tokenRouter() {
         post("/token") {
@@ -70,26 +49,40 @@ object TokenRouter: KoinComponent {
                 return@post
             }
 
+            // RFC 6749 Section 5.2: grant_type欠如はinvalid_request
+            if (grantType == null) {
+                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: grant_type")
+                return@post
+            }
+
             if (grantType == "refresh_token") {
                 //refresh_tokenの処理 https://tools.ietf.org/html/rfc6749#section-6
                 // client_secret_post → client_secret_basic の優先順でクレデンシャルを取得
                 val clientId = formParameters["client_id"] ?: basicCredentials?.first
-                val clientSecret = formParameters["client_secret"] ?: basicCredentials?.second
+                // Basic認証でsecretが空文字の場合はPublicクライアントとして扱う
+                val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
                 if (clientId == null) {
                     call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_id")
                     return@post
                 }
 
-                if(clientSecret != null){
-                    // Confidentialクライアントの場合
-                    val refreshToken = formParameters["refresh_token"]
-                    if (refreshToken == null) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
-                        return@post
-                    }
+                // クライアントデータを取得してタイプを検証
+                val clientData = try {
+                    ClientData.getClientData(clientId)
+                } catch (e: Exception) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
+                    return@post
+                }
 
-                    // クライアントデータの取得と型チェック
-                    val clientData = ClientData.getClientData(clientId)
+                // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
+                // client_secretが省略されているのにConfidentialクライアントの場合はエラー
+                if (clientSecret == null && clientData is ClientData.ConfidentialClientData) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
+                    return@post
+                }
+
+                if (clientSecret != null) {
+                    // Confidentialクライアントの場合：シークレット検証を実行
                     if (clientData !is ClientData.ConfidentialClientData) {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
                         return@post
@@ -99,78 +92,48 @@ object TokenRouter: KoinComponent {
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
                         return@post
                     }
-
-                    // リフレッシュトークンの検証（署名・有効期限・token_type）
-                    val verified = verifyAndDecodeRefreshToken(refreshToken)
-                    if (verified == null) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
-                        return@post
-                    }
-
-                    // クライアントIDの一致を確認
-                    if (verified.authorizedData.clientId != clientId) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
-                        return@post
-                    }
-
-                    // RFC 6749 Section 10.4: リフレッシュトークンローテーション
-                    // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
-                    if (!revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)) {
-                        call.respondOAuthError(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
-                        return@post
-                    }
-                    val token = issueToken(verified.authorizedData, clientId)
-                    val newRefreshToken = issueRefreshToken(verified.authorizedData, clientId)
-
-                    // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
-                    // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
-                    call.respond(HttpStatusCode.OK, TokenData(
-                        accessToken = token,
-                        tokenType = "Bearer",
-                        expiresIn = EXPIRES_IN,
-                        refreshToken = newRefreshToken,
-                        idToken = null
-                    ))
-
-                }else{
-                    // Publicクライアントの場合
-                    // RFC 6749 Section 6: refresh_tokenリクエストにredirect_uriは必須ではない
-                    val refreshToken = formParameters["refresh_token"]
-                    if (refreshToken == null) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
-                        return@post
-                    }
-
-                    // リフレッシュトークンの検証（署名・有効期限・token_type）
-                    val verified = verifyAndDecodeRefreshToken(refreshToken)
-                    if (verified == null) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
-                        return@post
-                    }
-
-                    // クライアントIDの一致を確認
-                    if (verified.authorizedData.clientId != clientId) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
-                        return@post
-                    }
-
-                    // RFC 6749 Section 10.4: リフレッシュトークンローテーション
-                    if (!revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)) {
-                        call.respondOAuthError(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
-                        return@post
-                    }
-                    val token = issueToken(verified.authorizedData, clientId)
-                    val newRefreshToken = issueRefreshToken(verified.authorizedData, clientId)
-
-                    // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
-                    call.respond(HttpStatusCode.OK, TokenData(
-                        accessToken = token,
-                        tokenType = "Bearer",
-                        expiresIn = EXPIRES_IN,
-                        refreshToken = newRefreshToken,
-                        idToken = null
-                    ))
                 }
+
+                val refreshToken = formParameters["refresh_token"]
+                if (refreshToken == null) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
+                    return@post
+                }
+
+                // リフレッシュトークンの検証（署名・有効期限・token_type）
+                val verified = verifyAndDecodeRefreshToken(refreshToken)
+                if (verified == null) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
+                    return@post
+                }
+
+                // クライアントIDの一致を確認
+                if (verified.authorizedData.clientId != clientId) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
+                    return@post
+                }
+
+                // RFC 6749 Section 10.4: リフレッシュトークンローテーション
+                // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
+                if (!revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)) {
+                    call.respondOAuthError(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
+                    return@post
+                }
+                val token = issueToken(verified.authorizedData, clientId)
+                val newRefreshToken = issueRefreshToken(verified.authorizedData, clientId)
+
+                // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
+                // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
+                // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
+                call.response.header(HttpHeaders.CacheControl, "no-store")
+                call.response.header(HttpHeaders.Pragma, "no-cache")
+                call.respond(HttpStatusCode.OK, TokenData(
+                    accessToken = token,
+                    tokenType = "Bearer",
+                    expiresIn = EXPIRES_IN,
+                    refreshToken = newRefreshToken,
+                    idToken = null
+                ))
             }else if (grantType == "authorization_code") {
                 //authorization_codeの処理 https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
                 // 期限切れ認可コードの遅延クリーンアップ（リクエスト契機で実行）
@@ -181,7 +144,8 @@ object TokenRouter: KoinComponent {
                 val clientId = formParameters["client_id"] ?: basicCredentials?.first
                 val codeVerifier = formParameters["code_verifier"]
 
-                val clientSecret = formParameters["client_secret"] ?: basicCredentials?.second
+                // Basic認証でsecretが空文字の場合はPublicクライアントとして扱う
+                val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
 
                 // RFC 6749 Section 5.2: 必須パラメータの欠如はinvalid_requestで返す
                 // 認可コード参照より先にチェックし、不要なデータ消費を防ぐ
@@ -214,15 +178,24 @@ object TokenRouter: KoinComponent {
                 val validRedirectUri = redirectUri!!
                 val validCodeVerifier = codeVerifier!!
 
-                if(clientSecret != null){
-                    // Confidentialクライアントの場合：クライアント認証を実行
-                    val clientData = try {
-                        ClientData.getClientData(validClientId)
-                    } catch (e: Exception) {
-                        plugin.logger.warning("Client not found: $validClientId")
-                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
-                        return@post
-                    }
+                // クライアントデータを取得してタイプを検証
+                val clientData = try {
+                    ClientData.getClientData(validClientId)
+                } catch (e: Exception) {
+                    plugin.logger.warning("Client not found: $validClientId")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
+                    return@post
+                }
+
+                // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
+                if (clientSecret == null && clientData is ClientData.ConfidentialClientData) {
+                    plugin.logger.warning("Confidential client $validClientId attempted token exchange without client_secret")
+                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
+                    return@post
+                }
+
+                if (clientSecret != null) {
+                    // client_secretが送信された場合：Confidentialクライアントとして検証
                     if (clientData !is ClientData.ConfidentialClientData) {
                         plugin.logger.warning("Client type mismatch for $validClientId: expected Confidential, got ${clientData::class.simpleName}")
                         call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
@@ -253,6 +226,9 @@ object TokenRouter: KoinComponent {
                     issueIdToken(data, validClientId, token)
                 } else null
 
+                // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
+                call.response.header(HttpHeaders.CacheControl, "no-store")
+                call.response.header(HttpHeaders.Pragma, "no-cache")
                 call.respond(
                     HttpStatusCode.OK, TokenData(
                         accessToken = token,

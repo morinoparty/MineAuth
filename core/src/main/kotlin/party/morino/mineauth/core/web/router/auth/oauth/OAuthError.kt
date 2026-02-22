@@ -88,6 +88,15 @@ suspend fun RoutingCall.respondOAuthError(
         else -> HttpStatusCode.BadRequest
     }
 
+    // RFC 6749 Section 5.2: 401応答時はWWW-Authenticateヘッダーを付与
+    if (statusCode == HttpStatusCode.Unauthorized) {
+        response.header(HttpHeaders.WWWAuthenticate, "Bearer")
+    }
+
+    // RFC 6749 Section 5.2: エラーレスポンスにはキャッシュ禁止ヘッダーを付与
+    response.header(HttpHeaders.CacheControl, "no-store")
+    response.header(HttpHeaders.Pragma, "no-cache")
+
     // エラーログを出力（デバッグ用）
     val endpoint = request.local.uri
     val logMessage = "OAuth error at $endpoint: ${errorCode.code}" +

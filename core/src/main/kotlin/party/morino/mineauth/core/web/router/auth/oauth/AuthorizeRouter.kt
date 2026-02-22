@@ -5,7 +5,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.velocity.*
-import org.apache.commons.lang3.RandomStringUtils
+import java.security.SecureRandom
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
@@ -28,6 +28,10 @@ object AuthorizeRouter: KoinComponent {
     private val plugin: MineAuth by inject()
     private val oauthConfig: OAuthConfigData by inject()
     private val config: MineAuthConfig by inject()
+    // RFC 6749 Section 10.10: 認可コード生成に暗号学的に安全な乱数を使用
+    private val secureRandom = SecureRandom()
+    private const val CODE_LENGTH = 32
+    private val CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".toCharArray()
 
     /**
      * 認可エンドポイントのルーティングを設定
@@ -48,21 +52,15 @@ object AuthorizeRouter: KoinComponent {
             // OIDC nonce: リプレイ攻撃防止用（任意パラメータ）
             val nonce = call.parameters["nonce"]
 
-            // 必須パラメータのバリデーション
-            if (clientId == null || redirectUri == null || scope == null || responseType != "code" || state == null) {
-                plugin.logger.warning("Authorize error: Invalid request - missing required parameters")
-                call.respond(HttpStatusCode.BadRequest, "Invalid request")
+            // RFC 6749 Section 4.1.2.1: client_idまたはredirect_uriが不正/欠落の場合は400
+            // これらが不正な場合はリダイレクトしてはならない（オープンリダイレクタ防止）
+            if (clientId == null || redirectUri == null) {
+                plugin.logger.warning("Authorize error: Missing client_id or redirect_uri")
+                call.respond(HttpStatusCode.BadRequest, "Invalid request: missing client_id or redirect_uri")
                 return@get
             }
 
-            // PKCE(Proof Key for Code Exchange)のバリデーション
-            if (!validatePKCE(codeChallenge, codeChallengeMethod)) {
-                plugin.logger.warning("Authorize error: Unsupported PKCE method - client_id=$clientId")
-                call.respond(HttpStatusCode.BadRequest, "This server only supports S256 code_challenge_method")
-                return@get
-            }
-
-            // クライアントの存在確認とリダイレクトURIの検証
+            // クライアントの存在確認とリダイレクトURIの検証（リダイレクト前に必須）
             val clientData = OAuthService.getClientData(clientId)
             if (clientData == null) {
                 plugin.logger.warning("Authorize error: Invalid client - client_id=$clientId")
@@ -73,6 +71,23 @@ object AuthorizeRouter: KoinComponent {
             if (!OAuthService.validateClientAndRedirectUri(clientData, redirectUri)) {
                 plugin.logger.warning("Authorize error: Invalid redirect_uri - client_id=$clientId, redirect_uri=$redirectUri")
                 call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
+                return@get
+            }
+
+            // RFC 6749 Section 4.1.2.1: redirect_uriが有効な場合、その他のパラメータ不正はエラーリダイレクト
+            if (scope == null || responseType != "code" || state == null) {
+                plugin.logger.warning("Authorize error: Invalid request - missing required parameters")
+                val errorState = state ?: ""
+                val errorUri = buildErrorRedirectUri(redirectUri, "invalid_request", "Missing required parameters", errorState)
+                call.respondRedirect(errorUri)
+                return@get
+            }
+
+            // PKCE(Proof Key for Code Exchange)のバリデーション
+            if (!validatePKCE(codeChallenge, codeChallengeMethod)) {
+                plugin.logger.warning("Authorize error: Unsupported PKCE method - client_id=$clientId")
+                val errorUri = buildErrorRedirectUri(redirectUri, "invalid_request", "This server only supports S256 code_challenge_method", state)
+                call.respondRedirect(errorUri)
                 return@get
             }
 
@@ -119,8 +134,27 @@ object AuthorizeRouter: KoinComponent {
 
             // パラメータのバリデーション
             if (username == null || password == null || responseType != "code" || clientId == null || redirectUri == null || scope == null || state == null || codeChallenge == null) {
-                val errorUri = buildErrorRedirectUri(redirectUri!!, "invalid_request", "It does not have the required parameters", state!!)
-                call.respondRedirect(errorUri)
+                // redirect_uriとstateが存在する場合のみエラーリダイレクト
+                if (redirectUri != null && state != null) {
+                    val errorUri = buildErrorRedirectUri(redirectUri, "invalid_request", "It does not have the required parameters", state)
+                    call.respondRedirect(errorUri)
+                } else {
+                    call.respond(HttpStatusCode.BadRequest, "Invalid request: missing required parameters")
+                }
+                return@post
+            }
+
+            // RFC 6749 Section 4.1.3: クライアントの存在確認とリダイレクトURIの検証
+            // POST時もGET時と同様にDB上の登録情報と照合する
+            val clientData = OAuthService.getClientData(clientId)
+            if (clientData == null) {
+                plugin.logger.warning("Authorize POST error: Invalid client - client_id=$clientId")
+                call.respond(HttpStatusCode.BadRequest, "Invalid client")
+                return@post
+            }
+            if (!OAuthService.validateClientAndRedirectUri(clientData, redirectUri)) {
+                plugin.logger.warning("Authorize POST error: Invalid redirect_uri - client_id=$clientId, redirect_uri=$redirectUri")
+                call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
                 return@post
             }
 
@@ -143,7 +177,8 @@ object AuthorizeRouter: KoinComponent {
             // 認可コードの生成と保存
             // 認証時刻を記録（ID Tokenのauth_timeクレームに使用）
             val authTime = System.currentTimeMillis()
-            val code = RandomStringUtils.randomAlphanumeric(16)
+            // RFC 6749 Section 10.10: 暗号学的に安全な乱数で認可コードを生成
+            val code = String(CharArray(CODE_LENGTH) { CODE_CHARS[secureRandom.nextInt(CODE_CHARS.size)] })
             authorizedData[code] = AuthorizedData(
                 clientId = clientId,
                 redirectUri = redirectUri,

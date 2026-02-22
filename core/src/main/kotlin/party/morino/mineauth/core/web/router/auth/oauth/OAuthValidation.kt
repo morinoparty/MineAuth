@@ -1,6 +1,8 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
 import io.ktor.http.*
+import io.ktor.server.request.*
+import io.ktor.server.routing.*
 import kotlinx.coroutines.runBlocking
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.core.web.components.auth.ClientData
@@ -57,9 +59,34 @@ object OAuthValidation : KoinComponent {
         return !(codeChallenge == null || codeChallengeMethod != "S256")
     }
 
+    // RFC 7636 Section 4.1: code_verifierの許容文字種 [A-Za-z0-9-._~]
+    private val CODE_VERIFIER_PATTERN = Regex("^[A-Za-z0-9\\-._~]{43,128}$")
+
+    /**
+     * code_verifierの形式を検証する
+     * RFC 7636 Section 4.1: 43〜128文字、[A-Za-z0-9-._~]のみ許可
+     *
+     * @param codeVerifier 検証するcode_verifier
+     * @return 有効な場合true
+     */
+    fun isValidCodeVerifierFormat(codeVerifier: String): Boolean {
+        return CODE_VERIFIER_PATTERN.matches(codeVerifier)
+    }
+
+    /**
+     * code_verifierとcode_challengeを検証する（S256方式）
+     * RFC 7636 Section 4.6: SHA-256ハッシュとBase64URLエンコードで比較
+     *
+     * @param codeChallenge 認可時に送信されたcode_challenge
+     * @param codeVerifier トークン交換時に送信されたcode_verifier
+     * @return 一致する場合true
+     */
     fun validateCodeVerifier(codeChallenge: String, codeVerifier: String): Boolean {
-        val hash = MessageDigest.getInstance("SHA-256").digest(codeVerifier.toByteArray())
-        val base64 = Base64.getUrlEncoder().encodeToString(hash).replace("=", "")
+        // RFC 7636 Section 4.1: code_verifierの長さ・文字種を検証
+        if (!isValidCodeVerifierFormat(codeVerifier)) return false
+        // RFC 7636 Section 4.6: ASCII エンコーディングを明示的に指定
+        val hash = MessageDigest.getInstance("SHA-256").digest(codeVerifier.toByteArray(Charsets.US_ASCII))
+        val base64 = Base64.getUrlEncoder().withoutPadding().encodeToString(hash)
         return codeChallenge == base64
     }
 
@@ -82,5 +109,27 @@ object OAuthValidation : KoinComponent {
             append("state", state)
         }
         return uri.buildString()
+    }
+
+    /**
+     * Authorization: Basic ヘッダーからclient_idとclient_secretを取得する
+     * RFC 6749 Section 2.3.1 (client_secret_basic) 準拠
+     *
+     * @return Pair(client_id, client_secret) または null（ヘッダーが存在しない/不正な場合）
+     */
+    fun RoutingContext.extractBasicCredentials(): Pair<String, String>? {
+        val authHeader = call.request.header(HttpHeaders.Authorization) ?: return null
+        if (!authHeader.startsWith("Basic ", ignoreCase = true)) return null
+        return try {
+            // Base64デコードして "client_id:client_secret" 形式を分割
+            val decoded = String(Base64.getDecoder().decode(authHeader.substring(6)), Charsets.UTF_8)
+            val colonIndex = decoded.indexOf(':')
+            if (colonIndex < 0) return null
+            val id = decoded.substring(0, colonIndex)
+            val secret = decoded.substring(colonIndex + 1)
+            Pair(id, secret)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
     }
 }
