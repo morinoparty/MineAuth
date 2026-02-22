@@ -66,7 +66,7 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
 
-                // クライアントデータを取得してタイプを検証
+                // クライアントデータを取得してタイプに応じた認証を実行
                 val clientData = try {
                     ClientData.getClientData(clientId)
                 } catch (e: Exception) {
@@ -74,23 +74,22 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
 
-                // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
-                // client_secretが省略されているのにConfidentialクライアントの場合はエラー
-                if (clientSecret == null && clientData is ClientData.ConfidentialClientData) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
-                    return@post
-                }
-
-                if (clientSecret != null) {
-                    // Confidentialクライアントの場合：シークレット検証を実行
-                    if (clientData !is ClientData.ConfidentialClientData) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
-                        return@post
+                // DB上のクライアントタイプに基づいて認証を分岐（secretの有無ではなく登録タイプで判定）
+                when (clientData) {
+                    is ClientData.ConfidentialClientData -> {
+                        // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
+                        if (clientSecret == null) {
+                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
+                            return@post
+                        }
+                        // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
+                        if (!clientData.verifySecret(clientSecret)) {
+                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
+                            return@post
+                        }
                     }
-                    // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
-                    if (!clientData.verifySecret(clientSecret)) {
-                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
-                        return@post
+                    is ClientData.PublicClientData -> {
+                        // Publicクライアント: client_secretが送られても無視する
                     }
                 }
 
@@ -178,7 +177,7 @@ object TokenRouter: KoinComponent {
                 val validRedirectUri = redirectUri!!
                 val validCodeVerifier = codeVerifier!!
 
-                // クライアントデータを取得してタイプを検証
+                // クライアントデータを取得してタイプに応じた認証を実行
                 val clientData = try {
                     ClientData.getClientData(validClientId)
                 } catch (e: Exception) {
@@ -187,25 +186,24 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
 
-                // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
-                if (clientSecret == null && clientData is ClientData.ConfidentialClientData) {
-                    plugin.logger.warning("Confidential client $validClientId attempted token exchange without client_secret")
-                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
-                    return@post
-                }
-
-                if (clientSecret != null) {
-                    // client_secretが送信された場合：Confidentialクライアントとして検証
-                    if (clientData !is ClientData.ConfidentialClientData) {
-                        plugin.logger.warning("Client type mismatch for $validClientId: expected Confidential, got ${clientData::class.simpleName}")
-                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
-                        return@post
+                // DB上のクライアントタイプに基づいて認証を分岐（secretの有無ではなく登録タイプで判定）
+                when (clientData) {
+                    is ClientData.ConfidentialClientData -> {
+                        // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
+                        if (clientSecret == null) {
+                            plugin.logger.warning("Confidential client $validClientId attempted token exchange without client_secret")
+                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
+                            return@post
+                        }
+                        // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
+                        if (!clientData.verifySecret(clientSecret)) {
+                            plugin.logger.warning("Client authentication failed for $validClientId: invalid secret")
+                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
+                            return@post
+                        }
                     }
-                    // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
-                    if (!clientData.verifySecret(clientSecret)) {
-                        plugin.logger.warning("Client authentication failed for $validClientId: invalid secret")
-                        call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
-                        return@post
+                    is ClientData.PublicClientData -> {
+                        // Publicクライアント: client_secretが送られても無視する
                     }
                 }
 

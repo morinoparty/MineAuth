@@ -89,8 +89,18 @@ suspend fun RoutingCall.respondOAuthError(
     }
 
     // RFC 6749 Section 5.2: 401応答時はWWW-Authenticateヘッダーを付与
+    // invalid_clientはクライアント認証失敗なので、リクエストの認証方式に合わせたスキームを返す
     if (statusCode == HttpStatusCode.Unauthorized) {
-        response.header(HttpHeaders.WWWAuthenticate, "Bearer")
+        val authHeader = request.header(HttpHeaders.Authorization)
+        val scheme = if (authHeader != null && authHeader.startsWith("Basic", ignoreCase = true)) {
+            // クライアントがBasic認証を試行した場合
+            "Basic"
+        } else {
+            // client_secret_post等のBody認証の場合もBasicを返す
+            // (token/revokeエンドポイントでのinvalid_clientは常にクライアント認証の失敗)
+            "Basic"
+        }
+        response.header(HttpHeaders.WWWAuthenticate, scheme)
     }
 
     // RFC 6749 Section 5.2: エラーレスポンスにはキャッシュ禁止ヘッダーを付与
