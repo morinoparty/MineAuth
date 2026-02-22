@@ -27,7 +27,7 @@ class VersionCommand : KoinComponent {
         // MineAuth本体のバージョンを取得
         val coreVersion = plugin.pluginMeta.version
 
-        sender.sendRichMessage("<gold><bold>MineAuth</bold></gold> <gray>v${coreVersion}</gray>")
+        sender.sendRichMessage("<gold><bold>MineAuth</bold></gold> <gray>${coreVersion}</gray>")
 
         // 登録済みアドオンの一覧を取得
         val registeredPlugins = routeRegistry.getRegisteredPlugins()
@@ -42,7 +42,7 @@ class VersionCommand : KoinComponent {
             // Bukkit PluginManagerからプラグインのバージョンを取得
             val addonPlugin = Bukkit.getPluginManager().getPlugin(pluginName)
             val addonVersion = addonPlugin?.pluginMeta?.version ?: "unknown"
-            sender.sendRichMessage("<gray>  - <white>${pluginName}</white> v${addonVersion}</gray>")
+            sender.sendRichMessage("<gray>  - <white>${pluginName}</white> ${addonVersion}</gray>")
         }
     }
 }
