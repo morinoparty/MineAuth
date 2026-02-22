@@ -45,7 +45,10 @@ enum class OAuthErrorCode(val code: String) {
     UNSUPPORTED_GRANT_TYPE("unsupported_grant_type"),
 
     // リクエストされたスコープが無効、不明、または不正
-    INVALID_SCOPE("invalid_scope");
+    INVALID_SCOPE("invalid_scope"),
+
+    // サーバー内部エラー（RFC 6749 Section 4.1.2.1）
+    SERVER_ERROR("server_error");
 
     /**
      * OAuthErrorResponseを生成する
@@ -81,6 +84,7 @@ suspend fun RoutingCall.respondOAuthError(
     // その他: 400 Bad Request
     val statusCode = when (errorCode) {
         OAuthErrorCode.INVALID_CLIENT -> HttpStatusCode.Unauthorized
+        OAuthErrorCode.SERVER_ERROR -> HttpStatusCode.InternalServerError
         else -> HttpStatusCode.BadRequest
     }
 
