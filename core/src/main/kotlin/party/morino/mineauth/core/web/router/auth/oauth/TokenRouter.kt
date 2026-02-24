@@ -414,16 +414,17 @@ object TokenRouter: KoinComponent {
         val hasEmailScope = scopes.contains("email")
         val hasRolesScope = scopes.contains("roles")
 
-        // プレイヤー名を取得（profileスコープが必要な場合のみ）
-        // 名前が取得できない場合はnullのまま（クレームに含めない）
-        val playerName = if (hasProfileScope) {
-            org.bukkit.Bukkit.getOfflinePlayer(data.uniqueId).name
+        // プレイヤー名を取得（profileまたはemailスコープで必要）
+        // /userinfoエンドポイントと同様にスコープ横断で利用する
+        val needsPlayerName = hasProfileScope || hasEmailScope
+        val playerName = if (needsPlayerName) {
+            org.bukkit.Bukkit.getOfflinePlayer(data.uniqueId).name ?: "Unknown"
         } else null
 
         // emailFormatが設定されている場合、メールアドレスを生成
-        val email = if (hasEmailScope) {
+        val email = if (hasEmailScope && playerName != null) {
             config.server.emailFormat?.let { format ->
-                UserInfoResponse.generateEmail(format, sub, playerName ?: "Unknown")
+                UserInfoResponse.generateEmail(format, sub, playerName)
             }
         } else null
 
