@@ -11,9 +11,12 @@ import org.koin.core.component.get
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
+import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.utils.KeyUtils.getKeys
+import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
 import party.morino.mineauth.core.web.components.auth.ClientData
 import party.morino.mineauth.core.web.components.auth.TokenData
+import party.morino.mineauth.core.web.components.auth.UserInfoResponse
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractBasicCredentials
@@ -395,16 +398,21 @@ object TokenRouter: KoinComponent {
      * @param accessToken アクセストークン（at_hash計算用）
      * @return ID Token（JWT形式）
      */
-    private fun issueIdToken(
+    private suspend fun issueIdToken(
         data: AuthorizedData,
         clientId: String?,
         accessToken: String
     ): String {
         val configData = get<JWTConfigData>()
+        val config = get<MineAuthConfig>()
         val now = Date()
-        // profileスコープが含まれる場合、nameとpreferred_usernameを含める
+        val sub = data.uniqueId.toString()
+
+        // スコープ解析（UserInfoResponseと同じクレームを返すため）
         val scopes = data.scope.split(" ").filter { it.isNotBlank() }
         val hasProfileScope = scopes.contains("profile")
+        val hasEmailScope = scopes.contains("email")
+        val hasRolesScope = scopes.contains("roles")
 
         // プレイヤー名を取得（profileスコープが必要な場合のみ）
         // 名前が取得できない場合はnullのまま（クレームに含めない）
@@ -412,12 +420,24 @@ object TokenRouter: KoinComponent {
             org.bukkit.Bukkit.getOfflinePlayer(data.uniqueId).name
         } else null
 
+        // emailFormatが設定されている場合、メールアドレスを生成
+        val email = if (hasEmailScope) {
+            config.server.emailFormat?.let { format ->
+                UserInfoResponse.generateEmail(format, sub, playerName ?: "Unknown")
+            }
+        } else null
+
+        // rolesスコープがリクエストされている場合、LuckPermsからグループを取得
+        val roles = if (hasRolesScope && LuckPermsIntegration.available) {
+            LuckPermsIntegration.getPlayerGroups(data.uniqueId)
+        } else null
+
         return JWT.create()
             // JWTヘッダー
             .withKeyId(configData.keyId.toString())
             // 必須クレーム（OIDC Core Section 2）
             .withIssuer(configData.issuer)                           // iss: Issuer Identifier
-            .withSubject(data.uniqueId.toString())                   // sub: Subject Identifier
+            .withSubject(sub)                                        // sub: Subject Identifier
             .withAudience(clientId ?: data.clientId)                 // aud: Audience
             .withExpiresAt(Date(now.time + 3600 * 1000))             // exp: 1時間後
             .withIssuedAt(now)                                        // iat: 発行時刻
@@ -426,10 +446,23 @@ object TokenRouter: KoinComponent {
             .apply {
                 // nonceが存在する場合のみ含める（リプレイ攻撃防止用）
                 data.nonce?.let { withClaim("nonce", it) }
-                // profileスコープが含まれる場合、nameとpreferred_usernameを含める
+
+                // profileスコープ: name, picture, preferred_username
                 if (hasProfileScope && playerName != null) {
                     withClaim("name", playerName)
                     withClaim("preferred_username", playerName)
+                    withClaim("picture", "${UserInfoResponse.AVATAR_BASE_URL}$sub")
+                }
+
+                // emailスコープ: email, email_verified
+                if (email != null) {
+                    withClaim("email", email)
+                    withClaim("email_verified", false)
+                }
+
+                // rolesスコープ: roles（LuckPermsグループ）
+                if (roles != null) {
+                    withClaim("roles", roles)
                 }
             }
             // 任意クレーム（Authorization Code Flowでは任意だが、検証に有用）
