@@ -48,7 +48,7 @@ data class UserInfoResponse(
 ) {
     companion object {
         // Crafthead API - Minecraftスキンからアバター画像を取得
-        private const val AVATAR_BASE_URL = "https://crafthead.net/avatar/"
+        internal const val AVATAR_BASE_URL = "https://crafthead.net/avatar/"
 
         /**
          * スコープに基づいてUserInfoResponseを構築する

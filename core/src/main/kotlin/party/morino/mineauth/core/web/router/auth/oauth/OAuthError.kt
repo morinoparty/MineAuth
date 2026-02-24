@@ -45,7 +45,10 @@ enum class OAuthErrorCode(val code: String) {
     UNSUPPORTED_GRANT_TYPE("unsupported_grant_type"),
 
     // リクエストされたスコープが無効、不明、または不正
-    INVALID_SCOPE("invalid_scope");
+    INVALID_SCOPE("invalid_scope"),
+
+    // サーバー内部エラー（RFC 6749 Section 4.1.2.1）
+    SERVER_ERROR("server_error");
 
     /**
      * OAuthErrorResponseを生成する
@@ -81,8 +84,28 @@ suspend fun RoutingCall.respondOAuthError(
     // その他: 400 Bad Request
     val statusCode = when (errorCode) {
         OAuthErrorCode.INVALID_CLIENT -> HttpStatusCode.Unauthorized
+        OAuthErrorCode.SERVER_ERROR -> HttpStatusCode.InternalServerError
         else -> HttpStatusCode.BadRequest
     }
+
+    // RFC 6749 Section 5.2: 401応答時はWWW-Authenticateヘッダーを付与
+    // invalid_clientはクライアント認証失敗なので、リクエストの認証方式に合わせたスキームを返す
+    if (statusCode == HttpStatusCode.Unauthorized) {
+        val authHeader = request.header(HttpHeaders.Authorization)
+        val scheme = if (authHeader != null && authHeader.startsWith("Basic", ignoreCase = true)) {
+            // クライアントがBasic認証を試行した場合
+            "Basic"
+        } else {
+            // client_secret_post等のBody認証の場合もBasicを返す
+            // (token/revokeエンドポイントでのinvalid_clientは常にクライアント認証の失敗)
+            "Basic"
+        }
+        response.header(HttpHeaders.WWWAuthenticate, scheme)
+    }
+
+    // RFC 6749 Section 5.2: エラーレスポンスにはキャッシュ禁止ヘッダーを付与
+    response.header(HttpHeaders.CacheControl, "no-store")
+    response.header(HttpHeaders.Pragma, "no-cache")
 
     // エラーログを出力（デバッグ用）
     val endpoint = request.local.uri

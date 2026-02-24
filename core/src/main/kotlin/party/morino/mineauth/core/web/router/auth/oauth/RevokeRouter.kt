@@ -15,6 +15,7 @@ import party.morino.mineauth.core.file.utils.KeyUtils.getKeys
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.TokenType
 import party.morino.mineauth.core.web.components.auth.ClientData
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractBasicCredentials
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.time.Instant
@@ -53,9 +54,18 @@ object RevokeRouter : KoinComponent {
             val tokenTypeHint = formParameters["token_type_hint"]
 
             // クライアント認証（RFC 7009 Section 2.1）
-            // client_id と client_secret は必須
-            val clientId = formParameters["client_id"]
-            val clientSecret = formParameters["client_secret"]
+            // client_secret_basic (Authorization: Basic) または client_secret_post (ボディ) をサポート
+            val basicCredentials = extractBasicCredentials()
+
+            // RFC 6749 Section 2.3: 認証方式の併用を禁止
+            val hasBodyCredentials = formParameters["client_id"] != null || formParameters["client_secret"] != null
+            if (basicCredentials != null && hasBodyCredentials) {
+                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Multiple client authentication methods are not allowed")
+                return@post
+            }
+
+            val clientId = formParameters["client_id"] ?: basicCredentials?.first
+            val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
 
             if (clientId == null) {
                 call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_id")
