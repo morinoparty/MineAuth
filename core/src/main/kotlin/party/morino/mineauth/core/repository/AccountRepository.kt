@@ -7,6 +7,7 @@ import com.fasterxml.uuid.Generators
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
@@ -157,6 +158,48 @@ object AccountRepository {
             },
             ifRight = { it.right() }
         )
+    }
+
+    /**
+     * 全サービスアカウントを取得する
+     *
+     * @return サービスアカウントのリスト
+     */
+    suspend fun findAllServiceAccounts(): Either<AccountError, List<AccountData>> = newSuspendedTransaction {
+        try {
+            val rows = Accounts.selectAll()
+                .where { Accounts.accountType eq AccountType.SERVICE.value }
+                .map { it.toAccountData() }
+            rows.right()
+        } catch (e: Exception) {
+            AccountError.DatabaseError(e.message ?: "Unknown error").left()
+        }
+    }
+
+    /**
+     * 指定されたidentifierとtypeのアカウントを削除する
+     *
+     * @param accountType アカウント種別
+     * @param identifier 識別子
+     * @return 成功時はUnit、失敗時はエラー
+     */
+    suspend fun deleteByIdentifier(
+        accountType: AccountType,
+        identifier: String
+    ): Either<AccountError, Unit> = newSuspendedTransaction {
+        try {
+            val count = Accounts.deleteWhere {
+                (Accounts.accountType eq accountType.value) and (Accounts.identifier eq identifier)
+            }
+
+            if (count == 0) {
+                AccountError.NotFound.left()
+            } else {
+                Unit.right()
+            }
+        } catch (e: Exception) {
+            AccountError.DatabaseError(e.message ?: "Unknown error").left()
+        }
     }
 
     /**

@@ -10,8 +10,8 @@ import org.bukkit.OfflinePlayer
 import party.morino.mineauth.addons.betonquest.data.JournalEntryData
 import party.morino.mineauth.addons.betonquest.data.PlayerQuestDataResponse
 import party.morino.mineauth.addons.betonquest.utils.coroutines.minecraft
-import party.morino.mineauth.api.annotations.Authenticated
 import party.morino.mineauth.api.annotations.GetMapping
+import party.morino.mineauth.api.annotations.TargetPlayer
 
 /**
  * BetonQuestのクエスト情報を提供するハンドラー
@@ -20,14 +20,14 @@ import party.morino.mineauth.api.annotations.GetMapping
 class QuestsHandler {
 
     /**
-     * 認証済みプレイヤーのクエストデータを取得する
-     * GET /quests/me
+     * プレイヤーのクエストデータを取得する
+     * GET /quests/{player}
      *
-     * @param player 認証済みプレイヤー（JWTから自動解決）
+     * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return プレイヤーのクエストデータ（タグ、ポイント、ジャーナル、オブジェクティブ、デイリークエスト）
      */
-    @GetMapping("/quests/me")
-    suspend fun getMyQuests(@Authenticated player: OfflinePlayer): PlayerQuestDataResponse {
+    @GetMapping("/quests/{player}")
+    suspend fun getMyQuests(@TargetPlayer player: OfflinePlayer): PlayerQuestDataResponse {
         // Bukkit APIはメインスレッドで実行する必要がある
         // MCCoroutineではなく独自のディスパッチャーを使用してクラスローダー問題を回避
         return withContext(Dispatchers.minecraft) {

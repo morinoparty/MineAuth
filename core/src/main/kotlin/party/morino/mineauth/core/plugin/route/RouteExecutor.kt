@@ -258,6 +258,15 @@ class RouteExecutor(
                     ErrorResponse("Invalid parameter format")
                 )
             }
+
+            is ResolveError.AccessDenied -> {
+                // アクセス拒否理由はログにのみ出力
+                logger.warn("AccessDenied: {}", sanitizeForLog(error.reason))
+                call.respond(
+                    HttpStatusCode.Forbidden,
+                    ErrorResponse("Access denied")
+                )
+            }
         }
     }
 

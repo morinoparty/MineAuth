@@ -22,6 +22,7 @@ import party.morino.mineauth.api.annotations.PathParam
 import party.morino.mineauth.api.annotations.PostMapping
 import party.morino.mineauth.api.annotations.QueryParams
 import party.morino.mineauth.api.annotations.RequestBody
+import party.morino.mineauth.api.annotations.TargetPlayer
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 import party.morino.mineauth.api.model.bukkit.ItemStackData
@@ -103,11 +104,11 @@ class ShopHandler : KoinComponent {
     // ========================================
 
     /**
-     * 自分のショップ一覧を取得する
-     * GET /users/me/shops
+     * プレイヤーのショップ一覧を取得する
+     * GET /users/{player}/shops
      */
-    @GetMapping("/users/me/shops")
-    suspend fun getMyShops(@AuthedAccessUser player: OfflinePlayer): List<Long> {
+    @GetMapping("/users/{player}/shops")
+    suspend fun getMyShops(@TargetPlayer player: OfflinePlayer): List<Long> {
         return shopIdsFor(player.uniqueId)
     }
 
