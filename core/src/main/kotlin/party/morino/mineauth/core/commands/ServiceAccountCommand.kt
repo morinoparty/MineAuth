@@ -149,8 +149,8 @@ class ServiceAccountCommand : KoinComponent {
             is Either.Right -> {
                 val account = accountResult.value
 
-                // 関連する全トークンを失効
-                ServiceAccountTokenRepository.revokeByAccountId(account.accountId)
+                // 関連する全トークン行を物理削除（FK制約違反を回避）
+                ServiceAccountTokenRepository.deleteByAccountId(account.accountId)
 
                 // アカウントを削除
                 val deleteResult = AccountRepository.deleteByIdentifier(AccountType.SERVICE, name.value)

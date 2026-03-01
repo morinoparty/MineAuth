@@ -84,21 +84,6 @@ class ShopHandler : KoinComponent {
         return shop.toShopData()
     }
 
-    /**
-     * 指定ユーザーのショップ一覧を取得する
-     * GET /users/{uuid}/shops
-     */
-    @GetMapping("/users/{uuid}/shops")
-    suspend fun getUserShops(@PathParam("uuid") uuid: String): List<Long> {
-        val playerUuid = try {
-            UUID.fromString(uuid)
-        } catch (e: IllegalArgumentException) {
-            throw HttpError(HttpStatus.BAD_REQUEST, "Invalid UUID format")
-        }
-
-        return shopIdsFor(playerUuid)
-    }
-
     // ========================================
     // 認証必須エンドポイント
     // ========================================
@@ -106,6 +91,9 @@ class ShopHandler : KoinComponent {
     /**
      * プレイヤーのショップ一覧を取得する
      * GET /users/{player}/shops
+     *
+     * ユーザートークン: 自分のショップのみ取得可能（me/UUID/名前）
+     * サービストークン: 任意のプレイヤーのショップを取得可能
      */
     @GetMapping("/users/{player}/shops")
     suspend fun getMyShops(@TargetPlayer player: OfflinePlayer): List<Long> {

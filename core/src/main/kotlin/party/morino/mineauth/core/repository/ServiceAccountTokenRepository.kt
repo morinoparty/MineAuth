@@ -6,6 +6,7 @@ import arrow.core.right
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.sql.transactions.transaction
 import party.morino.mineauth.core.database.ServiceAccountTokens
@@ -121,6 +122,22 @@ object ServiceAccountTokenRepository {
                     where = { ServiceAccountTokens.accountId eq accountId }
                 ) {
                     it[revoked] = true
+                }
+                count.right()
+            } catch (e: Exception) {
+                ServiceAccountTokenError.DatabaseError(e.message ?: "Unknown error").left()
+            }
+        }
+
+    /**
+     * アカウントIDに紐づく全トークン行を物理削除する
+     * サービスアカウント削除時にFK制約違反を避けるために使用する
+     */
+    suspend fun deleteByAccountId(accountId: String): Either<ServiceAccountTokenError, Int> =
+        newSuspendedTransaction {
+            try {
+                val count = ServiceAccountTokens.deleteWhere {
+                    ServiceAccountTokens.accountId eq accountId
                 }
                 count.right()
             } catch (e: Exception) {
