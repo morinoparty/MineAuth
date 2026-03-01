@@ -146,6 +146,53 @@ object ServiceAccountTokenRepository {
         }
 
     /**
+     * 既存トークンの失効と新規トークンの保存を単一トランザクションで行う
+     * create失敗時に既存トークンだけ失効する事態を防ぐ
+     *
+     * @param accountId 対象のアカウントID
+     * @param tokenId 新しいJWT ID（jti）
+     * @param tokenHash トークンのSHA-256ハッシュ
+     * @param createdBy 作成者のプレイヤーUUID
+     * @return 成功時はトークンデータ、失敗時はエラー
+     */
+    suspend fun revokeAndCreate(
+        accountId: String,
+        tokenId: String,
+        tokenHash: String,
+        createdBy: String
+    ): Either<ServiceAccountTokenError, ServiceAccountTokenData> = newSuspendedTransaction {
+        try {
+            // 既存トークンを全て失効
+            ServiceAccountTokens.update(
+                where = { ServiceAccountTokens.accountId eq accountId }
+            ) {
+                it[revoked] = true
+            }
+
+            // 新しいトークンを作成
+            ServiceAccountTokens.insert {
+                it[ServiceAccountTokens.tokenId] = tokenId
+                it[ServiceAccountTokens.accountId] = accountId
+                it[ServiceAccountTokens.tokenHash] = tokenHash
+                it[ServiceAccountTokens.createdBy] = createdBy
+            }
+
+            ServiceAccountTokenData(
+                tokenId = tokenId,
+                accountId = accountId,
+                tokenHash = tokenHash,
+                createdBy = createdBy,
+                createdAt = LocalDateTime.now(),
+                lastUsedAt = null,
+                revoked = false
+            ).right()
+        } catch (e: Exception) {
+            // トランザクション全体がロールバックされる
+            ServiceAccountTokenError.DatabaseError(e.message ?: "Unknown error").left()
+        }
+    }
+
+    /**
      * 特定トークンを失効させる
      */
     suspend fun revokeByTokenId(tokenId: String): Either<ServiceAccountTokenError, Unit> =
@@ -205,6 +252,13 @@ object ServiceAccountTokenRepository {
                 ServiceAccountTokenError.DatabaseError(e.message ?: "Unknown error").left()
             }
         }
+
+    /**
+     * ブロッキング版の最終使用日時更新（JWT validation callback用）
+     */
+    fun updateLastUsedAtBlocking(tokenId: String) {
+        runBlocking { updateLastUsedAt(tokenId) }
+    }
 
     /**
      * ResultRowからServiceAccountTokenDataに変換する

@@ -199,6 +199,11 @@ internal fun Application.module() {
                     return@validate null
                 }
 
+                // 最終使用日時を更新（トークン監査用）
+                if (tokenId != null) {
+                    ServiceAccountTokenRepository.updateLastUsedAtBlocking(tokenId)
+                }
+
                 JWTPrincipal(credential.payload)
             }
             challenge { _, _ ->

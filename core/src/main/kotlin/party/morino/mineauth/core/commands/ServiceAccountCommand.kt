@@ -186,13 +186,15 @@ class ServiceAccountCommand : KoinComponent {
             is Either.Right -> accountResult.value
         }
 
-        // 既存トークンを全て失効
-        ServiceAccountTokenRepository.revokeByAccountId(account.accountId)
-
         // 新しいトークンを生成
         val jwtConfigData: JWTConfigData = get()
         val tokenId = UUID.randomUUID().toString()
         val now = Date()
+
+        // 鍵ペアを1回で取得（ローテーション中の不整合を防ぐ）
+        val keyPair = getKeys()
+        val privateKey = keyPair.first as RSAPrivateKey
+        val publicKey = keyPair.second as RSAPublicKey
 
         val token = JWT.create()
             .withIssuer(jwtConfigData.issuer)
@@ -203,20 +205,17 @@ class ServiceAccountCommand : KoinComponent {
             .withClaim("account_type", "service")
             .withClaim("identifier", account.identifier)
             .withClaim("token_type", "service_token")
-            .sign(
-                Algorithm.RSA256(
-                    getKeys().second as RSAPublicKey,
-                    getKeys().first as RSAPrivateKey
-                )
-            )
+            .sign(Algorithm.RSA256(publicKey, privateKey))
 
         // トークンハッシュを計算してDBに保存
         val tokenHash = sha256(token)
         val createdBy = if (sender is Player) sender.uniqueId.toString() else "console"
 
-        val saveResult = ServiceAccountTokenRepository.create(
-            tokenId = tokenId,
+        // 既存トークンの失効と新規トークンの保存を一括で行う
+        // create失敗時に既存トークンだけ失効する事態を防ぐ
+        val saveResult = ServiceAccountTokenRepository.revokeAndCreate(
             accountId = account.accountId,
+            tokenId = tokenId,
             tokenHash = tokenHash,
             createdBy = createdBy
         )
