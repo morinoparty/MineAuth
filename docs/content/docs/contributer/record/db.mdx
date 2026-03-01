@@ -55,6 +55,22 @@ Table for managing OAuth2/OIDC client applications.
 
 ---
 
+## ServiceAccountTokens
+
+Table for managing service account tokens. Stores metadata for JWT tokens issued to service accounts.
+
+| Column Name | Type | Example | Description |
+|-------------|------|---------|-------------|
+| token_id | VARCHAR(36) PK | `019234ab-...` | Token's JWT ID (jti claim) |
+| account_id | VARCHAR(36) FK | `019234ab-...` | Account ID (references Accounts table) |
+| token_hash | VARCHAR(64) | `a1b2c3d4...` | SHA-256 hash of the token (for leak verification) |
+| created_by | VARCHAR(36) | `550e8400-...` | Player UUID of the administrator who created the token |
+| created_at | TIMESTAMP | `2025-01-06 12:00:00` | Token creation timestamp |
+| last_used_at | TIMESTAMP NULL | `2025-01-07 09:30:00` | Last used timestamp (NULL if never used) |
+| revoked | BOOLEAN | `false` | Whether the token has been revoked |
+
+---
+
 ## ER Diagram
 
 ```mermaid
@@ -87,5 +103,16 @@ erDiagram
         TIMESTAMP updated_at
     }
 
+    ServiceAccountTokens {
+        VARCHAR(36) token_id PK "JWT jti"
+        VARCHAR(36) account_id FK
+        VARCHAR(64) token_hash "SHA-256"
+        VARCHAR(36) created_by
+        TIMESTAMP created_at
+        TIMESTAMP last_used_at "nullable"
+        BOOLEAN revoked "default false"
+    }
+
     Accounts ||--o{ OAuthClients : "issues"
+    Accounts ||--o{ ServiceAccountTokens : "owns"
 ```
