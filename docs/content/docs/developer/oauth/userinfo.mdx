@@ -28,10 +28,14 @@ The returned claims depend on the access token's scope.
 | Scope | Claims |
 |-------|--------|
 | `openid` | `sub` |
-| `profile` | `name`, `nickname`, `picture` |
+| `profile` | `name`, `preferred_username`, `picture` |
 | `email` | `email`, `email_verified` |
+| `roles` | `roles` |
 
-Note: The `email` scope is only available when `emailFormat` is configured in the server settings.
+:::tip[Conditional Scopes]
+The `email` scope is only available when `emailFormat` is configured in the server settings.
+The `roles` scope is only available when [LuckPerms](https://luckperms.net/) is installed on the server.
+:::
 
 ### Response Examples
 
@@ -49,7 +53,7 @@ Note: The `email` scope is only available when `emailFormat` is configured in th
 {
   "sub": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Steve",
-  "nickname": "Steve",
+  "preferred_username": "Steve",
   "picture": "https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000"
 }
 ```
@@ -60,10 +64,22 @@ Note: The `email` scope is only available when `emailFormat` is configured in th
 {
   "sub": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Steve",
-  "nickname": "Steve",
+  "preferred_username": "Steve",
   "picture": "https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000",
-  "email": "550e8400-e29b-41d4-a716-446655440000-Steve@example.com",
+  "email": "550e8400-e29b-41d4-a716-446655440000+Steve@example.com",
   "email_verified": false
+}
+```
+
+#### openid + profile + roles scope
+
+```json
+{
+  "sub": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Steve",
+  "preferred_username": "Steve",
+  "picture": "https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000",
+  "roles": ["default", "vip"]
 }
 ```
 
@@ -73,10 +89,11 @@ Note: The `email` scope is only available when `emailFormat` is configured in th
 |-------|------|-------------|
 | `sub` | String | Subject Identifier - Player UUID |
 | `name` | String | Player display name |
-| `nickname` | String | Player nickname |
+| `preferred_username` | String | OIDC standard username (same as player name) |
 | `picture` | String | Player avatar image URL (Crafthead API) |
 | `email` | String | Generated email address based on `emailFormat` configuration |
 | `email_verified` | Boolean | Always `false` (generated addresses are not verified) |
+| `roles` | Array\<String\> | LuckPerms group names assigned to the player |
 
 ## References
 

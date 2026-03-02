@@ -24,8 +24,10 @@ import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.commands.OAuthClientCommand
 import party.morino.mineauth.core.commands.RegisterCommand
 import party.morino.mineauth.core.commands.ReloadCommand
+import party.morino.mineauth.core.commands.ServiceAccountCommand
 import party.morino.mineauth.core.commands.VersionCommand
 import party.morino.mineauth.core.commands.parser.ClientIdParser
+import party.morino.mineauth.core.commands.parser.ServiceNameParser
 import party.morino.mineauth.core.file.load.FileUtils
 import party.morino.mineauth.core.integration.IntegrationInitializer
 import party.morino.mineauth.core.web.WebServer
@@ -84,6 +86,8 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
 
         // ClientIdParserをParserRegistryに登録
         commandManager.parserRegistry().registerParser(ClientIdParser.clientIdParser())
+        // ServiceNameParserをParserRegistryに登録
+        commandManager.parserRegistry().registerParser(ServiceNameParser.serviceNameParser())
 
         val annotationParser = AnnotationParser(commandManager, CommandSender::class.java)
         annotationParser.installCoroutineSupport()
@@ -93,6 +97,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
                 RegisterCommand(),
                 ReloadCommand(),
                 OAuthClientCommand(),
+                ServiceAccountCommand(),
                 VersionCommand(),
             )
         }

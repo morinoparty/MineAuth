@@ -122,38 +122,46 @@ data class CreateShopRequest(
 
 These annotations handle authentication and authorization.
 
-### @Authenticated
+### @TargetPlayer
 
-Marks an endpoint as requiring authentication. Injects the authenticated online `Player`.
+Resolves a player from a `{player}` path parameter. The parameter accepts `me` (authenticated user), a UUID, or a player name. Requires authentication.
 
 ```kotlin
-@GetMapping("/profile")
-suspend fun getProfile(@Authenticated player: Player): ProfileData {
-    return profileService.getProfile(player.uniqueId)
+@GetMapping("/balance/{player}")
+suspend fun getBalance(@TargetPlayer player: OfflinePlayer): BalanceData {
+    return economyService.getBalance(player.uniqueId)
 }
 ```
 
-**Note:** This annotation requires the player to be online on the server.
+| `{player}` value | Behavior |
+|-------------------|----------|
+| `me` | Resolves to the authenticated player (user tokens only) |
+| UUID format | Resolves to the player with that UUID |
+| Player name | Resolves to the player with that name |
+
+**Access control:**
+- User tokens can only resolve to themselves (`me`, own UUID, or own name)
+- Service tokens can resolve to any player but cannot use `me`
+
+See [Authentication Guide](/docs/developer/addons/authentication) for details.
 
 ### @AuthedAccessUser
 
-Requires authentication and injects the authenticated `OfflinePlayer`. This is more flexible than `@Authenticated` as it works even when the player is offline.
+Requires authentication and injects the authenticated `OfflinePlayer`. Used for endpoints where the user performs actions on their own data (e.g., sending money, changing settings).
 
 ```kotlin
-@GetMapping("/my-shops")
-suspend fun getMyShops(@AuthedAccessUser player: OfflinePlayer): List<ShopData> {
-    return shopService.findByOwner(player.uniqueId)
-}
-
-@PostMapping("/shops/{id}/settings")
-suspend fun updateSettings(
+@PostMapping("/send")
+suspend fun sendMoney(
     @AuthedAccessUser player: OfflinePlayer,
-    @PathParam("id") id: String,
-    @RequestBody settings: ShopSettings
-): ShopData {
-    return shopService.updateSettings(id, player.uniqueId, settings)
+    @RequestBody data: RemittanceData
+): TransferResult {
+    return economyService.transfer(player.uniqueId, data)
 }
 ```
+
+:::warning[Service Account Restriction]
+This annotation is only available with user tokens. Service accounts cannot access `@AuthedAccessUser` endpoints.
+:::
 
 ### @AccessUser
 
@@ -199,6 +207,10 @@ class AdminHandler {
 |-----------|------|-------------|
 | `value` | String | The permission string required |
 
+:::tip[Service Account Behavior]
+Service accounts automatically bypass `@Permission` checks. Business logic validation (e.g., ownership checks) in handler code is still applied.
+:::
+
 ---
 
 ## Annotation Usage Summary
@@ -212,7 +224,22 @@ class AdminHandler {
 | `@PathParam` | Parameter | Extract path parameter |
 | `@QueryParams` | Parameter | Extract query parameters |
 | `@RequestBody` | Parameter | Extract JSON body |
-| `@Authenticated` | Parameter | Require auth, inject online Player |
-| `@AuthedAccessUser` | Parameter | Require auth, inject OfflinePlayer |
+| `@TargetPlayer` | Parameter | Resolve player from `{player}` path param (supports me/UUID/name) |
+| `@AuthedAccessUser` | Parameter | Require auth, inject OfflinePlayer (user tokens only) |
 | `@AccessUser` | Parameter | Optional auth, inject nullable OfflinePlayer |
-| `@Permission` | Class/Function | Require permission |
+| `@Permission` | Class/Function | Require permission (bypassed by service accounts) |
+
+## Choosing the Right Authentication Annotation
+
+```
+Do you need to access player data?
+├── Yes → Is this a read-only endpoint?
+│   ├── Yes → Should service accounts access any player?
+│   │   ├── Yes → Use @TargetPlayer with /{player} path
+│   │   └── No  → Use @AuthedAccessUser
+│   └── No (write/action endpoint)
+│       └── Use @AuthedAccessUser
+└── No → Is authentication optional?
+    ├── Yes → Use @AccessUser
+    └── No  → Don't use auth annotations
+```

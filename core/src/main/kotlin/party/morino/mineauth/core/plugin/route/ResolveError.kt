@@ -39,4 +39,10 @@ sealed class ResolveError {
         val expectedType: String,
         val actualValue: String?
     ) : ResolveError()
+
+    /**
+     * 他のプレイヤーのデータへのアクセスが拒否された
+     * @property reason 拒否理由
+     */
+    data class AccessDenied(val reason: String) : ResolveError()
 }

@@ -8,6 +8,7 @@ import party.morino.mineauth.core.openapi.model.Parameter
 import party.morino.mineauth.core.openapi.model.PathItem
 import party.morino.mineauth.core.openapi.model.RequestBody
 import party.morino.mineauth.core.openapi.model.Response
+import party.morino.mineauth.core.openapi.model.Schema
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.annotation.ParameterInfo
@@ -35,6 +36,13 @@ class PathItemGenerator : KoinComponent {
                     location = "path",
                     required = true,
                     schema = schemaGenerator.generateSchema(param.type)
+                )
+                // TargetPlayerは{player}パスパラメータとしてOpenAPIに公開する
+                is ParameterInfo.TargetPlayer -> Parameter(
+                    name = "player",
+                    location = "path",
+                    required = true,
+                    schema = Schema(type = "string", description = "Player identifier: 'me', UUID, or player name")
                 )
                 // QueryParamsはMapなので個別パラメータとしては定義しない
                 is ParameterInfo.QueryParams -> null
