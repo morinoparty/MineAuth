@@ -12,16 +12,16 @@ exposed = "0.61.0"
 password4j = "1.8.4"
 javaUuidGenerator = "5.2.0"
 nimbus = "10.7"
-logback = "1.5.18"
+logback = "1.5.32"
 bouncycastle = "1.83"
 ktlint = "14.0.1"
 mavenPublish = "0.30.0"
 mockk = "1.14.5"
 junit = "6.0.3"
 mockBukkit = "4.101.0"
-hikari = "6.3.0"
+hikari = "7.0.2"
 mysql = "9.6.0"
-micrometer = "1.16.2"
+micrometer = "1.16.3"
 opentelemetry = "1.59.0"
 opentelemetry-instrumentation = "2.25.0-alpha-SNAPSHOT"
 
@@ -103,7 +103,7 @@ run-paper = { id = "xyz.jpenilla.run-paper", version = "2.3.1" }
 resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.3.0" }
 shadow = { id = "com.gradleup.shadow", version = "9.0.0-beta4" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.3.10" }
-kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.2.10" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.3.10" }
 dokka = { id = "org.jetbrains.dokka", version = "2.1.0" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
