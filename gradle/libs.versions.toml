@@ -21,7 +21,7 @@ junit = "6.0.3"
 mockBukkit = "4.101.0"
 hikari = "7.0.2"
 mysql = "9.6.0"
-micrometer = "1.16.2"
+micrometer = "1.16.3"
 opentelemetry = "1.59.0"
 opentelemetry-instrumentation = "2.25.0-alpha-SNAPSHOT"
 
