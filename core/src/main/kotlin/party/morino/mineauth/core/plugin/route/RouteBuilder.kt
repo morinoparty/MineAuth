@@ -48,7 +48,8 @@ class RouteBuilder(
 
         if (endpoint.requiresAuthentication) {
             // 認証が必要な場合はauthenticateブロック内に配置
-            route.authenticate(JwtCompleteCode.USER_TOKEN.code) {
+            // ユーザートークンとサービストークンのどちらでも認証を受け付ける
+            route.authenticate(JwtCompleteCode.USER_TOKEN.code, JwtCompleteCode.SERVICE_TOKEN.code) {
                 registerHttpMethod(this, normalizedPath, endpoint)
             }
         } else {

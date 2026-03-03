@@ -3,7 +3,7 @@ title: API Endpoints
 description: OAuth2.0 and OpenID Connect endpoint list
 ---
 
-This is an endpoint list for OAuth2.0 and OpenID Connect (OIDC) for Moripa API.
+This is an endpoint list for OAuth2.0 and OpenID Connect (OIDC) for MineAuth.
 
 ## Endpoints
 
@@ -14,7 +14,7 @@ This is an endpoint list for OAuth2.0 and OpenID Connect (OIDC) for Moripa API.
 | Yes | Authorization | `/oauth2/authorize` | [RFC 6749 4.1.1](https://datatracker.ietf.org/doc/html/rfc6749.html#section-4.1.1) |
 | Yes | Token | `/oauth2/token` | [RFC 6749 4.1.3](https://datatracker.ietf.org/doc/html/rfc6749.html#section-4.1.3) |
 | No | Introspection | `/oauth2/introspect` | [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662.html#section-2.1) |
-| No | Revocation | `/oauth2/revoke` | [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009.html#section-2.1) |
+| Yes | Revocation | `/oauth2/revoke` | [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009.html#section-2.1) |
 
 ### OpenID Connect (OIDC)
 
@@ -28,4 +28,4 @@ This is an endpoint list for OAuth2.0 and OpenID Connect (OIDC) for Moripa API.
 
 | Endpoint | Path |
 |----------|------|
-| Plugin | `/api/v1/plugin/<pluginName>/*` |
+| Plugin | `/api/v1/plugins/<pluginName>/*` |

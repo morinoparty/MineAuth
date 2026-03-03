@@ -11,6 +11,7 @@ import party.morino.mineauth.api.annotations.AuthedAccessUser
 import party.morino.mineauth.api.annotations.GetMapping
 import party.morino.mineauth.api.annotations.PostMapping
 import party.morino.mineauth.api.annotations.RequestBody
+import party.morino.mineauth.api.annotations.TargetPlayer
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 import java.util.logging.Logger
@@ -47,14 +48,14 @@ class VaultHandler : KoinComponent {
     }
 
     /**
-     * 自分の残高を取得する
-     * GET /balance/me
+     * プレイヤーの残高を取得する
+     * GET /balance/{player}
      *
-     * @param player 認証済みプレイヤー
+     * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return 残高を含むレスポンス
      */
-    @GetMapping("/balance/me")
-    suspend fun getMyBalance(@AuthedAccessUser player: OfflinePlayer): BalanceResponse {
+    @GetMapping("/balance/{player}")
+    suspend fun getMyBalance(@TargetPlayer player: OfflinePlayer): BalanceResponse {
         val balance = economy.getBalance(player)
         return BalanceResponse(balance = balance)
     }

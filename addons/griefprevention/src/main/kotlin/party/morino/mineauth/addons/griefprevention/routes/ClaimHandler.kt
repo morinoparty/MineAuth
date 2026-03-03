@@ -16,6 +16,7 @@ import party.morino.mineauth.api.annotations.AuthedAccessUser
 import party.morino.mineauth.api.annotations.GetMapping
 import party.morino.mineauth.api.annotations.PostMapping
 import party.morino.mineauth.api.annotations.RequestBody
+import party.morino.mineauth.api.annotations.TargetPlayer
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 
@@ -29,14 +30,14 @@ class ClaimHandler : KoinComponent {
     private val config: GriefPreventionConfig by inject()
 
     /**
-     * 認証済みプレイヤーのクレーム一覧を取得する
-     * GET /claims/me
+     * プレイヤーのクレーム一覧を取得する
+     * GET /claims/{player}
      *
-     * @param player 認証済みプレイヤー
+     * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return クレーム情報のサマリー
      */
-    @GetMapping("/claims/me")
-    suspend fun getMyClaims(@AuthedAccessUser player: OfflinePlayer): ClaimSummaryResponse {
+    @GetMapping("/claims/{player}")
+    suspend fun getMyClaims(@TargetPlayer player: OfflinePlayer): ClaimSummaryResponse {
         return withContext(Dispatchers.minecraft) {
             // プレイヤーデータをGriefPreventionから取得
             val playerData = dataStore.getPlayerData(player.uniqueId)

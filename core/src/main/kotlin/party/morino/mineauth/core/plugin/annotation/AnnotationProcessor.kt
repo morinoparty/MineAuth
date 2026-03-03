@@ -110,7 +110,7 @@ class AnnotationProcessor : KoinComponent {
     /**
      * メソッドが認証を必要とするか判定する
      * 以下のいずれかの条件で認証必須:
-     * - @AuthedAccessUserまたは@Authenticatedアノテーションが付いたパラメータがある
+     * - @AuthedAccessUserまたは@TargetPlayerアノテーションが付いたパラメータがある
      * - @Permissionアノテーションがメソッドまたはクラスに付いている
      *
      * セキュリティ: @Permissionが付いている場合は必ず認証を要求する
@@ -126,9 +126,9 @@ class AnnotationProcessor : KoinComponent {
             return true
         }
 
-        // @AuthedAccessUserまたは@Authenticatedがあれば認証必須
+        // @AuthedAccessUserまたは@TargetPlayerがあれば認証必須
         return method.parameters.any { param ->
-            param.hasAnnotation<AuthedAccessUser>() || param.hasAnnotation<Authenticated>()
+            param.hasAnnotation<AuthedAccessUser>() || param.hasAnnotation<TargetPlayer>()
         }
     }
 
@@ -169,7 +169,7 @@ class AnnotationProcessor : KoinComponent {
             param.hasAnnotation<RequestBody>(),
             param.hasAnnotation<AuthedAccessUser>(),
             param.hasAnnotation<AccessUser>(),
-            param.hasAnnotation<Authenticated>()
+            param.hasAnnotation<TargetPlayer>()
         ).count { it }
 
         // 複数のアノテーションが付与されている場合はエラー
@@ -190,11 +190,15 @@ class AnnotationProcessor : KoinComponent {
             param.hasAnnotation<RequestBody>() -> {
                 ParameterInfo.Body(paramType)
             }
-            param.hasAnnotation<AuthedAccessUser>() || param.hasAnnotation<Authenticated>() -> {
+            param.hasAnnotation<AuthedAccessUser>() -> {
                 ParameterInfo.AuthenticatedPlayer(paramType)
             }
             param.hasAnnotation<AccessUser>() -> {
                 ParameterInfo.AccessPlayer(paramType)
+            }
+            param.hasAnnotation<TargetPlayer>() -> {
+                // パスパラメータ {player} で指定されたプレイヤーを解決
+                ParameterInfo.TargetPlayer(paramType)
             }
             else -> {
                 // アノテーションがないパラメータはエラー

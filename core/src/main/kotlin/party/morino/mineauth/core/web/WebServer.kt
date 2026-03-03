@@ -33,8 +33,10 @@ import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
+import party.morino.mineauth.core.repository.AccountRepository
 import party.morino.mineauth.core.repository.OAuthClientRepository
 import party.morino.mineauth.core.repository.RevokedTokenRepository
+import party.morino.mineauth.core.repository.ServiceAccountTokenRepository
 import party.morino.mineauth.core.openapi.OpenApiRouter.openApiRouter
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
@@ -166,6 +168,46 @@ internal fun Application.module() {
             }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, "Token is not valid or has expired")
+            }
+        }
+
+        // サービスアカウントトークンのJWT検証
+        jwt(JwtCompleteCode.SERVICE_TOKEN.code) {
+            realm = jwtConfigData.realm
+            verifier(jwkProvider, jwtConfigData.issuer) {
+                acceptLeeway(3)
+            }
+
+            validate { credential ->
+                // token_typeがservice_tokenであることを確認
+                val tokenType = credential.payload.getClaim("token_type").asString()
+                if (tokenType != "service_token") {
+                    return@validate null
+                }
+
+                // accountIdでアカウントの存在確認
+                val accountId = credential.payload.getClaim("account_id").asString()
+                    ?: return@validate null
+                val accountResult = AccountRepository.findById(accountId)
+                if (accountResult.isLeft()) {
+                    return@validate null
+                }
+
+                // トークンIDで失効チェック
+                val tokenId = credential.payload.id
+                if (tokenId != null && !ServiceAccountTokenRepository.isTokenValidBlocking(tokenId)) {
+                    return@validate null
+                }
+
+                // 最終使用日時を更新（トークン監査用）
+                if (tokenId != null) {
+                    ServiceAccountTokenRepository.updateLastUsedAtBlocking(tokenId)
+                }
+
+                JWTPrincipal(credential.payload)
+            }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, "Service token is not valid or has expired")
             }
         }
     }

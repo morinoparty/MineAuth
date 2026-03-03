@@ -19,3 +19,17 @@ h1, h2, h3, h4, h5, h6 {
     font-family: 'Satoshi', 'GenJyuuGothicLP', system-ui, -apple-system, sans-serif;
     font-weight: 700;
 }
+
+/* Text selection color matching theme green */
+@layer base {
+    ::selection {
+        background-color: var(--mpc-colors-mori-5);
+        color: var(--mpc-colors-mori-12);
+    }
+
+    .dark ::selection,
+    [data-theme='dark'] ::selection {
+        background-color: var(--mpc-colors-mori-dark-4);
+        color: var(--mpc-colors-mori-dark-12);
+    }
+}

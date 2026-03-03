@@ -7,38 +7,59 @@ This guide explains how to implement authentication and authorization in your Mi
 
 ## Authentication Overview
 
-MineAuth uses JWT (JSON Web Tokens) for API authentication. When a client makes a request with a valid access token, MineAuth extracts the user information and makes it available to your handler methods.
+MineAuth uses JWT (JSON Web Tokens) for API authentication. Two types of tokens are supported:
+
+| Token Type | Description | Use Case |
+|------------|-------------|----------|
+| **User Token** | Issued via OAuth2 flow for individual players | Web applications, user-facing APIs |
+| **Service Token** | Issued to service accounts for M2M communication | Backend services, bots, automation |
+
+When a client makes a request with a valid access token, MineAuth extracts the authentication information and makes it available to your handler methods.
 
 ## Requiring Authentication
 
-### Basic Authentication
+### Basic Authentication (Self-Access)
 
-Use `@AuthedAccessUser` to require authentication and access user information:
+Use `@AuthedAccessUser` to require authentication and inject the authenticated player. This is used for endpoints where the user accesses or modifies their own data:
 
 ```kotlin
-@GetMapping("/my-data")
-suspend fun getMyData(@AuthedAccessUser player: OfflinePlayer): MyData {
-    // player.uniqueId contains the authenticated user's UUID
-    return dataService.getByOwner(player.uniqueId)
+@PostMapping("/send")
+suspend fun sendMoney(
+    @AuthedAccessUser player: OfflinePlayer,
+    @RequestBody data: RemittanceData
+): TransferResult {
+    // player.uniqueId is the authenticated user's UUID
+    return economyService.transfer(player.uniqueId, data)
 }
 ```
 
 When no valid token is provided, MineAuth automatically returns a `401 Unauthorized` response.
 
-### Online Player Requirement
+:::warning[Service Account Restriction]
+`@AuthedAccessUser` endpoints are only accessible with **user tokens**. Service accounts cannot access these endpoints because they don't have an associated player identity.
+:::
 
-Use `@Authenticated` when you need the player to be online:
+### Flexible Player Resolution
+
+Use `@TargetPlayer` to support accessing any player's data via path parameters. The `{player}` path parameter accepts three formats:
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `me` | `/balance/me` | Authenticated user's own data |
+| UUID | `/balance/550e8400-e29b-41d4-a716-446655440000` | Access by player UUID |
+| Player Name | `/balance/Notch` | Access by player name |
 
 ```kotlin
-@PostMapping("/action")
-suspend fun performAction(@Authenticated player: Player): ActionResult {
-    // player is guaranteed to be online
-    // You can access player.location, player.inventory, etc.
-    return actionService.perform(player)
+@GetMapping("/balance/{player}")
+suspend fun getBalance(@TargetPlayer player: OfflinePlayer): BalanceData {
+    return economyService.getBalance(player.uniqueId)
 }
 ```
 
-If the player is not online, returns `403 Forbidden`.
+**Access control rules:**
+
+- **User tokens**: Can only access their own data (`me` or their own UUID/name). Attempting to access another player's data returns `403 Forbidden`.
+- **Service tokens**: Can access any player's data. Cannot use `me` (returns `400 Bad Request`).
 
 ### Optional Authentication
 
@@ -81,16 +102,6 @@ class ShopHandler {
         // Requires "shop.create" permission
         return shopService.create(player.uniqueId, shop)
     }
-
-    @DeleteMapping("/shops/{id}")
-    @Permission("shop.delete")
-    suspend fun deleteShop(
-        @AuthedAccessUser player: OfflinePlayer,
-        @PathParam("id") id: String
-    ) {
-        // Requires "shop.delete" permission
-        shopService.delete(id, player.uniqueId)
-    }
 }
 ```
 
@@ -107,11 +118,6 @@ class AdminHandler {
         // Requires "admin.access"
     }
 
-    @GetMapping("/stats")
-    suspend fun getStats(): StatsData {
-        // Requires "admin.access"
-    }
-
     // Override class-level permission
     @GetMapping("/public-info")
     @Permission("user.view")
@@ -120,6 +126,10 @@ class AdminHandler {
     }
 }
 ```
+
+:::tip[Service Account and Permissions]
+Service accounts automatically bypass `@Permission` checks. This allows service tokens to access permission-protected endpoints without needing Bukkit permission assignments.
+:::
 
 ### Permission Denied Response
 
@@ -134,9 +144,40 @@ When permission check fails, MineAuth returns:
 }
 ```
 
+## Service Account Access
+
+Service accounts are designed for machine-to-machine (M2M) communication. They authenticate using long-lived JWT tokens issued via in-game commands.
+
+### How Service Accounts Work
+
+1. A server administrator creates a service account using `/ma service create`
+2. A token is issued using `/ma service token <name>`
+3. The token is used as a Bearer token in API requests
+
+### Service Account Restrictions
+
+| Feature | User Token | Service Token |
+|---------|-----------|--------------|
+| `@AuthedAccessUser` endpoints | Available (self only) | Not available |
+| `@TargetPlayer` endpoints | `me` / own UUID / own name | Any player |
+| `@AccessUser` endpoints | Available | Not available |
+| `@Permission` check | Applied | Bypassed |
+
+### Example: Accessing Player Data with Service Token
+
+```bash
+# Get a specific player's balance using service token
+curl -H "Authorization: Bearer <service-token>" \
+  https://mc.example.com/api/v1/plugins/vault-addon/balance/Notch
+
+# Get a player's claims by UUID
+curl -H "Authorization: Bearer <service-token>" \
+  https://mc.example.com/api/v1/plugins/mineauth-addon-griefprevention/claims/550e8400-e29b-41d4-a716-446655440000
+```
+
 ## JWT Token Structure
 
-MineAuth JWT tokens contain the following claims:
+### User Token Claims
 
 | Claim | Description |
 |-------|-------------|
@@ -147,7 +188,22 @@ MineAuth JWT tokens contain the following claims:
 | `iat` | Issued at time |
 | `scope` | OAuth scopes granted |
 
+### Service Token Claims
+
+| Claim | Description |
+|-------|-------------|
+| `account_id` | Service account ID |
+| `account_type` | Always `"service"` |
+| `identifier` | Service account name |
+| `token_type` | Always `"service_token"` |
+| `jti` | Unique token ID |
+| `iss` | Issuer - MineAuth server URL |
+| `exp` | Expiration time (default: 1 year) |
+| `iat` | Issued at time |
+
 ## Authentication Flow
+
+### User Token Flow
 
 ```
 ┌─────────────┐                    ┌─────────────┐
@@ -162,6 +218,26 @@ MineAuth JWT tokens contain the following claims:
        │                           4. Execute handler
        │                                  │
        │  5. Response                     │
+       │ ◄─────────────────────────────   │
+       │                                  │
+```
+
+### Service Token Flow
+
+```
+┌─────────────┐                    ┌─────────────┐
+│   Service   │                    │  MineAuth   │
+└──────┬──────┘                    └──────┬──────┘
+       │                                  │
+       │  1. Request with Bearer token    │
+       │ ─────────────────────────────►   │
+       │                                  │
+       │                           2. Validate JWT
+       │                           3. Verify token not revoked
+       │                           4. Skip permission check
+       │                           5. Execute handler
+       │                                  │
+       │  6. Response                     │
        │ ◄─────────────────────────────   │
        │                                  │
 ```
@@ -181,7 +257,7 @@ No valid token provided:
 
 ### 403 Forbidden
 
-Permission denied or player not online:
+Permission denied or access to another player's data:
 
 ```json
 {
@@ -192,14 +268,23 @@ Permission denied or player not online:
 }
 ```
 
+```json
+{
+    "error": "Access denied",
+    "error_description": "You can only access your own data"
+}
+```
+
 ## Best Practices
 
-1. **Use `@AuthedAccessUser` by default** - It works for both online and offline players
+1. **Use `@TargetPlayer` for read endpoints** - Allows both user self-access and service account access to any player
 
-2. **Use `@Authenticated` only when necessary** - When you need access to online player data like location or inventory
+2. **Use `@AuthedAccessUser` for write/action endpoints** - Ensures only the player themselves can perform actions like sending money or changing settings
 
 3. **Use `@AccessUser` for public endpoints** - When you want to personalize content but still serve anonymous users
 
 4. **Apply class-level permissions for admin handlers** - Reduces boilerplate and ensures consistent security
 
 5. **Be specific with permission strings** - Use hierarchical permissions like `shop.create`, `shop.delete`, `shop.admin`
+
+6. **Validate business logic in handlers** - Even with service account bypass of `@Permission`, ensure your handler validates ownership and authorization as needed

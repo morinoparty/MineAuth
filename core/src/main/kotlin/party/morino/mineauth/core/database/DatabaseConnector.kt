@@ -35,7 +35,7 @@ class DatabaseConnector : KoinComponent {
         // テーブル作成（Accountsを先に作成 - OAuthClientsが参照するため）
         // RevokedTokensはトークン失効管理用（RFC 7009準拠）
         transaction {
-            SchemaUtils.create(UserAuthData, Accounts, OAuthClients, RevokedTokens)
+            SchemaUtils.create(UserAuthData, Accounts, OAuthClients, RevokedTokens, ServiceAccountTokens)
         }
 
         plugin.logger.info("Database connected: ${config.database::class.simpleName}")

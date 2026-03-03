@@ -50,8 +50,8 @@ MineAuth automatically generates OpenAPI documentation for all registered addons
 If VaultAddon registers these endpoints:
 
 ```kotlin
-@GetMapping("/balance/me")
-suspend fun getMyBalance(@AuthedAccessUser player: OfflinePlayer): BalanceResponse
+@GetMapping("/balance/{player}")
+suspend fun getMyBalance(@TargetPlayer player: OfflinePlayer): BalanceResponse
 
 @PostMapping("/send")
 suspend fun sendMoney(
@@ -65,10 +65,19 @@ They will appear in the OpenAPI spec as:
 ```json
 {
   "paths": {
-    "/api/v1/plugins/vaultaddon/balance/me": {
+    "/api/v1/plugins/vault-addon/balance/{player}": {
       "get": {
         "summary": "Get My Balance",
-        "security": [{"oauth2": ["read.*", "write.*"]}],
+        "parameters": [
+          {
+            "name": "player",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Player identifier: 'me', UUID, or player name"
+          }
+        ],
+        "security": [{"oauth2": []}],
         "responses": {
           "200": {
             "content": {
@@ -76,7 +85,7 @@ They will appear in the OpenAPI spec as:
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "balance": {"type": "number"}
+                    "balance": {"type": "number", "format": "double"}
                   }
                 }
               }
@@ -108,7 +117,7 @@ MineAuth automatically generates JSON schemas from Kotlin data classes:
 
 ## Security
 
-Endpoints with `@AuthedAccessUser` annotation are marked with OAuth2 security requirements in the OpenAPI spec. Public endpoints (without authentication) have no security requirements.
+Endpoints with `@AuthedAccessUser` or `@TargetPlayer` annotations are marked with OAuth2 security requirements in the OpenAPI spec. Public endpoints (without authentication annotations) have no security requirements.
 
 ## Integration with External Tools
 

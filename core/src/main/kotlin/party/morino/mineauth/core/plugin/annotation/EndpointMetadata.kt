@@ -45,6 +45,13 @@ sealed class ParameterInfo {
      * @property type プレイヤーの型
      */
     data class AccessPlayer(val type: KType) : ParameterInfo()
+
+    /**
+     * パスパラメータ {player} で指定されたプレイヤー
+     * "me", UUID, プレイヤー名を受け付ける
+     * @property type プレイヤーの型（OfflinePlayer等）
+     */
+    data class TargetPlayer(val type: KType) : ParameterInfo()
 }
 
 /**

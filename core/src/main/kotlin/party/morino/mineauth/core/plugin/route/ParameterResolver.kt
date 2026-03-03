@@ -47,6 +47,7 @@ class ParameterResolver(
             is ParameterInfo.Body -> resolveBody(call, paramInfo).bind()
             is ParameterInfo.AuthenticatedPlayer -> resolveAuthenticatedPlayer(call, paramInfo).bind()
             is ParameterInfo.AccessPlayer -> resolveAccessPlayer(call, paramInfo)
+            is ParameterInfo.TargetPlayer -> resolveTargetPlayer(call, paramInfo).bind()
         }
     }
 
@@ -277,6 +278,80 @@ class ParameterResolver(
             targetType == Player::class -> offlinePlayer.player
             targetType == OfflinePlayer::class -> offlinePlayer
             else -> offlinePlayer.player ?: offlinePlayer
+        }
+    }
+
+    /**
+     * パスパラメータ {player} からプレイヤーを解決する
+     * "me" → JWT認証ユーザー, UUID → 直接解決, 名前 → Bukkit.getOfflinePlayer(name)
+     *
+     * アクセス制御:
+     * - ユーザートークン: 自分自身のデータのみアクセス可能
+     * - サービストークン: 任意のプレイヤーにアクセス可能
+     *
+     * @param call ApplicationCall
+     * @param paramInfo TargetPlayerパラメータ情報
+     * @return 解決されたPlayer/OfflinePlayer
+     */
+    private suspend fun resolveTargetPlayer(
+        call: ApplicationCall,
+        paramInfo: ParameterInfo.TargetPlayer
+    ): Either<ResolveError, Any> = either {
+        // {player} パスパラメータを取得
+        val playerParam = call.parameters["player"]
+        ensure(playerParam != null) {
+            ResolveError.MissingPathParameter("player")
+        }
+
+        // JWTPrincipalを取得（認証必須）
+        val principal = call.principal<JWTPrincipal>()
+        ensure(principal != null) {
+            ResolveError.AuthenticationRequired("JWT token required")
+        }
+
+        // トークンの種類を判定
+        val tokenType = principal.payload.getClaim("token_type").asString()
+        val isServiceToken = tokenType == "service_token"
+
+        // {player} パラメータからUUIDを解決
+        val targetUuid = when {
+            // "me" はサービスアカウントでは使用不可
+            playerParam == "me" -> {
+                if (isServiceToken) {
+                    raise(ResolveError.AuthenticationRequired("Service accounts cannot use 'me'"))
+                }
+                resolvePlayerUuid(principal).bind()
+            }
+            // UUID形式の場合は直接変換
+            isUuidFormat(playerParam) -> UUID.fromString(playerParam)
+            // プレイヤー名の場合はBukkitで解決
+            else -> Bukkit.getOfflinePlayer(playerParam).uniqueId
+        }
+
+        // アクセス制御: ユーザートークンの場合は自分自身のみアクセス可能
+        if (!isServiceToken) {
+            val authedUuid = resolvePlayerUuid(principal).bind()
+            ensure(authedUuid == targetUuid) {
+                ResolveError.AccessDenied("Cannot access another player's data")
+            }
+        }
+
+        // パラメータの型に応じてPlayerまたはOfflinePlayerを返す
+        resolvePlayerForAuth(targetUuid, paramInfo.type.jvmErasure).bind()
+    }
+
+    /**
+     * 文字列がUUID形式かどうかを判定する
+     *
+     * @param value 判定する文字列
+     * @return UUID形式の場合true
+     */
+    private fun isUuidFormat(value: String): Boolean {
+        return try {
+            UUID.fromString(value)
+            true
+        } catch (e: IllegalArgumentException) {
+            false
         }
     }
 }

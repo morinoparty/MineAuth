@@ -19,12 +19,18 @@ This addon provides HTTP endpoints for QuickShop-Hikari shop data:
 
 ### Generated Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/plugins/quickshophikari/shops` | List all shops (cursor-based pagination) |
-| GET | `/api/v1/plugins/quickshophikari/shops/{id}` | Get shop by ID |
-| GET | `/api/v1/plugins/quickshophikari/users/{uuid}/shops` | Get shops by owner |
-| GET | `/api/v1/plugins/quickshophikari/users/me/shops` | Get own shops |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/quickshophikari/shops` | - | List all shops (cursor-based pagination) |
+| GET | `/api/v1/plugins/quickshophikari/shops/{id}` | - | Get shop by ID |
+| GET | `/api/v1/plugins/quickshophikari/users/{uuid}/shops` | - | Get shops by owner |
+| GET | `/api/v1/plugins/quickshophikari/users/{player}/shops` | `@TargetPlayer` | Get own or target player's shops |
+| GET | `/api/v1/plugins/quickshophikari/shops/{shopId}/setting` | `@AuthedAccessUser` | Get shop settings (owner only) |
+| POST | `/api/v1/plugins/quickshophikari/shops/{shopId}/setting` | `@AuthedAccessUser` | Update shop settings (owner only) |
+
+The `users/{player}/shops` endpoint uses `@TargetPlayer`, which means:
+- Users can access their own shops via `/users/me/shops`
+- Service accounts can access any player's shops via `/users/Notch/shops` or `/users/<uuid>/shops`
 
 #### Pagination Example
 
@@ -68,10 +74,14 @@ Provides HTTP endpoints for Vault economy operations:
 
 ### Generated Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/plugins/vault-addon/balance/me` | Get own balance |
-| POST | `/api/v1/plugins/vault-addon/send` | Send money to another player |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/vault-addon/balance/{player}` | `@TargetPlayer` | Get own or target player's balance |
+| POST | `/api/v1/plugins/vault-addon/send` | `@AuthedAccessUser` | Send money to another player (user only) |
+
+The balance endpoint uses `@TargetPlayer`:
+- Users: `GET /balance/me` to check own balance
+- Service accounts: `GET /balance/Notch` or `GET /balance/<uuid>` to check any player's balance
 
 ## GriefPrevention Addon
 
@@ -87,14 +97,14 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
 
 ### Generated Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/plugins/mineauth-addon-griefprevention/claims/me` | Get own claims |
-| POST | `/api/v1/plugins/mineauth-addon-griefprevention/claims/purchase` | Purchase claim blocks |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/mineauth-addon-griefprevention/claims/{player}` | `@TargetPlayer` | Get own or target player's claims |
+| POST | `/api/v1/plugins/mineauth-addon-griefprevention/claims/purchase` | `@AuthedAccessUser` | Purchase claim blocks (user only) |
 
 ### Response Example
 
-`GET /claims/me`:
+`GET /claims/me` or `GET /claims/<uuid>`:
 
 ```json
 {
@@ -144,9 +154,13 @@ Provides HTTP endpoints for BetonQuest quest data:
 
 ### Generated Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/plugins/betonquest-addon/quests` | Get available quests |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/betonquest-addon/quests/{player}` | `@TargetPlayer` | Get target player's quests |
+
+The quests endpoint uses `@TargetPlayer`:
+- Users: `GET /quests/me` to check own quests
+- Service accounts: `GET /quests/Notch` or `GET /quests/<uuid>` to check any player's quests
 
 ### Response Example
 
@@ -171,3 +185,4 @@ Provides HTTP endpoints for BetonQuest quest data:
   ],
   "totalQuests": 2
 }
+```

@@ -17,45 +17,67 @@ import java.util.*
 class AuthenticationHandler : KoinComponent {
 
     /**
-     * 認証を検証し、プレイヤーUUIDを取得する
+     * 認証を検証し、認証結果を取得する
+     * トークンの種類（ユーザー/サービス）に応じて適切な結果を返す
      *
      * @param call ApplicationCall
-     * @return Either<AuthError, UUID> 成功時はプレイヤーUUID
+     * @return Either<AuthError, AuthResult> 成功時は認証結果
      */
-    suspend fun authenticate(call: ApplicationCall): Either<AuthError, UUID> = either {
+    suspend fun authenticate(call: ApplicationCall): Either<AuthError, AuthResult> = either {
         // JWTPrincipalを取得
         val principal = call.principal<JWTPrincipal>()
         ensure(principal != null) {
             AuthError.NotAuthenticated
         }
 
-        // playerUniqueIdクレームを取得
-        val uuidStr = principal.payload.getClaim("playerUniqueId").asString()
-        ensure(uuidStr != null) {
-            AuthError.InvalidToken("Missing playerUniqueId claim")
-        }
+        // トークンの種類で分岐
+        val tokenType = principal.payload.getClaim("token_type").asString()
 
-        // UUIDに変換
-        try {
-            UUID.fromString(uuidStr)
-        } catch (e: IllegalArgumentException) {
-            raise(AuthError.InvalidToken("Invalid UUID format: $uuidStr"))
+        if (tokenType == "service_token") {
+            // サービストークン: account_idを返す
+            val accountId = principal.payload.getClaim("account_id").asString()
+            ensure(accountId != null) {
+                AuthError.InvalidToken("Missing account_id claim")
+            }
+            AuthResult.ServiceAuth(accountId)
+        } else {
+            // ユーザートークン: playerUniqueIdを返す
+            val uuidStr = principal.payload.getClaim("playerUniqueId").asString()
+            ensure(uuidStr != null) {
+                AuthError.InvalidToken("Missing playerUniqueId claim")
+            }
+
+            // UUIDに変換
+            try {
+                val uuid = UUID.fromString(uuidStr)
+                AuthResult.PlayerAuth(uuid)
+            } catch (e: IllegalArgumentException) {
+                raise(AuthError.InvalidToken("Invalid UUID format: $uuidStr"))
+            }
         }
     }
 
     /**
      * パーミッションを検証する
+     * サービスアカウントの場合はBukkitパーミッションチェックをスキップする
      * セキュリティ上の理由から、オフラインプレイヤーはパーミッションチェック不可とする
      *
-     * @param playerUuid プレイヤーUUID
+     * @param authResult 認証結果
      * @param permission 必要なパーミッション文字列
      * @return Either<AuthError, Unit>
      */
     suspend fun checkPermission(
-        playerUuid: UUID,
+        authResult: AuthResult,
         permission: String
     ): Either<AuthError, Unit> = either {
-        val offlinePlayer = Bukkit.getOfflinePlayer(playerUuid)
+        // サービスアカウントはBukkitパーミッションチェックをバイパス
+        if (authResult is AuthResult.ServiceAuth) {
+            return@either
+        }
+
+        // プレイヤー認証の場合のみパーミッションチェック
+        val playerAuth = authResult as AuthResult.PlayerAuth
+        val offlinePlayer = Bukkit.getOfflinePlayer(playerAuth.playerUuid)
 
         // オンラインプレイヤーを取得
         val onlinePlayer = offlinePlayer.player
@@ -77,14 +99,14 @@ class AuthenticationHandler : KoinComponent {
      *
      * @param call ApplicationCall
      * @param permission 必要なパーミッション文字列
-     * @return Either<AuthError, UUID> 成功時はプレイヤーUUID
+     * @return Either<AuthError, AuthResult> 成功時は認証結果
      */
     suspend fun authenticateAndCheckPermission(
         call: ApplicationCall,
         permission: String
-    ): Either<AuthError, UUID> = either {
-        val uuid = authenticate(call).bind()
-        checkPermission(uuid, permission).bind()
-        uuid
+    ): Either<AuthError, AuthResult> = either {
+        val result = authenticate(call).bind()
+        checkPermission(result, permission).bind()
+        result
     }
 }
