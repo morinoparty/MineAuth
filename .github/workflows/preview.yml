@@ -69,9 +69,13 @@ jobs:
         run: |
           sed -i "s/VersionPlaceholder/${{ env.COMMIT_SHORT_SHA }}/" ./gradle.properties
 
+      - name: Run tests
+        continue-on-error: true
+        run: ./gradlew test
+
       - name: Build with Gradle
         continue-on-error: true
-        run: ./gradlew build
+        run: ./gradlew build -x test
 
       - name: Publish test results
         id: publish-test-results
