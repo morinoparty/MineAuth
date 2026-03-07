@@ -115,6 +115,12 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
 
+                // リフレッシュトークン内のスコープを再検証（許可リスト変更に対応）
+                if (!OAuthScope.isValid(verified.authorizedData.scope)) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_SCOPE, "Refresh token contains invalid scope(s)")
+                    return@post
+                }
+
                 // RFC 6749 Section 10.4: リフレッシュトークンローテーション
                 // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
                 if (!revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)) {
@@ -134,7 +140,8 @@ object TokenRouter: KoinComponent {
                     tokenType = "Bearer",
                     expiresIn = EXPIRES_IN,
                     refreshToken = newRefreshToken,
-                    idToken = null
+                    idToken = null,
+                    scope = verified.authorizedData.scope
                 ))
             }else if (grantType == "authorization_code") {
                 //authorization_codeの処理 https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
@@ -236,7 +243,8 @@ object TokenRouter: KoinComponent {
                         tokenType = "Bearer",
                         expiresIn = EXPIRES_IN,
                         refreshToken = refreshToken,
-                        idToken = idToken
+                        idToken = idToken,
+                        scope = data.scope
                     )
                 )
             }else{

@@ -156,6 +156,7 @@ class CorePathsGenerator {
                 "expires_in" to Schema(type = "integer", description = "Token expiration time in seconds"),
                 "refresh_token" to Schema(type = "string", description = "Refresh token (JWT)"),
                 "id_token" to Schema(type = "string", description = "OpenID Connect ID Token (JWT)", nullable = true),
+                "scope" to Schema(type = "string", description = "Granted scopes (space-separated)", nullable = true),
             ),
             required = listOf("access_token", "token_type", "expires_in"),
         )

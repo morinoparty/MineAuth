@@ -61,6 +61,14 @@ grant_type=authorization_code&code=abc123
 }
 ```
 
+### Invalid Scope
+
+Returned as a redirect from the authorization endpoint when requesting unknown scopes.
+
+```
+?error=invalid_scope&error_description=Invalid+scope(s):+admin&state=...
+```
+
 ### Unsupported grant_type
 
 ```json

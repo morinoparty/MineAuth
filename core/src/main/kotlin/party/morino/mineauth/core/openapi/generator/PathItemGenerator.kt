@@ -69,7 +69,7 @@ class PathItemGenerator : KoinComponent {
 
         // セキュリティ要件を生成
         val security = if (endpoint.requiresAuthentication) {
-            listOf(mapOf("oauth2" to listOf("read.*", "write.*")))
+            listOf(mapOf("oauth2" to listOf("openid", "plugin")))
         } else {
             null
         }

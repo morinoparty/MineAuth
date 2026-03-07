@@ -143,8 +143,11 @@ class OpenApiGenerator : KoinComponent {
                             authorizationUrl = "$baseUrl/oauth2/authorize",
                             tokenUrl = "$baseUrl/oauth2/token",
                             scopes = mapOf(
-                                "read.*" to "Grants read access for resources",
-                                "write.*" to "Grants write access for resources"
+                                "openid" to "OpenID Connect: returns sub (Subject Identifier)",
+                                "profile" to "Returns name, preferred_username, picture",
+                                "email" to "Returns email, email_verified",
+                                "plugin" to "Grants access to plugin data APIs",
+                                "roles" to "Returns LuckPerms group names"
                             )
                         )
                     )
