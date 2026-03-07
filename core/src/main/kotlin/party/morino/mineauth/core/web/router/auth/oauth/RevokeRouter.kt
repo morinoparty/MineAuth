@@ -9,6 +9,7 @@ import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlin.coroutines.cancellation.CancellationException
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
@@ -159,6 +160,9 @@ object RevokeRouter : KoinComponent {
 
             // 失効処理に必要なクレームを抽出して登録する
             registerRevocation(jwt, tokenTypeHint, clientId)
+        } catch (e: CancellationException) {
+            // コルーチンのキャンセルは再送出する（握り潰してはいけない）
+            throw e
         } catch (e: Exception) {
             plugin.logger.warning("Token revocation error: ${e.message}")
             // 内部エラーは成功として扱う（情報漏洩防止）
