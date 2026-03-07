@@ -2,10 +2,14 @@ package party.morino.mineauth.core.web.router.auth.oauth
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
+import com.auth0.jwt.exceptions.JWTVerificationException
+import com.auth0.jwt.exceptions.TokenExpiredException
+import com.auth0.jwt.interfaces.DecodedJWT
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlin.coroutines.cancellation.CancellationException
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
@@ -141,51 +145,76 @@ object RevokeRouter : KoinComponent {
                 .withIssuer(get<JWTConfigData>().issuer)
                 .build()
 
-            // 署名検証（有効期限は無視 - 期限切れトークンも失効可能）
-            val jwt = try {
+            // 署名検証を行い、期限切れトークンも許容する
+            // TokenExpiredException: 署名は検証済みだが有効期限切れ → デコードして失効処理を続行
+            // その他のJWTVerificationException: 署名不正等 → 成功として扱う（情報漏洩防止）
+            val jwt: DecodedJWT = try {
                 verifier.verify(token)
-            } catch (e: Exception) {
-                // 署名が無効なトークンは失効対象外だが、成功として扱う
+            } catch (e: TokenExpiredException) {
+                // 署名・issuerは検証済み。期限切れでもRFC 7009に基づき失効処理を続行する
+                JWT.decode(token)
+            } catch (e: JWTVerificationException) {
+                // 署名不正・issuer不一致などは失効対象外だが、成功として扱う
                 return true
             }
 
-            // JWT IDの取得
-            val tokenId = jwt.id
-            if (tokenId == null) {
-                // JWT IDがないトークンは失効対象外
-                return true
-            }
-
-            // トークンのclient_idを確認（自分のクライアントのトークンのみ失効可能）
-            val tokenClientId = jwt.getClaim("client_id").asString()
-            if (tokenClientId != clientId) {
-                // 他のクライアントのトークンは失効できないが、成功として扱う（情報漏洩防止）
-                plugin.logger.warning("Attempted to revoke token of different client: requested=$clientId, token=$tokenClientId")
-                return true
-            }
-
-            // トークン種別の判定
-            val tokenTypeFromClaim = jwt.getClaim("token_type").asString()
-            val tokenType = when {
-                tokenTypeFromClaim == "refresh_token" -> TokenType.REFRESH_TOKEN
-                tokenTypeFromClaim == "token" -> TokenType.ACCESS_TOKEN
-                tokenTypeHint != null -> TokenType.fromHint(tokenTypeHint) ?: TokenType.ACCESS_TOKEN
-                else -> TokenType.ACCESS_TOKEN
-            }
-
-            // トークンの有効期限を取得
-            val expiresAt = jwt.expiresAt?.let {
-                LocalDateTime.ofInstant(Instant.ofEpochMilli(it.time), ZoneId.systemDefault())
-            } ?: LocalDateTime.now().plusDays(30)
-
-            // 失効トークンとして登録
-            val result = RevokedTokenRepository.revoke(tokenId, tokenType, clientId, expiresAt)
-
-            result.isRight()
+            // 失効処理に必要なクレームを抽出して登録する
+            registerRevocation(jwt, tokenTypeHint, clientId)
+        } catch (e: CancellationException) {
+            // コルーチンのキャンセルは再送出する（握り潰してはいけない）
+            throw e
         } catch (e: Exception) {
             plugin.logger.warning("Token revocation error: ${e.message}")
-            // エラーが発生しても成功として扱う（情報漏洩防止）
+            // 内部エラーは成功として扱う（情報漏洩防止）
             true
         }
+    }
+
+    /**
+     * 検証済みJWTからクレームを抽出し、失効トークンとして登録する
+     *
+     * @param jwt 検証済み（または期限切れ）のJWT
+     * @param tokenTypeHint トークン種別のヒント
+     * @param clientId リクエスト元のクライアントID
+     * @return 登録が成功した場合true
+     */
+    private suspend fun registerRevocation(
+        jwt: DecodedJWT,
+        tokenTypeHint: String?,
+        clientId: String
+    ): Boolean {
+        // JWT IDの取得
+        val tokenId = jwt.id
+        if (tokenId == null) {
+            // JWT IDがないトークンは失効対象外
+            return true
+        }
+
+        // トークンのclient_idを確認（自分のクライアントのトークンのみ失効可能）
+        val tokenClientId = jwt.getClaim("client_id").asString()
+        if (tokenClientId != clientId) {
+            // 他のクライアントのトークンは失効できないが、成功として扱う（情報漏洩防止）
+            plugin.logger.warning("Attempted to revoke token of different client: requested=$clientId, token=$tokenClientId")
+            return true
+        }
+
+        // トークン種別の判定（claim値 "token" はアクセストークンを示す）
+        val tokenTypeFromClaim = jwt.getClaim("token_type").asString()
+        val tokenType = when {
+            tokenTypeFromClaim == "refresh_token" -> TokenType.REFRESH_TOKEN
+            tokenTypeFromClaim == "token" -> TokenType.ACCESS_TOKEN
+            tokenTypeHint != null -> TokenType.fromHint(tokenTypeHint) ?: TokenType.ACCESS_TOKEN
+            else -> TokenType.ACCESS_TOKEN
+        }
+
+        // トークンの有効期限を取得
+        val expiresAt = jwt.expiresAt?.let {
+            LocalDateTime.ofInstant(Instant.ofEpochMilli(it.time), ZoneId.systemDefault())
+        } ?: LocalDateTime.now().plusDays(30)
+
+        // 失効トークンとして登録
+        val result = RevokedTokenRepository.revoke(tokenId, tokenType, clientId, expiresAt)
+
+        return result.isRight()
     }
 }
