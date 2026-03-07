@@ -55,6 +55,17 @@ object OAuthValidation : KoinComponent {
         }
     }
 
+    /**
+     * スコープ文字列を検証する
+     * RFC 6749 Section 3.3: リクエストされたスコープが許可リストに含まれているか確認
+     *
+     * @param scopeString スペース区切りのスコープ文字列
+     * @return 全てのスコープが有効な場合true
+     */
+    fun validateScope(scopeString: String): Boolean {
+        return OAuthScope.isValid(scopeString)
+    }
+
     fun validatePKCE(codeChallenge: String?, codeChallengeMethod: String?): Boolean {
         return !(codeChallenge == null || codeChallengeMethod != "S256")
     }

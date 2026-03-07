@@ -19,6 +19,7 @@ import party.morino.mineauth.core.web.router.auth.oauth.OAuthService
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.buildErrorRedirectUri
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.buildSuccessRedirectUri
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validatePKCE
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateScope
 
 /**
  * OAuth2.0の認可エンドポイントを提供するルーター
@@ -83,6 +84,15 @@ object AuthorizeRouter: KoinComponent {
                 return@get
             }
 
+            // RFC 6749 Section 3.3: スコープの検証
+            if (!validateScope(scope)) {
+                val invalidScopes = OAuthScope.findInvalidScopes(scope)
+                plugin.logger.warning("Authorize error: Invalid scope(s): $invalidScopes - client_id=$clientId")
+                val errorUri = buildErrorRedirectUri(redirectUri, "invalid_scope", "Invalid scope(s): ${invalidScopes.joinToString(", ")}", state)
+                call.respondRedirect(errorUri)
+                return@get
+            }
+
             // PKCE(Proof Key for Code Exchange)のバリデーション
             if (!validatePKCE(codeChallenge, codeChallengeMethod)) {
                 plugin.logger.warning("Authorize error: Unsupported PKCE method - client_id=$clientId")
@@ -92,8 +102,9 @@ object AuthorizeRouter: KoinComponent {
             }
 
             // 認可画面に表示するデータの準備
-            // スコープ文字列をリストに分割（テンプレートで個別表示するため）
-            val scopeList = scope.split(" ").filter { it.isNotBlank() }
+            // スコープ文字列を正規化（余分な空白を除去）
+            val normalizedScope = OAuthScope.normalize(scope)
+            val scopeList = OAuthScope.parse(scope)
 
             val model = mutableMapOf(
                 "clientId" to clientData.clientId,
@@ -101,7 +112,7 @@ object AuthorizeRouter: KoinComponent {
                 "redirectUri" to redirectUri,
                 "responseType" to "code",
                 "state" to state,
-                "scope" to scope,
+                "scope" to normalizedScope,
                 "scopeList" to scopeList,
                 "issuer" to config.server.baseUrl,
                 "codeChallenge" to codeChallenge,
@@ -158,6 +169,15 @@ object AuthorizeRouter: KoinComponent {
                 return@post
             }
 
+            // RFC 6749 Section 3.3: スコープの検証
+            if (!validateScope(scope)) {
+                val invalidScopes = OAuthScope.findInvalidScopes(scope)
+                plugin.logger.warning("Authorize POST error: Invalid scope(s): $invalidScopes - client_id=$clientId")
+                val errorUri = buildErrorRedirectUri(redirectUri, "invalid_scope", "Invalid scope(s): ${invalidScopes.joinToString(", ")}", state)
+                call.respondRedirect(errorUri)
+                return@post
+            }
+
             // ユーザー認証
             val authResult = OAuthService.authenticateUser(username, password)
             val uniqueId = when (authResult) {
@@ -175,6 +195,8 @@ object AuthorizeRouter: KoinComponent {
             }
 
             // 認可コードの生成と保存
+            // スコープ文字列を正規化（余分な空白を除去してから保存）
+            val normalizedScope = OAuthScope.normalize(scope)
             // 認証時刻を記録（ID Tokenのauth_timeクレームに使用）
             val authTime = System.currentTimeMillis()
             // RFC 6749 Section 10.10: 暗号学的に安全な乱数で認可コードを生成
@@ -182,7 +204,7 @@ object AuthorizeRouter: KoinComponent {
             authorizedData[code] = AuthorizedData(
                 clientId = clientId,
                 redirectUri = redirectUri,
-                scope = scope,
+                scope = normalizedScope,
                 state = state,
                 codeChallenge = codeChallenge,
                 codeChallengeMethod = codeChallengeMethod,
