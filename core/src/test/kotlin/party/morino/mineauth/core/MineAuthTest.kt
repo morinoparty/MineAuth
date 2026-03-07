@@ -21,7 +21,6 @@ import party.morino.mineauth.core.file.data.ObservabilityConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.mocks.config.PluginDirectoryMock
 import party.morino.mineauth.core.plugin.pluginModule
-import party.morino.mineauth.core.web.router.auth.oauth.TokenRouter.plugin
 
 /**
  * MineAuthのテスト用拡張機能

@@ -45,6 +45,7 @@ dependencies {
     testImplementation(libs.mock.bukkit)
     testImplementation(libs.ktor.server.test.host)
     // compileOnlyのライブラリをテストでも使えるようにする
+    testImplementation(libs.paper.api)
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.bundles.coroutines)
     testImplementation(libs.bundles.exposed)
@@ -109,7 +110,7 @@ tasks {
         }
     }
     runServer {
-        minecraftVersion("1.21.8")
+        minecraftVersion("1.21.11")
         val plugins = runPaper.downloadPluginsSpec {
             //Vault
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")
