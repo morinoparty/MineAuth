@@ -15,6 +15,8 @@ data class TokenData(
     @SerialName("refresh_token") val refreshToken: String,
     // OIDC ID Token: scopeに"openid"が含まれる場合のみ発行
     @SerialName("id_token") val idToken: String? = null,
+    // RFC 6749 Section 5.1: 付与されたスコープ
+    val scope: String? = null,
     // 注: stateはRFC 6749 Section 5.1により、トークンレスポンスには含めない
     // stateはリダイレクト時（認可コードと共に）のみ返却される
 )

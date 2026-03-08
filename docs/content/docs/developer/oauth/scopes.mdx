@@ -1,0 +1,61 @@
+---
+title: Scopes
+description: OAuth 2.0 scope definitions and validation
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+MineAuth validates requested scopes according to RFC 6749 Section 3.3. Only scopes defined below are accepted; requesting an unknown scope will result in an `invalid_scope` error.
+
+## Supported Scopes
+
+| Scope | Description |
+|-------|-------------|
+| `openid` | Required for OIDC. Returns `sub` (Subject Identifier). |
+| `profile` | Returns `name`, `preferred_username`, `picture`. |
+| `email` | Returns `email`, `email_verified`. Requires `emailFormat` configuration. |
+| `plugin` | Grants access to plugin data APIs. |
+| `roles` | Returns `roles` (LuckPerms group names). Requires LuckPerms. |
+
+## Scope Validation
+
+Scopes are validated at the authorization endpoint (`/oauth2/authorize`). If any of the requested scopes are not in the supported list, the server responds with an `invalid_scope` error redirect.
+
+```
+GET /oauth2/authorize?response_type=code&client_id=...&scope=openid+unknown_scope&...
+```
+
+The redirect will include:
+
+```
+?error=invalid_scope&error_description=Invalid+scope(s):+unknown_scope&state=...
+```
+
+## Scope in Token Response
+
+The token endpoint returns the granted scopes in the `scope` field of the token response, as specified by RFC 6749 Section 5.1.
+
+```json
+{
+  "access_token": "eyJhbGci...",
+  "token_type": "Bearer",
+  "expires_in": 300,
+  "refresh_token": "eyJhbGci...",
+  "id_token": "eyJhbGci...",
+  "scope": "openid profile"
+}
+```
+
+## Scope Enforcement
+
+Granted scopes control what data is returned from the UserInfo endpoint and what claims are included in the ID Token.
+See the [UserInfo Endpoint](./userinfo) page for details on scope-based claims.
+
+<Callout type="info">
+  The `plugin` scope controls access to plugin data APIs provided by addon plugins. It does not affect the UserInfo endpoint response.
+</Callout>
+
+## References
+
+- [RFC 6749 - Scope](https://datatracker.ietf.org/doc/html/rfc6749#section-3.3)
+- [OpenID Connect Core 1.0 - Scope Values](https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims)
