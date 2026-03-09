@@ -1,6 +1,6 @@
 package party.morino.mineauth.core.database
 
-import org.jetbrains.exposed.sql.Table
+import org.jetbrains.exposed.v1.core.Table
 
 object UserAuthData: Table() {
     val uuid = varchar("uuid", 36)

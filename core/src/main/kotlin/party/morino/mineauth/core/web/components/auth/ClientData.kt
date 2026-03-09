@@ -12,9 +12,9 @@ import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
 import party.morino.mineauth.core.utils.Argon2Utils
-import org.jetbrains.exposed.sql.selectAll
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import party.morino.mineauth.core.database.OAuthClients as OAuthClientsTable
 
 /**

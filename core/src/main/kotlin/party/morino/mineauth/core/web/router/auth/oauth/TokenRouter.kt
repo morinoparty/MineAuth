@@ -1,7 +1,7 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
+import arrow.core.Either
 import com.auth0.jwt.JWT
-import com.auth0.jwt.algorithms.Algorithm
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -12,22 +12,18 @@ import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
-import party.morino.mineauth.core.file.utils.KeyUtils.getKeys
+import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
-import party.morino.mineauth.core.web.components.auth.ClientData
 import party.morino.mineauth.core.web.components.auth.TokenData
 import party.morino.mineauth.core.web.components.auth.UserInfoResponse
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
-import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractBasicCredentials
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.authenticateClient
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractClientCredentials
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.TokenType
-import party.morino.mineauth.core.web.router.auth.oauth.OAuthErrorCode
-import party.morino.mineauth.core.web.router.auth.oauth.respondOAuthError
 import java.security.MessageDigest
-import java.security.interfaces.RSAPrivateKey
-import java.security.interfaces.RSAPublicKey
 import java.util.*
 
 object TokenRouter: KoinComponent {
@@ -41,60 +37,32 @@ object TokenRouter: KoinComponent {
             val formParameters = call.receiveParameters()
             val grantType = formParameters["grant_type"]
 
-            // client_secret_basic (Authorization: Basic) からのフォールバック取得
-            val basicCredentials = extractBasicCredentials()
-
-            // RFC 6749 Section 2.3: クライアント認証方式は単一であるべき
-            // Authorization: Basic ヘッダーとボディのclient_id/client_secretの併用を禁止
-            val hasBodyCredentials = formParameters["client_id"] != null || formParameters["client_secret"] != null
-            if (basicCredentials != null && hasBodyCredentials) {
-                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Multiple client authentication methods are not allowed")
-                return@post
-            }
-
             // RFC 6749 Section 5.2: grant_type欠如はinvalid_request
             if (grantType == null) {
                 call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: grant_type")
                 return@post
             }
 
+            // クレデンシャル抽出（Basic認証 + フォームパラメータ、併用禁止チェック含む）
+            val credentials = when (val result = extractClientCredentials(formParameters)) {
+                is Either.Left -> {
+                    call.respondOAuthError(result.value.errorCode, result.value.message)
+                    return@post
+                }
+                is Either.Right -> result.value
+            }
+
             if (grantType == "refresh_token") {
                 //refresh_tokenの処理 https://tools.ietf.org/html/rfc6749#section-6
-                // client_secret_post → client_secret_basic の優先順でクレデンシャルを取得
-                val clientId = formParameters["client_id"] ?: basicCredentials?.first
-                // Basic認証でsecretが空文字の場合はPublicクライアントとして扱う
-                val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
-                if (clientId == null) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_id")
-                    return@post
-                }
-
-                // クライアントデータを取得してタイプに応じた認証を実行
-                val clientData = try {
-                    ClientData.getClientData(clientId)
-                } catch (e: Exception) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
-                    return@post
-                }
-
-                // DB上のクライアントタイプに基づいて認証を分岐（secretの有無ではなく登録タイプで判定）
-                when (clientData) {
-                    is ClientData.ConfidentialClientData -> {
-                        // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
-                        if (clientSecret == null) {
-                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
-                            return@post
-                        }
-                        // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
-                        if (!clientData.verifySecret(clientSecret)) {
-                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
-                            return@post
-                        }
+                // クライアント認証（Confidential/Public両対応）
+                val clientData = when (val result = authenticateClient(credentials)) {
+                    is Either.Left -> {
+                        call.respondOAuthError(result.value.errorCode, result.value.message)
+                        return@post
                     }
-                    is ClientData.PublicClientData -> {
-                        // Publicクライアント: client_secretが送られても無視する
-                    }
+                    is Either.Right -> result.value
                 }
+                val clientId = clientData.clientId
 
                 val refreshToken = formParameters["refresh_token"]
                 if (refreshToken == null) {
@@ -149,24 +117,28 @@ object TokenRouter: KoinComponent {
                 OAuthRouter.cleanupExpiredCodes(AUTHORIZATION_CODE_LIFETIME_MS)
                 val code = formParameters["code"]
                 val redirectUri = formParameters["redirect_uri"]
-                // client_secret_post → client_secret_basic の優先順でクレデンシャルを取得
-                val clientId = formParameters["client_id"] ?: basicCredentials?.first
                 val codeVerifier = formParameters["code_verifier"]
-
-                // Basic認証でsecretが空文字の場合はPublicクライアントとして扱う
-                val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
+                val clientId = credentials.clientId
 
                 // RFC 6749 Section 5.2: 必須パラメータの欠如はinvalid_requestで返す
                 // 認可コード参照より先にチェックし、不要なデータ消費を防ぐ
                 val missingParams = buildList {
                     if (code == null) add("code")
                     if (redirectUri == null) add("redirect_uri")
-                    if (clientId == null) add("client_id")
                     if (codeVerifier == null) add("code_verifier")
                 }
                 if (missingParams.isNotEmpty()) {
                     call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters: ${missingParams.joinToString(", ")}")
                     return@post
+                }
+
+                // クライアント認証（Confidential/Public両対応）
+                val clientData = when (val result = authenticateClient(credentials)) {
+                    is Either.Left -> {
+                        call.respondOAuthError(result.value.errorCode, result.value.message)
+                        return@post
+                    }
+                    is Either.Right -> result.value
                 }
 
                 // ConcurrentHashMap.removeで取得と削除を原子的に行い、並行リクエストによる二重使用を防止
@@ -183,41 +155,10 @@ object TokenRouter: KoinComponent {
                 }
 
                 // nullチェック済みのためnon-null変数に再代入
-                val validClientId = clientId!!
                 val validRedirectUri = redirectUri!!
                 val validCodeVerifier = codeVerifier!!
 
-                // クライアントデータを取得してタイプに応じた認証を実行
-                val clientData = try {
-                    ClientData.getClientData(validClientId)
-                } catch (e: Exception) {
-                    plugin.logger.warning("Client not found: $validClientId")
-                    call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
-                    return@post
-                }
-
-                // DB上のクライアントタイプに基づいて認証を分岐（secretの有無ではなく登録タイプで判定）
-                when (clientData) {
-                    is ClientData.ConfidentialClientData -> {
-                        // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
-                        if (clientSecret == null) {
-                            plugin.logger.warning("Confidential client $validClientId attempted token exchange without client_secret")
-                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
-                            return@post
-                        }
-                        // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
-                        if (!clientData.verifySecret(clientSecret)) {
-                            plugin.logger.warning("Client authentication failed for $validClientId: invalid secret")
-                            call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
-                            return@post
-                        }
-                    }
-                    is ClientData.PublicClientData -> {
-                        // Publicクライアント: client_secretが送られても無視する
-                    }
-                }
-
-                if (data.clientId != validClientId || data.redirectUri != validRedirectUri) {
+                if (data.clientId != clientId || data.redirectUri != validRedirectUri) {
                     call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid client_id or redirect_uri")
                     return@post
                 }
@@ -227,11 +168,11 @@ object TokenRouter: KoinComponent {
                     return@post
                 }
 
-                val token = issueToken(data, validClientId)
-                val refreshToken = issueRefreshToken(data, validClientId)
+                val token = issueToken(data, clientId)
+                val refreshToken = issueRefreshToken(data, clientId)
                 // scopeに"openid"が含まれる場合のみID Tokenを発行（OIDC準拠）
                 val idToken = if (data.scope.contains("openid")) {
-                    issueIdToken(data, validClientId, token)
+                    issueIdToken(data, clientId, token)
                 } else null
 
                 // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
@@ -262,11 +203,7 @@ object TokenRouter: KoinComponent {
         .withIssuedAt(Date(System.currentTimeMillis()))
         .withJWTId(UUID.randomUUID().toString())
         .withClaim("client_id", clientId).withClaim("playerUniqueId", data.uniqueId.toString()).withClaim("scope", data.scope).withClaim("state", data.state).withClaim("scope", data.scope)
-        .withClaim("token_type", "token").sign(
-            Algorithm.RSA256(
-                getKeys().second as RSAPublicKey, getKeys().first as RSAPrivateKey
-            )
-        )
+        .withClaim("token_type", "token").sign(JwtProvider.algorithm)
 
     private fun issueRefreshToken(
         data: AuthorizedData, clientId: String?
@@ -280,11 +217,7 @@ object TokenRouter: KoinComponent {
         .withClaim("scope", data.scope)
         .withClaim("state", data.state)
         .withClaim("scope", data.scope)
-        .withClaim("token_type", "refresh_token").sign(
-            Algorithm.RSA256(
-                getKeys().second as RSAPublicKey, getKeys().first as RSAPrivateKey
-            )
-        )
+        .withClaim("token_type", "refresh_token").sign(JwtProvider.algorithm)
 
     /**
      * リフレッシュトークンの検証結果
@@ -306,17 +239,8 @@ object TokenRouter: KoinComponent {
      */
     private fun verifyAndDecodeRefreshToken(refreshToken: String): VerifiedRefreshToken? {
         return try {
-            // JWT署名と有効期限を検証（RFC 6749準拠のセキュリティ要件）
-            val algorithm = Algorithm.RSA256(
-                getKeys().second as RSAPublicKey,
-                getKeys().first as RSAPrivateKey
-            )
-            val verifier = JWT.require(algorithm)
-                .withIssuer(get<JWTConfigData>().issuer)
-                .build()
-
-            // 署名検証・有効期限検証を実行（無効な場合は例外がスローされる）
-            val jwt = verifier.verify(refreshToken)
+            // JWT署名と有効期限を検証（JwtProviderのキャッシュ済みverifierを使用）
+            val jwt = JwtProvider.verifier.verify(refreshToken)
 
             // token_typeがrefresh_tokenであることを確認
             val tokenType = jwt.getClaim("token_type").asString()
@@ -476,12 +400,7 @@ object TokenRouter: KoinComponent {
             }
             // 任意クレーム（Authorization Code Flowでは任意だが、検証に有用）
             .withClaim("at_hash", calculateAtHash(accessToken))      // at_hash: Access Token hash
-            // 署名（RS256）
-            .sign(
-                Algorithm.RSA256(
-                    getKeys().second as RSAPublicKey,
-                    getKeys().first as RSAPrivateKey
-                )
-            )
+            // 署名（RS256）— JwtProviderのキャッシュ済みアルゴリズムを使用
+            .sign(JwtProvider.algorithm)
     }
 }

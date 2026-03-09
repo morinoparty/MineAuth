@@ -60,7 +60,15 @@ data class OIDCDiscoveryResponse(
 
     // 推奨: コードチャレンジメソッド（PKCE）
     @SerialName("code_challenge_methods_supported")
-    val codeChallengeMethodsSupported: List<String>
+    val codeChallengeMethodsSupported: List<String>,
+
+    // RFC 7662: Token Introspection Endpoint
+    @SerialName("introspection_endpoint")
+    val introspectionEndpoint: String,
+
+    // OIDC RP-Initiated Logout: End Session Endpoint
+    @SerialName("end_session_endpoint")
+    val endSessionEndpoint: String
 ) {
     companion object {
         /**
@@ -131,7 +139,9 @@ data class OIDCDiscoveryResponse(
                     "authorization_code",
                     "refresh_token"
                 ),
-                codeChallengeMethodsSupported = listOf("S256")
+                codeChallengeMethodsSupported = listOf("S256"),
+                introspectionEndpoint = "$normalizedUrl/oauth2/introspect",
+                endSessionEndpoint = "$normalizedUrl/oauth2/end_session"
             )
         }
     }

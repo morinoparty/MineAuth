@@ -3,8 +3,9 @@ package party.morino.mineauth.core.web.router.auth.oauth
 import com.password4j.Password
 import kotlinx.coroutines.Dispatchers
 import org.bukkit.Bukkit
-import org.jetbrains.exposed.sql.selectAll
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.core.database.UserAuthData
 import party.morino.mineauth.core.database.UserAuthData.uuid

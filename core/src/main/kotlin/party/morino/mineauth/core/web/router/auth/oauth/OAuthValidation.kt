@@ -1,5 +1,8 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
@@ -142,5 +145,120 @@ object OAuthValidation : KoinComponent {
         } catch (e: IllegalArgumentException) {
             null
         }
+    }
+
+    /**
+     * フォームパラメータとBasic認証ヘッダーからクライアントクレデンシャルを抽出する
+     * RFC 6749 Section 2.3: 認証方式の併用禁止チェックを含む
+     *
+     * @param formParameters フォームパラメータ
+     * @return 抽出されたクレデンシャル、または認証エラー
+     */
+    fun RoutingContext.extractClientCredentials(
+        formParameters: Parameters
+    ): Either<ClientAuthFailure, ClientCredentials> {
+        val basicCredentials = extractBasicCredentials()
+
+        // RFC 6749 Section 2.3: 認証方式の併用を禁止
+        val hasBodyCredentials = formParameters["client_id"] != null || formParameters["client_secret"] != null
+        if (basicCredentials != null && hasBodyCredentials) {
+            return ClientAuthFailure(
+                OAuthErrorCode.INVALID_REQUEST,
+                "Multiple client authentication methods are not allowed"
+            ).left()
+        }
+
+        // client_secret_post → client_secret_basic の優先順でクレデンシャルを取得
+        val clientId = formParameters["client_id"] ?: basicCredentials?.first
+            ?: return ClientAuthFailure(
+                OAuthErrorCode.INVALID_REQUEST,
+                "Missing required parameter: client_id"
+            ).left()
+
+        // Basic認証でsecretが空文字の場合はPublicクライアントとして扱う
+        val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
+
+        return ClientCredentials(clientId, clientSecret).right()
+    }
+
+    /**
+     * Confidentialクライアントを認証する
+     *
+     * client_id, client_secretの存在確認、クライアントデータの取得、
+     * クライアントタイプの検証、シークレットの検証を一括で行う
+     * IntrospectRouter/RevokeRouter向け（Confidentialクライアントのみ許可）
+     *
+     * @param credentials 抽出済みのクレデンシャル
+     * @return 認証済みのConfidentialClientData、または認証エラー
+     */
+    fun authenticateConfidentialClient(
+        credentials: ClientCredentials
+    ): Either<ClientAuthFailure, ClientData.ConfidentialClientData> {
+        // Confidentialクライアントはclient_secret必須
+        if (credentials.clientSecret == null) {
+            return ClientAuthFailure(
+                OAuthErrorCode.INVALID_REQUEST,
+                "Missing required parameter: client_secret"
+            ).left()
+        }
+
+        // クライアントデータをDBから取得
+        val clientData = try {
+            ClientData.getClientData(credentials.clientId)
+        } catch (e: Exception) {
+            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client not found").left()
+        }
+
+        // Confidentialクライアントのみ許可
+        if (clientData !is ClientData.ConfidentialClientData) {
+            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch").left()
+        }
+
+        // Argon2idによる定数時間比較でシークレットを検証（タイミング攻撃対策）
+        if (!clientData.verifySecret(credentials.clientSecret)) {
+            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed").left()
+        }
+
+        return clientData.right()
+    }
+
+    /**
+     * 任意のタイプのクライアントを認証する
+     *
+     * Confidential: client_secret必須、Argon2idで検証
+     * Public: client_secretは不要（送信されても無視）
+     * TokenRouter向け（両タイプのクライアントをサポート）
+     *
+     * @param credentials 抽出済みのクレデンシャル
+     * @return 認証済みのClientData、または認証エラー
+     */
+    fun authenticateClient(
+        credentials: ClientCredentials
+    ): Either<ClientAuthFailure, ClientData> {
+        // クライアントデータをDBから取得
+        val clientData = try {
+            ClientData.getClientData(credentials.clientId)
+        } catch (e: Exception) {
+            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client not found").left()
+        }
+
+        // DB上のクライアントタイプに基づいて認証を分岐（secretの有無ではなく登録タイプで判定）
+        when (clientData) {
+            is ClientData.ConfidentialClientData -> {
+                // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
+                if (credentials.clientSecret == null) {
+                    return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication required").left()
+                }
+                // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
+                if (!clientData.verifySecret(credentials.clientSecret)) {
+                    return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed").left()
+                }
+            }
+            is ClientData.PublicClientData -> {
+                // Publicクライアント: client_secretが送られても無視する
+            }
+        }
+
+        return clientData.right()
     }
 }
