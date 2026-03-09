@@ -7,6 +7,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import party.morino.mineauth.core.web.router.auth.oauth.AuthorizeRouter.authorizeRouter
 import party.morino.mineauth.core.web.router.auth.oauth.ProfileRouter.profileRouter
+import party.morino.mineauth.core.web.router.auth.oauth.EndSessionRouter.endSessionRouter
+import party.morino.mineauth.core.web.router.auth.oauth.IntrospectRouter.introspectRouter
 import party.morino.mineauth.core.web.router.auth.oauth.RevokeRouter.revokeRouter
 import party.morino.mineauth.core.web.router.auth.oauth.TokenRouter.tokenRouter
 
@@ -17,6 +19,8 @@ object OAuthRouter: KoinComponent {
             tokenRouter()
             profileRouter()
             revokeRouter()
+            introspectRouter()
+            endSessionRouter()
         }
     }
 

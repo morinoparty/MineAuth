@@ -1,0 +1,82 @@
+---
+title: End Session Endpoint
+description: RP-Initiated Logout endpoint specification based on OpenID Connect
+icon: LogOut
+---
+
+The End Session endpoint allows clients to initiate user logout from the authorization server. After logout, users can be redirected back to the client application.
+
+## Endpoint
+
+```
+GET /oauth2/end_session
+```
+
+## Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id_token_hint` | Recommended | Previously issued ID Token to identify the client |
+| `post_logout_redirect_uri` | No | URL to redirect the user to after logout |
+| `state` | No | Opaque value to maintain state between the request and callback |
+
+## Flow
+
+1. The client redirects the user to `/oauth2/end_session` with the appropriate parameters
+2. The authorization server validates the `id_token_hint` (if provided)
+3. If `post_logout_redirect_uri` is provided, the server validates it against the client's registered redirect URIs
+4. The server redirects to `post_logout_redirect_uri` with `state` (if provided)
+
+## Request Example
+
+```
+GET /oauth2/end_session?
+  id_token_hint=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...&
+  post_logout_redirect_uri=https://example.com/logged-out&
+  state=abc123
+```
+
+## Response
+
+### With Redirect URI
+
+If `post_logout_redirect_uri` is provided and valid, the server responds with a 302 redirect.
+
+```http
+HTTP/1.1 302 Found
+Location: https://example.com/logged-out?state=abc123
+```
+
+### Without Redirect URI
+
+If no redirect URI is provided, the server returns a success message.
+
+```json
+{
+  "message": "Logout successful"
+}
+```
+
+### Error Response
+
+| Error Code | Description |
+|------------|-------------|
+| `invalid_request` | Invalid `id_token_hint` or unregistered `post_logout_redirect_uri` |
+
+## Validation Rules
+
+### ID Token Hint
+
+- The `id_token_hint` must be a valid JWT signed by this authorization server
+- Expired ID Tokens are accepted (users may log out after token expiration)
+- Invalid signatures are rejected
+
+### Post-Logout Redirect URI
+
+- The `id_token_hint` is required when `post_logout_redirect_uri` is specified
+- The redirect URI must match a registered redirect URI for the client identified by the ID Token
+- The same redirect URI validation rules apply as for the authorization endpoint
+
+## References
+
+- [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html)

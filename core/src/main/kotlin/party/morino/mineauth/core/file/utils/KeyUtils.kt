@@ -149,7 +149,22 @@ object KeyUtils : KoinComponent {
         jwksFile.writeText(jwkSet.toString(true))
     }
 
-    fun getKeys(): Pair<PrivateKey, PublicKey> {
+    // 鍵ペアのキャッシュ（PEMファイルの読み込みは初回のみ）
+    // lazy はデフォルトでスレッドセーフ（SynchronizedLazyImpl）
+    private val cachedKeys: Pair<PrivateKey, PublicKey> by lazy { loadKeysFromDisk() }
+
+    /**
+     * RSA鍵ペアを取得する（キャッシュ済み）
+     * 初回呼び出し時にPEMファイルから読み込み、以降はキャッシュを返す
+     *
+     * @return Pair(秘密鍵, 公開鍵)
+     */
+    fun getKeys(): Pair<PrivateKey, PublicKey> = cachedKeys
+
+    /**
+     * PEMファイルからRSA鍵ペアを読み込む（内部用）
+     */
+    private fun loadKeysFromDisk(): Pair<PrivateKey, PublicKey> {
         val privateKeyFile = generatedDir.resolve("privateKey.pem")
         val publicKeyFile = generatedDir.resolve("publicKey.pem")
         val privateKeyContent = privateKeyFile.readText()

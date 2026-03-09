@@ -42,7 +42,9 @@ GET /.well-known/openid-configuration
     "at_hash"
   ],
   "grant_types_supported": ["authorization_code", "refresh_token"],
-  "code_challenge_methods_supported": ["S256"]
+  "code_challenge_methods_supported": ["S256"],
+  "introspection_endpoint": "https://api.example.com/oauth2/introspect",
+  "end_session_endpoint": "https://api.example.com/oauth2/end_session"
 }
 ```
 
@@ -68,6 +70,8 @@ The `roles` scope and its claim are only included when [LuckPerms](https://luckp
 | `claims_supported` | Supported claims |
 | `grant_types_supported` | Supported grant types |
 | `code_challenge_methods_supported` | PKCE code challenge methods |
+| `introspection_endpoint` | Token introspection endpoint URL (RFC 7662) |
+| `end_session_endpoint` | RP-Initiated Logout endpoint URL (OIDC) |
 
 ## Configuration
 
@@ -90,3 +94,5 @@ If using a reverse proxy, set the proxy URL here.
 - **Token**: `/oauth2/token` - Token issuance
 - **UserInfo**: `/oauth2/userinfo` - User information retrieval
 - **Revocation**: `/oauth2/revoke` - Token revocation
+- **Introspection**: `/oauth2/introspect` - Token introspection
+- **End Session**: `/oauth2/end_session` - RP-Initiated Logout

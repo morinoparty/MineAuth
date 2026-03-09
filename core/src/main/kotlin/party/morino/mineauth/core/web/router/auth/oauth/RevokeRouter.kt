@@ -1,9 +1,7 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
-import com.auth0.jwt.JWT
-import com.auth0.jwt.algorithms.Algorithm
+import arrow.core.Either
 import com.auth0.jwt.exceptions.JWTVerificationException
-import com.auth0.jwt.exceptions.TokenExpiredException
 import com.auth0.jwt.interfaces.DecodedJWT
 import io.ktor.http.*
 import io.ktor.server.request.*
@@ -11,17 +9,13 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlin.coroutines.cancellation.CancellationException
 import org.koin.core.component.KoinComponent
-import org.koin.core.component.get
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
-import party.morino.mineauth.core.file.data.JWTConfigData
-import party.morino.mineauth.core.file.utils.KeyUtils.getKeys
+import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.TokenType
-import party.morino.mineauth.core.web.components.auth.ClientData
-import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractBasicCredentials
-import java.security.interfaces.RSAPrivateKey
-import java.security.interfaces.RSAPublicKey
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.authenticateConfidentialClient
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractClientCredentials
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -57,65 +51,34 @@ object RevokeRouter : KoinComponent {
             // オプションパラメータ: token_type_hint（"access_token" または "refresh_token"）
             val tokenTypeHint = formParameters["token_type_hint"]
 
-            // クライアント認証（RFC 7009 Section 2.1）
-            // client_secret_basic (Authorization: Basic) または client_secret_post (ボディ) をサポート
-            val basicCredentials = extractBasicCredentials()
-
-            // RFC 6749 Section 2.3: 認証方式の併用を禁止
-            val hasBodyCredentials = formParameters["client_id"] != null || formParameters["client_secret"] != null
-            if (basicCredentials != null && hasBodyCredentials) {
-                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Multiple client authentication methods are not allowed")
-                return@post
+            // クライアント認証（共通ユーティリティを使用）
+            val credentials = when (val result = extractClientCredentials(formParameters)) {
+                is Either.Left -> {
+                    call.respondOAuthError(result.value.errorCode, result.value.message)
+                    return@post
+                }
+                is Either.Right -> result.value
             }
-
-            val clientId = formParameters["client_id"] ?: basicCredentials?.first
-            val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
-
-            if (clientId == null) {
-                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_id")
-                return@post
-            }
-
-            if (clientSecret == null) {
-                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_secret")
-                return@post
-            }
-
-            // クライアント検証
-            val clientData = try {
-                ClientData.getClientData(clientId)
-            } catch (e: Exception) {
-                plugin.logger.warning("Client not found for revocation: $clientId")
-                call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client not found")
-                return@post
-            }
-
-            // Confidentialクライアントのみ許可
-            if (clientData !is ClientData.ConfidentialClientData) {
-                plugin.logger.warning("Non-confidential client attempted revocation: $clientId")
-                call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch")
-                return@post
-            }
-
-            // クライアントシークレットの検証（Argon2idによる定数時間比較）
-            if (!clientData.verifySecret(clientSecret)) {
-                plugin.logger.warning("Client authentication failed for revocation: $clientId")
-                call.respondOAuthError(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed")
-                return@post
+            val clientData = when (val result = authenticateConfidentialClient(credentials)) {
+                is Either.Left -> {
+                    call.respondOAuthError(result.value.errorCode, result.value.message)
+                    return@post
+                }
+                is Either.Right -> result.value
             }
 
             // トークンの検証と失効処理
-            val revocationResult = revokeToken(token, tokenTypeHint, clientId)
+            val revocationResult = revokeToken(token, tokenTypeHint, clientData.clientId)
 
             // RFC 7009 Section 2.2:
             // 成功時は200 OKを返す（トークンの有効性に関わらず）
             // これは情報漏洩を防ぐため
             if (revocationResult) {
-                plugin.logger.info("Token revoked successfully for client: $clientId")
+                plugin.logger.info("Token revoked successfully for client: ${clientData.clientId}")
             } else {
                 // トークンが無効、既に失効済み、または他のクライアントのトークンの場合
                 // セキュリティ上、成功として扱う（情報漏洩防止）
-                plugin.logger.info("Token revocation completed (token may not exist or already revoked): $clientId")
+                plugin.logger.info("Token revocation completed (token may not exist or already revoked): ${clientData.clientId}")
             }
 
             call.respond(HttpStatusCode.OK)
@@ -136,23 +99,10 @@ object RevokeRouter : KoinComponent {
         clientId: String
     ): Boolean {
         return try {
-            // JWT署名と形式を検証
-            val algorithm = Algorithm.RSA256(
-                getKeys().second as RSAPublicKey,
-                getKeys().first as RSAPrivateKey
-            )
-            val verifier = JWT.require(algorithm)
-                .withIssuer(get<JWTConfigData>().issuer)
-                .build()
-
-            // 署名検証を行い、期限切れトークンも許容する
-            // TokenExpiredException: 署名は検証済みだが有効期限切れ → デコードして失効処理を続行
-            // その他のJWTVerificationException: 署名不正等 → 成功として扱う（情報漏洩防止）
+            // lenientVerifierで署名検証を行い、期限切れトークンも許容する
+            // JWTVerificationException: 署名不正等 → 成功として扱う（情報漏洩防止）
             val jwt: DecodedJWT = try {
-                verifier.verify(token)
-            } catch (e: TokenExpiredException) {
-                // 署名・issuerは検証済み。期限切れでもRFC 7009に基づき失効処理を続行する
-                JWT.decode(token)
+                JwtProvider.lenientVerifier.verify(token)
             } catch (e: JWTVerificationException) {
                 // 署名不正・issuer不一致などは失効対象外だが、成功として扱う
                 return true

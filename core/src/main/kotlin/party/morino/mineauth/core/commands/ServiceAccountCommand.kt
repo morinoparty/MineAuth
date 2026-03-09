@@ -2,7 +2,6 @@ package party.morino.mineauth.core.commands
 
 import arrow.core.Either
 import com.auth0.jwt.JWT
-import com.auth0.jwt.algorithms.Algorithm
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.incendo.cloud.annotations.Argument
@@ -12,15 +11,13 @@ import org.koin.core.component.get
 import party.morino.mineauth.api.annotations.Permission
 import party.morino.mineauth.core.dialog.ServiceAccountCreateDialog
 import party.morino.mineauth.core.file.data.JWTConfigData
-import party.morino.mineauth.core.file.utils.KeyUtils.getKeys
+import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.model.ServiceName
 import party.morino.mineauth.core.repository.AccountError
 import party.morino.mineauth.core.repository.AccountRepository
 import party.morino.mineauth.core.repository.AccountType
 import party.morino.mineauth.core.repository.ServiceAccountTokenRepository
 import java.security.MessageDigest
-import java.security.interfaces.RSAPrivateKey
-import java.security.interfaces.RSAPublicKey
 import java.util.*
 
 /**
@@ -191,11 +188,7 @@ class ServiceAccountCommand : KoinComponent {
         val tokenId = UUID.randomUUID().toString()
         val now = Date()
 
-        // 鍵ペアを1回で取得（ローテーション中の不整合を防ぐ）
-        val keyPair = getKeys()
-        val privateKey = keyPair.first as RSAPrivateKey
-        val publicKey = keyPair.second as RSAPublicKey
-
+        // JwtProviderのキャッシュ済みアルゴリズムを使用して署名
         val token = JWT.create()
             .withIssuer(jwtConfigData.issuer)
             .withExpiresAt(Date(now.time + TOKEN_LIFETIME_MS))
@@ -205,7 +198,7 @@ class ServiceAccountCommand : KoinComponent {
             .withClaim("account_type", "service")
             .withClaim("identifier", account.identifier)
             .withClaim("token_type", "service_token")
-            .sign(Algorithm.RSA256(publicKey, privateKey))
+            .sign(JwtProvider.algorithm)
 
         // トークンハッシュを計算してDBに保存
         val tokenHash = sha256(token)
