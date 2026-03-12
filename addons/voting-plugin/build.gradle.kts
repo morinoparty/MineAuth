@@ -9,7 +9,7 @@ plugins {
 
 group = "party.morino"
 version = project.version.toString()
-val addonName = "addon-pure-tickets"
+val addonName = "addon-voting-plugin"
 
 dependencies {
     compileOnly(project(":api"))
@@ -25,8 +25,7 @@ dependencies {
     compileOnly(libs.bundles.exposed)
     compileOnly(kotlin("stdlib-jdk8"))
 
-    // PureTicketsはMaven/JitPack非公開のため、ローカルjarを参照
-    compileOnly(files("libs/tickets-paper.jar"))
+    compileOnly(libs.votingplugin)
 }
 
 tasks {
@@ -54,11 +53,11 @@ sourceSets.main {
             name = rootProject.name + "-" + addonName
             version = project.version.toString()
             website = "https://github.com/morinoparty/MineAuth"
-            main = "$group.mineauth.addons.puretickets.PureTicketsAddon"
+            main = "$group.mineauth.addons.votingplugin.VotingPluginAddon"
             apiVersion = "1.20"
             // librariesはMineAuthコアから提供されるため宣言しない
             // （別クラスローダーでの重複ロードによるLinkageError防止）
-            depend = listOf("MineAuth", "Tickets")
+            depend = listOf("MineAuth", "VotingPlugin")
         }
     }
 }

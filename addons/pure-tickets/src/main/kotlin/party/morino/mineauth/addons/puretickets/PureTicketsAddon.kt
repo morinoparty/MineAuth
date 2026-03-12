@@ -60,7 +60,7 @@ class PureTicketsAddon : JavaPlugin() {
      * @return 初期化に成功した場合はtrue
      */
     private fun setupKoin(): Boolean {
-        val pureTicketsPlugin = server.pluginManager.getPlugin("PureTickets")
+        val pureTicketsPlugin = server.pluginManager.getPlugin("Tickets")
         if (pureTicketsPlugin == null) {
             logger.warning("PureTickets plugin not found")
             return false
