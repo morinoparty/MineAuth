@@ -140,6 +140,82 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
 }
 ```
 
+## VotingPlugin Addon
+
+Provides HTTP endpoints for VotingPlugin vote data:
+
+**[morinoparty/MineAuth/addons/voting-plugin](https://github.com/morinoparty/MineAuth/tree/master/addons/voting-plugin)**
+
+| File | Description |
+|------|-------------|
+| `VotingPluginAddon.kt` | Main plugin class |
+| `routes/VotingPluginHandler.kt` | HTTP handler with endpoints |
+| `data/*.kt` | Data classes for vote information |
+
+### Generated Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/mineauth-addon-voting-plugin/stats/{player}` | `@TargetPlayer` | Get own or target player's vote statistics |
+| GET | `/api/v1/plugins/mineauth-addon-voting-plugin/sites` | - | Get all available vote sites |
+| GET | `/api/v1/plugins/mineauth-addon-voting-plugin/sites/{player}` | `@TargetPlayer` | Get own or target player's per-site vote status |
+
+The stats endpoint uses `@TargetPlayer`:
+- Users: `GET /stats/me` to check own vote statistics
+- Service accounts: `GET /stats/Notch` or `GET /stats/<uuid>` to check any player's vote statistics
+
+### Response Examples
+
+`GET /stats/me`:
+
+```json
+{
+  "allTimeTotal": 150,
+  "monthlyTotal": 12,
+  "weeklyTotal": 5,
+  "dailyTotal": 1,
+  "points": 300,
+  "dayVoteStreak": 3,
+  "weekVoteStreak": 2,
+  "monthVoteStreak": 1,
+  "bestDayVoteStreak": 7,
+  "bestWeekVoteStreak": 4,
+  "bestMonthVoteStreak": 3,
+  "lastVoteTime": 1710288000000
+}
+```
+
+`GET /sites`:
+
+```json
+{
+  "sites": [
+    {
+      "name": "PlanetMinecraft",
+      "url": "https://www.planetminecraft.com/server/example/vote/",
+      "enabled": true
+    }
+  ]
+}
+```
+
+`GET /sites/me`:
+
+```json
+{
+  "sites": [
+    {
+      "siteName": "PlanetMinecraft",
+      "canVote": true,
+      "lastVoteTime": 1710288000000
+    }
+  ],
+  "votedSites": 0,
+  "totalSites": 1,
+  "canVoteAll": true
+}
+```
+
 ## BetonQuest Addon
 
 Provides HTTP endpoints for BetonQuest quest data:

@@ -33,6 +33,7 @@ allprojects {
         maven("https://jitpack.io")
         maven("https://plugins.gradle.org/m2/")
         maven("https://repo.codemc.io/repository/maven-public/")
+        maven("https://nexus.bencodez.com/repository/maven-public/")
     }
 
     dependencies {
