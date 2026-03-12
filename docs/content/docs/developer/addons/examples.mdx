@@ -140,6 +140,76 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
 }
 ```
 
+## PureTickets Addon
+
+Provides HTTP endpoints for PureTickets support ticket data:
+
+**[morinoparty/MineAuth/addons/pure-tickets](https://github.com/morinoparty/MineAuth/tree/master/addons/pure-tickets)**
+
+| File | Description |
+|------|-------------|
+| `PureTicketsAddon.kt` | Main plugin class (reflection-based API access) |
+| `routes/TicketHandler.kt` | HTTP handler with endpoints |
+| `data/*.kt` | Data classes for ticket information |
+
+### Generated Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/mineauth-addon-pure-tickets/tickets/{player}` | `@TargetPlayer` | Get own or target player's tickets |
+| GET | `/api/v1/plugins/mineauth-addon-pure-tickets/tickets/{player}/{id}` | `@TargetPlayer` | Get ticket detail with interaction history |
+
+The tickets endpoint uses `@TargetPlayer`:
+- Users: `GET /tickets/me` to check own tickets
+- Service accounts: `GET /tickets/Notch` or `GET /tickets/<uuid>` to check any player's tickets
+
+### Response Examples
+
+`GET /tickets/me`:
+
+```json
+{
+  "tickets": [
+    {
+      "id": 1,
+      "status": "OPEN",
+      "message": "The door at spawn is broken",
+      "claimer": null
+    }
+  ],
+  "total": 1
+}
+```
+
+`GET /tickets/me/1`:
+
+```json
+{
+  "id": 1,
+  "status": "CLAIMED",
+  "message": "The door at spawn is broken",
+  "claimer": "550e8400-e29b-41d4-a716-446655440000",
+  "interactions": [
+    {
+      "action": "MESSAGE",
+      "time": "2026-03-12T10:30:00",
+      "sender": "660e8400-e29b-41d4-a716-446655440000",
+      "message": "The door at spawn is broken"
+    },
+    {
+      "action": "CLAIM",
+      "time": "2026-03-12T11:00:00",
+      "sender": "550e8400-e29b-41d4-a716-446655440000",
+      "message": null
+    }
+  ]
+}
+```
+
+### Note
+
+PureTickets does not expose a public API for external plugins. This addon uses reflection to access internal services via Guice Injector. Compatible with PureTickets v5.x.
+
 ## VotingPlugin Addon
 
 Provides HTTP endpoints for VotingPlugin vote data:
