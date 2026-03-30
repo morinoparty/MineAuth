@@ -23,7 +23,7 @@ hikari = "7.0.2"
 mysql = "9.6.0"
 micrometer = "1.16.4"
 opentelemetry = "1.60.1"
-opentelemetry-instrumentation = "2.25.0-alpha-SNAPSHOT"
+opentelemetry-instrumentation = "2.27.0-alpha-SNAPSHOT"
 
 
 [libraries]
