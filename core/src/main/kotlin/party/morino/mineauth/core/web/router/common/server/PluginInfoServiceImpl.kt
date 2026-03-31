@@ -31,20 +31,23 @@ class PluginInfoServiceImpl : PluginInfoService {
                     required = meta.pluginDependencies,
                     soft = meta.pluginSoftDependencies,
                 ),
-                file = jarFile?.let { buildFileData(it) },
+                // ファイル読み込み失敗時はnullにして他のプラグイン情報に影響させない
+                file = jarFile?.let { runCatching { buildFileData(it) }.getOrNull() },
             )
         }
     }
 
     /**
      * JARファイルの情報を構築する
+     * SHA-1とSHA-256を1回のストリームで同時計算する
      */
     private fun buildFileData(file: File): PluginFileData {
+        val hashes = computeHashes(file)
         return PluginFileData(
             name = file.name,
             hash = PluginFileHashData(
-                sha1 = computeHash(file, "SHA-1"),
-                sha256 = computeHash(file, "SHA-256"),
+                sha1 = hashes.first,
+                sha256 = hashes.second,
             ),
         )
     }
@@ -63,17 +66,24 @@ class PluginInfoServiceImpl : PluginInfoService {
     }
 
     /**
-     * ファイルのハッシュを計算する
+     * SHA-1とSHA-256を1回のファイル読み込みで同時に計算する
+     *
+     * @return Pair(sha1, sha256)
      */
-    private fun computeHash(file: File, algorithm: String): String {
-        val digest = MessageDigest.getInstance(algorithm)
+    private fun computeHashes(file: File): Pair<String, String> {
+        val sha1Digest = MessageDigest.getInstance("SHA-1")
+        val sha256Digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
             val buffer = ByteArray(8192)
             var bytesRead: Int
             while (input.read(buffer).also { bytesRead = it } != -1) {
-                digest.update(buffer, 0, bytesRead)
+                sha1Digest.update(buffer, 0, bytesRead)
+                sha256Digest.update(buffer, 0, bytesRead)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return Pair(
+            sha1Digest.digest().joinToString("") { "%02x".format(it) },
+            sha256Digest.digest().joinToString("") { "%02x".format(it) },
+        )
     }
 }

@@ -137,9 +137,10 @@ class CorePathsGenerator {
             "/api/v1/commons/server/plugins" to PathItem(
                 get = Operation(
                     summary = "Get installed plugins",
-                    description = "Returns detailed information about installed plugins on the server.",
+                    description = "Returns detailed information about installed plugins on the server. Requires service account authentication.",
                     operationId = "get_server_plugins",
                     tags = listOf(TAG_SERVER),
+                    security = listOf(mapOf("serviceToken" to emptyList())),
                     responses = mapOf(
                         "200" to Response(
                             description = "List of installed plugins with detailed information",
@@ -152,6 +153,7 @@ class CorePathsGenerator {
                                 )
                             ),
                         ),
+                        "401" to Response(description = "Unauthorized - valid service account token required"),
                     ),
                 ),
             ),
