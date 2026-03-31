@@ -151,6 +151,12 @@ class OpenApiGenerator : KoinComponent {
                             )
                         )
                     )
+                ),
+                "serviceToken" to SecurityScheme(
+                    type = "http",
+                    description = "Service account Bearer JWT token",
+                    scheme = "bearer",
+                    bearerFormat = "JWT",
                 )
             )
         )

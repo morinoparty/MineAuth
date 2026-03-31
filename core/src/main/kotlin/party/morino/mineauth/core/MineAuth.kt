@@ -31,6 +31,8 @@ import party.morino.mineauth.core.commands.parser.ServiceNameParser
 import party.morino.mineauth.core.file.load.FileUtils
 import party.morino.mineauth.core.integration.IntegrationInitializer
 import party.morino.mineauth.core.web.WebServer
+import party.morino.mineauth.core.web.router.common.server.PluginInfoService
+import party.morino.mineauth.core.web.router.common.server.PluginInfoServiceImpl
 
 open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
     private lateinit var plugin: MineAuth
@@ -60,6 +62,7 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
             single<MineAuth> { this@MineAuth }
             single<PluginDirectory> { PluginDirectoryImpl() }
             single { DatabaseConnector() }
+            single<PluginInfoService> { PluginInfoServiceImpl() }
         }
 
         getOrNull() ?: GlobalContext.startKoin {

@@ -58,6 +58,50 @@ class CorePathsGenerator {
      * /api/v1/commons/server 配下のエンドポイントを生成する
      */
     private fun generateServerPaths(): Map<String, PathItem> {
+        // ファイルハッシュのスキーマ定義
+        val fileHashSchema = Schema(
+            type = "object",
+            properties = mapOf(
+                "sha1" to Schema(type = "string", description = "SHA-1 hash"),
+                "sha256" to Schema(type = "string", description = "SHA-256 hash"),
+            ),
+            required = listOf("sha1", "sha256"),
+        )
+
+        // ファイル情報のスキーマ定義
+        val fileSchema = Schema(
+            type = "object",
+            properties = mapOf(
+                "name" to Schema(type = "string", description = "JAR file name"),
+                "hash" to fileHashSchema,
+            ),
+            required = listOf("name", "hash"),
+        )
+
+        // 依存関係のスキーマ定義
+        val dependenciesSchema = Schema(
+            type = "object",
+            properties = mapOf(
+                "required" to Schema(type = "array", items = Schema(type = "string"), description = "Required dependency plugin names"),
+                "soft" to Schema(type = "array", items = Schema(type = "string"), description = "Soft (optional) dependency plugin names"),
+            ),
+        )
+
+        // プラグイン情報のスキーマ定義
+        val pluginInfoSchema = Schema(
+            type = "object",
+            properties = mapOf(
+                "name" to Schema(type = "string", description = "Plugin name"),
+                "version" to Schema(type = "string", description = "Plugin version"),
+                "description" to Schema(type = "string", description = "Plugin description", nullable = true),
+                "authors" to Schema(type = "array", items = Schema(type = "string"), description = "Plugin authors"),
+                "website" to Schema(type = "string", description = "Plugin website", nullable = true),
+                "dependencies" to dependenciesSchema,
+                "file" to Schema(type = "object", nullable = true, properties = fileSchema.properties, required = fileSchema.required),
+            ),
+            required = listOf("name", "version"),
+        )
+
         // プレイヤー一覧のスキーマ定義
         val profileSchema = Schema(
             type = "object",
@@ -93,21 +137,23 @@ class CorePathsGenerator {
             "/api/v1/commons/server/plugins" to PathItem(
                 get = Operation(
                     summary = "Get installed plugins",
-                    description = "Returns a list of installed plugin names on the server.",
+                    description = "Returns detailed information about installed plugins on the server. Requires service account authentication.",
                     operationId = "get_server_plugins",
                     tags = listOf(TAG_SERVER),
+                    security = listOf(mapOf("serviceToken" to emptyList())),
                     responses = mapOf(
                         "200" to Response(
-                            description = "List of plugin names",
+                            description = "List of installed plugins with detailed information",
                             content = mapOf(
                                 "application/json" to MediaType(
                                     schema = Schema(
                                         type = "array",
-                                        items = Schema(type = "string"),
+                                        items = pluginInfoSchema,
                                     )
                                 )
                             ),
                         ),
+                        "401" to Response(description = "Unauthorized - valid service account token required"),
                     ),
                 ),
             ),

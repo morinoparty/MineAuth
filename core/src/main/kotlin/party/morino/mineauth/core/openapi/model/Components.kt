@@ -26,6 +26,8 @@ data class Components(
 data class SecurityScheme(
     val type: String,
     val description: String? = null,
+    val scheme: String? = null,
+    val bearerFormat: String? = null,
     val flows: OAuthFlows? = null
 )
 
