@@ -91,7 +91,7 @@ object ServiceAccountCreateHandler : KoinComponent {
         player.sendRichMessage("<gray>サービス名:</gray> <white>$serviceName</white>")
         player.sendRichMessage("")
         player.sendRichMessage(
-            "<yellow>トークンを発行するには <white>/mineauth service token $serviceName</white> を実行してください</yellow>"
+            "<yellow>トークンを発行するには <click:suggest_command:'/ma service token $serviceName'><white>/ma service token $serviceName</white></click> を実行してください</yellow>"
         )
     }
 }

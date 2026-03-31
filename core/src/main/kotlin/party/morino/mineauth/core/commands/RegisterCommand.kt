@@ -27,7 +27,7 @@ class RegisterCommand {
             UserAuthData.selectAll().where { UserAuthData.uuid eq sender.uniqueId.toString() }.count()
         } > 0
         if (exist) {
-            sender.sendMessage("You are already registered if you want to change your password use /moripaapi change")
+            sender.sendRichMessage("You are already registered if you want to change your password use <click:suggest_command:'/ma change'><yellow>/ma change</yellow></click>")
             return
         }
         val password = RandomStringUtils.randomAlphanumeric(20)
@@ -55,7 +55,7 @@ class RegisterCommand {
             UserAuthData.selectAll().where { UserAuthData.uuid eq sender.uniqueId.toString() }.count()
         } > 0
         if (!exist) {
-            sender.sendMessage("You are not already registered if you want to register use /moripaapi register")
+            sender.sendRichMessage("You are not already registered if you want to register use <click:suggest_command:'/ma register'><yellow>/ma register</yellow></click>")
             return
         }
         val password = RandomStringUtils.randomAlphanumeric(20)
