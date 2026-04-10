@@ -122,7 +122,7 @@ object OAuthClientCreateHandler : KoinComponent {
     private fun handleError(player: Player, error: OAuthClientError) {
         val message = when (error) {
             is OAuthClientError.IssuerAccountNotFound ->
-                "アカウントが見つかりません。先に /mineauth register を実行してください"
+                "アカウントが見つかりません。先に <click:suggest_command:'/ma register'>/ma register</click> を実行してください"
             is OAuthClientError.DatabaseError ->
                 "データベースエラーが発生しました: ${error.message}"
             else -> "クライアントの作成に失敗しました"
