@@ -88,7 +88,7 @@ vault-api = { group = "com.github.MilkBowl", name = "vaultAPI", version = "1.7.1
 quickshop-api = { group = "com.ghostchu", name = "quickshop-api", version = "6.2.0.11" }
 luckperms-api = { group = "net.luckperms", name = "api", version = "5.5" }
 betonquest = { group = "org.betonquest", name = "betonquest", version = "3.0.0-20250818.215240-364" }
-griefprevention = { group = "com.github.TechFortress", name = "GriefPrevention", version = "17.0.0" }
+griefprevention = { group = "com.github.TechFortress", name = "GriefPrevention", version = "18.0.0" }
 votingplugin = { group = "com.bencodez", name = "votingplugin", version = "7.0" }
 
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
