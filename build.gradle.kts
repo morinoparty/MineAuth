@@ -1,4 +1,3 @@
-import io.gitlab.arturbosch.detekt.Detekt
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
@@ -8,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
     alias(libs.plugins.ktlint)
-    id("io.gitlab.arturbosch.detekt") version "1.23.8"
+    id("dev.detekt") version "2.0.0-alpha.3"
 }
 
 val version: String by project
@@ -102,7 +101,7 @@ dokka {
     }
 }
 detekt {
-    toolVersion = "1.23.8"
+    toolVersion = "2.0.0-alpha.3"
     source.setFrom("api/src/main/java", "api/src/main/kotlin", "core/src/main/java", "core/src/main/kotlin")
     parallel = true
     buildUponDefaultConfig = true
@@ -111,10 +110,4 @@ detekt {
     disableDefaultRuleSets = false
     debug = false
     ignoreFailures = true
-}
-
-// detekt 1.23.8 の同梱コンパイラは jvm-target 25 を解析できない（対応は22まで）。
-// detektは静的解析のみで実行バイトコードは生成しないため、解析用ターゲットを21に固定する。
-tasks.withType<Detekt>().configureEach {
-    jvmTarget = "21"
 }
