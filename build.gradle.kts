@@ -1,3 +1,4 @@
+import io.gitlab.arturbosch.detekt.Detekt
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
@@ -43,9 +44,9 @@ allprojects {
 
     kotlin {
         jvmToolchain {
-            (this).languageVersion.set(JavaLanguageVersion.of(21))
+            (this).languageVersion.set(JavaLanguageVersion.of(25))
         }
-        jvmToolchain(21)
+        jvmToolchain(25)
     }
 
     tasks {
@@ -63,12 +64,12 @@ allprojects {
             }
         }
         compileKotlin {
-            compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+            compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
             compilerOptions.javaParameters = true
             compilerOptions.languageVersion.set(KotlinVersion.KOTLIN_2_0)
         }
         compileTestKotlin {
-            compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+            compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
         }
 
         withType<JavaCompile>().configureEach {
@@ -84,7 +85,7 @@ repositories {
     mavenCentral()
 }
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 dependencies {
@@ -110,4 +111,10 @@ detekt {
     disableDefaultRuleSets = false
     debug = false
     ignoreFailures = true
+}
+
+// detekt 1.23.8 の同梱コンパイラは jvm-target 25 を解析できない（対応は22まで）。
+// detektは静的解析のみで実行バイトコードは生成しないため、解析用ターゲットを21に固定する。
+tasks.withType<Detekt>().configureEach {
+    jvmTarget = "21"
 }

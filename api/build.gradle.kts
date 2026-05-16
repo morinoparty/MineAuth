@@ -50,9 +50,9 @@ dependencies {
 
 kotlin {
     jvmToolchain {
-        (this).languageVersion.set(JavaLanguageVersion.of(21))
+        (this).languageVersion.set(JavaLanguageVersion.of(25))
     }
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 dependencies {
@@ -61,7 +61,7 @@ dependencies {
 
 tasks {
     compileKotlin {
-        compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
         compilerOptions.javaParameters = true
     }
 }
