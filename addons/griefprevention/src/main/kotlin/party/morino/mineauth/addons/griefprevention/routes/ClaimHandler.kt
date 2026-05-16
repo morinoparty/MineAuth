@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.ryanhamshire.GriefPrevention.Claim
 import me.ryanhamshire.GriefPrevention.DataStore
-import me.ryanhamshire.GriefPrevention.GriefPrevention
 import net.milkbowl.vault.economy.Economy
 import org.bukkit.OfflinePlayer
 import org.koin.core.component.KoinComponent
@@ -59,7 +58,8 @@ class ClaimHandler : KoinComponent {
      * POST /claims/purchase
      *
      * Vault Economyと連携し、プレイヤーの所持金からクレームブロックを購入する。
-     * GriefPreventionのconfig_economy_claimBlocksPurchaseCostで設定された単価を使用する。
+     * アドオン設定（GriefPreventionConfig.claimBlockCost）で設定された単価を使用する。
+     * GriefPrevention 18.0.0 で本体の経済機能が削除されたため、単価はアドオン側で管理する。
      *
      * @param player 認証済みプレイヤー
      * @param request 購入リクエスト
@@ -79,8 +79,8 @@ class ClaimHandler : KoinComponent {
         }
 
         return withContext(Dispatchers.minecraft) {
-            // GriefPreventionのブロック単価を取得
-            val costPerBlock = GriefPrevention.instance.config_economy_claimBlocksPurchaseCost
+            // アドオン設定からクレームブロックの単価を取得
+            val costPerBlock = config.claimBlockCost
             if (costPerBlock <= 0) {
                 throw HttpError(HttpStatus.BAD_REQUEST, "Claim block purchasing is disabled on this server")
             }
