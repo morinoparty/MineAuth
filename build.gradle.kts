@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
     alias(libs.plugins.ktlint)
-    id("io.gitlab.arturbosch.detekt") version "1.23.8"
+    id("dev.detekt") version "2.0.0-alpha.3"
 }
 
 val version: String by project
@@ -43,9 +43,9 @@ allprojects {
 
     kotlin {
         jvmToolchain {
-            (this).languageVersion.set(JavaLanguageVersion.of(21))
+            (this).languageVersion.set(JavaLanguageVersion.of(25))
         }
-        jvmToolchain(21)
+        jvmToolchain(25)
     }
 
     tasks {
@@ -63,12 +63,12 @@ allprojects {
             }
         }
         compileKotlin {
-            compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+            compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
             compilerOptions.javaParameters = true
             compilerOptions.languageVersion.set(KotlinVersion.KOTLIN_2_0)
         }
         compileTestKotlin {
-            compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+            compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
         }
 
         withType<JavaCompile>().configureEach {
@@ -84,7 +84,7 @@ repositories {
     mavenCentral()
 }
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 dependencies {
@@ -101,7 +101,7 @@ dokka {
     }
 }
 detekt {
-    toolVersion = "1.23.8"
+    toolVersion = "2.0.0-alpha.3"
     source.setFrom("api/src/main/java", "api/src/main/kotlin", "core/src/main/java", "core/src/main/kotlin")
     parallel = true
     buildUponDefaultConfig = true
