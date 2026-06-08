@@ -1,5 +1,5 @@
 [versions]
-arrow = "2.2.2.1"
+arrow = "2.2.3"
 paper = "26.1.2.build.69-stable"
 mccoroutine = "2.22.0"
 cloud = "2.1.0-SNAPSHOT"
