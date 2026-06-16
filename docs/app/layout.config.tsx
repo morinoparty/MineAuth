@@ -10,9 +10,9 @@ export function baseOptions(): BaseLayoutProps {
             ),
             transparentMode: "top",
         },
+        // ライトテーマのみのため、テーマ切り替えスイッチを非表示にする
         themeSwitch: {
-            enabled: true,
-            mode: "light-dark",
+            enabled: false,
         },
         githubUrl: "https://github.com/morinoparty/MineAuth",
         modrinthUrl: "https://modrinth.com/plugin/mineauth",
