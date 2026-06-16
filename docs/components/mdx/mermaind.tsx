@@ -1,7 +1,6 @@
 'use client';
 
 import { use, useEffect, useId, useState } from 'react';
-import { useTheme } from 'next-themes';
 
 export function Mermaid({ chart }: { chart: string }) {
     const [mounted, setMounted] = useState(false);
@@ -27,19 +26,19 @@ function cachePromise<T>(key: string, setPromise: () => Promise<T>): Promise<T> 
 
 function MermaidContent({ chart }: { chart: string }) {
     const id = useId();
-    const { resolvedTheme } = useTheme();
     const { default: mermaid } = use(cachePromise('mermaid', () => import('mermaid')));
 
+    // ドキュメントはライトテーマ固定のため、mermaid も常に明るいテーマで描画する
     mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'loose',
         fontFamily: 'inherit',
         themeCSS: 'margin: 1.5rem auto 0;',
-        theme: resolvedTheme === 'dark' ? 'dark' : 'default',
+        theme: 'default',
     });
 
     const { svg, bindFunctions } = use(
-        cachePromise(`${chart}-${resolvedTheme}`, () => {
+        cachePromise(chart, () => {
             return mermaid.render(id, chart.replaceAll('\\n', '\n'));
         }),
     );
