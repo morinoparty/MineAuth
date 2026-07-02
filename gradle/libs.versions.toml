@@ -24,6 +24,7 @@ mysql = "9.7.0"
 micrometer = "1.17.0"
 opentelemetry = "1.63.0"
 opentelemetry-instrumentation = "2.30.0-alpha-SNAPSHOT"
+allure = "2.35.3"
 
 
 [libraries]
@@ -64,6 +65,8 @@ opentelemetry-ktor = { group = "io.opentelemetry.instrumentation", name = "opent
 opentelemetry-extension-kotlin = { group = "io.opentelemetry", name = "opentelemetry-extension-kotlin", version.ref = "opentelemetry" }
 opentelemetry-micrometer = { group = "io.opentelemetry.instrumentation", name = "opentelemetry-micrometer-1.5", version.ref = "opentelemetry-instrumentation" }
 opentelemetry-sdk-testing = { group = "io.opentelemetry", name = "opentelemetry-sdk-testing", version.ref = "opentelemetry" }
+
+allure-junit5 = { group = "io.qameta.allure", name = "allure-junit5", version.ref = "allure" }
 
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
 ktor-client-java = { group = "io.ktor", name = "ktor-client-java", version.ref = "ktor" }

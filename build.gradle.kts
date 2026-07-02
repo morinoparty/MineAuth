@@ -56,6 +56,8 @@ allprojects {
         }
         test {
             useJUnitPlatform()
+            // Allure結果の出力先を指定（CIでレポート生成する際に集約する）
+            systemProperty("allure.results.directory", "${project.layout.buildDirectory.get().asFile}/allure-results")
             testLogging {
                 showStandardStreams = true
                 events("passed", "skipped", "failed")
