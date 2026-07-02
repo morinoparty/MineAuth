@@ -44,6 +44,8 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.mock.bukkit)
     testImplementation(libs.ktor.server.test.host)
+    // OpenTelemetryのテスト用（InMemorySpanExporter / InMemoryMetricReader）
+    testImplementation(libs.opentelemetry.sdk.testing)
     // compileOnlyのライブラリをテストでも使えるようにする
     testImplementation(libs.paper.api)
     testImplementation(libs.kotlinx.serialization.json)

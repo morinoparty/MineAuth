@@ -3,13 +3,19 @@ package party.morino.mineauth.core.web.telemetry
 import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.common.Attributes
+import io.opentelemetry.api.metrics.Meter
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.Context
 import io.opentelemetry.context.propagation.ContextPropagators
+import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter
+import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporter
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
 import io.opentelemetry.sdk.OpenTelemetrySdk
+import io.opentelemetry.sdk.metrics.SdkMeterProvider
+import io.opentelemetry.sdk.metrics.export.MetricExporter
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.sdk.trace.ReadWriteSpan
 import io.opentelemetry.sdk.trace.ReadableSpan
@@ -18,13 +24,16 @@ import io.opentelemetry.sdk.trace.SpanProcessor
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import io.opentelemetry.semconv.ServiceAttributes
+import org.bukkit.Bukkit
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.ObservabilityConfig
 import party.morino.mineauth.core.file.data.OtlpExporterConfig
 import party.morino.mineauth.core.file.data.OtlpExporterProtocol
+import java.net.InetAddress
 import java.net.URI
+import java.time.Duration
 
 /**
  * OpenTelemetryのプロバイダークラス
@@ -34,6 +43,7 @@ object TelemetryProvider : KoinComponent {
     private val plugin: MineAuth by inject()
     private var openTelemetry: OpenTelemetry? = null
     private var sdkTracerProvider: SdkTracerProvider? = null
+    private var sdkMeterProvider: SdkMeterProvider? = null
 
     /**
      * OpenTelemetryを初期化する
@@ -82,15 +92,8 @@ object TelemetryProvider : KoinComponent {
             }
         }
 
-        // リソース属性（サービス名など）を設定
-        val resource = Resource.getDefault()
-            .merge(
-                Resource.create(
-                    Attributes.of(
-                        ServiceAttributes.SERVICE_NAME, config.serviceName
-                    )
-                )
-            )
+        // リソース属性（サービス名・バージョン・ホスト・Minecraft情報）を設定
+        val resource = Resource.getDefault().merge(Resource.create(buildResourceAttributes(config)))
 
         // セキュリティ: UUID等の機密情報をマスクするSpanProcessor
         val sanitizingProcessor = SanitizingSpanProcessor()
@@ -111,14 +114,71 @@ object TelemetryProvider : KoinComponent {
         sdkTracerProvider = tracerProvider
 
         // OpenTelemetry SDKを作成
-        val sdk = OpenTelemetrySdk.builder()
+        val sdkBuilder = OpenTelemetrySdk.builder()
             .setTracerProvider(tracerProvider)
             .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-            .build()
+
+        // OTLPメトリクスが有効な場合はMeterProviderを構築して配線
+        if (config.otlpMetricsEnabled) {
+            val meterProviderBuilder = SdkMeterProvider.builder().setResource(resource)
+
+            // 各エクスポーターに対して定期エクスポート用のMetricReaderを登録
+            config.exporters.forEach { exporterConfig ->
+                val metricReader = PeriodicMetricReader.builder(createMetricExporter(exporterConfig))
+                    .setInterval(Duration.ofSeconds(config.metricExportIntervalSeconds))
+                    .build()
+                meterProviderBuilder.registerMetricReader(metricReader)
+            }
+
+            val meterProvider = meterProviderBuilder.build()
+            sdkMeterProvider = meterProvider
+            sdkBuilder.setMeterProvider(meterProvider)
+        }
+
+        val sdk = sdkBuilder.build()
 
         openTelemetry = sdk
         plugin.logger.info("OpenTelemetry initialized successfully")
         return sdk
+    }
+
+    /**
+     * リソース属性を構築する
+     * サービス情報に加えて、ホスト名やMinecraftサーバーの情報を付与する
+     *
+     * @param config Observability設定
+     * @return リソース属性
+     */
+    private fun buildResourceAttributes(config: ObservabilityConfig): Attributes {
+        val builder = Attributes.builder()
+            .put(ServiceAttributes.SERVICE_NAME, config.serviceName)
+            .put(TelemetryAttributes.SERVICE_NAMESPACE, config.serviceNamespace)
+
+        // プラグインのメタ情報（バージョン・名前）
+        // テスト環境などでプラグインが取得できない場合はスキップ
+        try {
+            builder.put(ServiceAttributes.SERVICE_VERSION, plugin.pluginMeta.version)
+            builder.put(TelemetryAttributes.MINECRAFT_PLUGIN_NAME, plugin.pluginMeta.name)
+        } catch (e: Exception) {
+            plugin.logger.fine("Could not resolve plugin meta for resource attributes: ${e.message}")
+        }
+
+        // ホスト名（解決に失敗した場合は省略）
+        try {
+            builder.put(TelemetryAttributes.HOST_NAME, InetAddress.getLocalHost().hostName)
+        } catch (e: Exception) {
+            plugin.logger.fine("Could not resolve host name for resource attributes: ${e.message}")
+        }
+
+        // Minecraftサーバー情報（MockBukkit等ではサーバー未初期化の場合があるためガード）
+        try {
+            builder.put(TelemetryAttributes.MINECRAFT_VERSION, Bukkit.getMinecraftVersion())
+            builder.put(TelemetryAttributes.MINECRAFT_SERVER_BRAND, Bukkit.getName())
+        } catch (e: Exception) {
+            plugin.logger.fine("Could not resolve Minecraft server info for resource attributes: ${e.message}")
+        }
+
+        return builder.build()
     }
 
     /**
@@ -130,6 +190,17 @@ object TelemetryProvider : KoinComponent {
     fun getTracer(instrumentationName: String = "mineauth"): Tracer {
         return openTelemetry?.getTracer(instrumentationName)
             ?: OpenTelemetry.noop().getTracer(instrumentationName)
+    }
+
+    /**
+     * メーターを取得する
+     *
+     * @param instrumentationName インストルメンテーション名
+     * @return Meterインスタンス（未初期化の場合はNoOp）
+     */
+    fun getMeter(instrumentationName: String = "mineauth"): Meter {
+        return openTelemetry?.getMeter(instrumentationName)
+            ?: OpenTelemetry.noop().getMeter(instrumentationName)
     }
 
     /**
@@ -187,6 +258,52 @@ object TelemetryProvider : KoinComponent {
     }
 
     /**
+     * OTLPメトリクスエクスポーターを作成する
+     * createSpanExporterと同様にヘッダー設定をサポートして認証付きバックエンドにも対応
+     *
+     * @param config エクスポーター設定
+     * @return 設定済みのMetricExporter
+     */
+    internal fun createMetricExporter(config: OtlpExporterConfig): MetricExporter {
+        // プロトコルに応じてOTLPエクスポーターを切り替える
+        return when (config.protocol) {
+            OtlpExporterProtocol.GRPC -> {
+                // gRPCエクスポーターを構築
+                val builder = OtlpGrpcMetricExporter.builder()
+                    .setEndpoint(config.endpoint)
+                    .setTimeout(Duration.ofSeconds(30)) // タイムアウトを30秒に設定
+
+                // ヘッダーを設定（認証用など）
+                config.headers.forEach { (key, value) ->
+                    builder.addHeader(key, value)
+                }
+
+                builder.build()
+            }
+            OtlpExporterProtocol.HTTP -> {
+                // HTTPエクスポーターを構築
+                // 注意: OtlpHttpMetricExporterは自動的に/v1/metricsを追加する
+                // ユーザーが誤ってシグナル別のパスを含めた場合は除去する
+                val normalizedEndpoint = config.endpoint
+                    .removeSuffix("/v1/metrics")
+                    .removeSuffix("/v1/traces")
+                    .removeSuffix("/")
+
+                val builder = OtlpHttpMetricExporter.builder()
+                    .setEndpoint(normalizedEndpoint)
+                    .setTimeout(Duration.ofSeconds(30)) // タイムアウトを30秒に設定
+
+                // ヘッダーを設定（認証用など）
+                config.headers.forEach { (key, value) ->
+                    builder.addHeader(key, value)
+                }
+
+                builder.build()
+            }
+        }
+    }
+
+    /**
      * シャットダウン処理
      * サーバー停止時に呼び出してリソースを解放する
      */
@@ -202,8 +319,10 @@ object TelemetryProvider : KoinComponent {
      */
     private fun shutdownInternal() {
         sdkTracerProvider?.shutdown()
+        sdkMeterProvider?.shutdown()
         openTelemetry = null
         sdkTracerProvider = null
+        sdkMeterProvider = null
     }
 }
 

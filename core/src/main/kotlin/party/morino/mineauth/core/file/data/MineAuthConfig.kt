@@ -97,7 +97,16 @@ data class ObservabilityConfig(
     val metricsEnabled: Boolean = true,
 
     // ヘルスチェックエンドポイント(/health)を有効にするかどうか
-    val healthEnabled: Boolean = true
+    val healthEnabled: Boolean = true,
+
+    // OTLPでメトリクスをエクスポートするかどうか（enabled=trueの場合のみ有効）
+    val otlpMetricsEnabled: Boolean = true,
+
+    // メトリクスのエクスポート間隔（秒）
+    val metricExportIntervalSeconds: Long = 60,
+
+    // service.namespaceリソース属性（複数サーバー運用時の論理グループ名）
+    val serviceNamespace: String = "minecraft"
 )
 
 /**

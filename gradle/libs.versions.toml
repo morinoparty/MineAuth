@@ -61,6 +61,9 @@ opentelemetry-sdk = { group = "io.opentelemetry", name = "opentelemetry-sdk", ve
 opentelemetry-exporter-otlp = { group = "io.opentelemetry", name = "opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
 opentelemetry-semconv = { group = "io.opentelemetry.semconv", name = "opentelemetry-semconv", version = "1.42.0" }
 opentelemetry-ktor = { group = "io.opentelemetry.instrumentation", name = "opentelemetry-ktor-3.0", version.ref = "opentelemetry-instrumentation" }
+opentelemetry-extension-kotlin = { group = "io.opentelemetry", name = "opentelemetry-extension-kotlin", version.ref = "opentelemetry" }
+opentelemetry-micrometer = { group = "io.opentelemetry.instrumentation", name = "opentelemetry-micrometer-1.5", version.ref = "opentelemetry-instrumentation" }
+opentelemetry-sdk-testing = { group = "io.opentelemetry", name = "opentelemetry-sdk-testing", version.ref = "opentelemetry" }
 
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
 ktor-client-java = { group = "io.ktor", name = "ktor-client-java", version.ref = "ktor" }
@@ -111,7 +114,7 @@ maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPubli
 
 [bundles]
 commands = ["cloud", "cloudPaper", "cloud-annotations", "cloud-kotlin-coroutines-annotations"]
-opentelemetry = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp", "opentelemetry-semconv", "opentelemetry-ktor"]
+opentelemetry = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp", "opentelemetry-semconv", "opentelemetry-ktor", "opentelemetry-extension-kotlin", "opentelemetry-micrometer"]
 securities = ["password4j", "nimbus-jose-jwt", "bcpkix-jdk18on"]
 coroutines = ["mccoroutine-bukkit-api", "mccoroutine-bukkit-core" , "kotlinx-coroutines-core"]
 exposed = ["exposed-core", "exposed-dao", "exposed-jdbc", "exposed-java-time"]

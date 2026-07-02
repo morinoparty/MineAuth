@@ -4,11 +4,14 @@ import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.opentelemetry.api.trace.Span
+import io.opentelemetry.api.trace.StatusCode
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 
 /**
  * OAuth 2.0 エラーレスポンス
@@ -112,6 +115,12 @@ suspend fun RoutingCall.respondOAuthError(
     val logMessage = "OAuth error at $endpoint: ${errorCode.code}" +
         (description?.let { " - $it" } ?: "")
     OAuthErrorLogger.plugin.logger.warning(logMessage)
+
+    // テレメトリ: 現在のスパンにエラーコードを記録する（全OAuthエラーパスの中央フック）
+    // トレーシング無効時はNoOp Spanになるため安全
+    Span.current()
+        .setAttribute(TelemetryAttributes.OAUTH_ERROR_CODE, errorCode.code)
+        .setStatus(StatusCode.ERROR)
 
     respond(statusCode, errorCode.toResponse(description))
 }

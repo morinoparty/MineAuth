@@ -4,12 +4,15 @@ import arrow.core.Either
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
+import io.opentelemetry.api.common.Attributes
 import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.component.KoinComponent
 import org.slf4j.LoggerFactory
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
+import party.morino.mineauth.core.web.telemetry.withSpan
 import kotlin.reflect.KParameter
 
 /**
@@ -31,21 +34,29 @@ class RouteExecutor(
      * @param metadata エンドポイントメタデータ
      */
     suspend fun execute(call: ApplicationCall, metadata: EndpointMetadata) {
-        // 認証・認可が必要なら先にチェックする
-        if (!authenticateIfNeeded(call, metadata)) {
-            return
-        }
+        // アドオンルート全体の処理を1つのスパンで計測する（全アドオンルートの単一チョークポイント）
+        val attributes = Attributes.builder()
+            .put(TelemetryAttributes.HANDLER_CLASS, metadata.handlerInstance::class.qualifiedName ?: "unknown")
+            .put(TelemetryAttributes.ENDPOINT_PATH, metadata.path)
+            .put(TelemetryAttributes.ENDPOINT_METHOD, metadata.httpMethod.name)
+            .build()
+        withSpan("mineauth.plugin.handler", attributes = attributes) {
+            // 認証・認可が必要なら先にチェックする
+            if (!authenticateIfNeeded(call, metadata)) {
+                return@withSpan
+            }
 
-        // パラメータ解決に失敗した場合はレスポンス済みで終了
-        val resolvedParams = resolveParameters(call, metadata) ?: return
+            // パラメータ解決に失敗した場合はレスポンス済みで終了
+            val resolvedParams = resolveParameters(call, metadata) ?: return@withSpan
 
-        // ファクトリ経由でハンドラーを取得
-        val handler = executionHandlerFactory.createHandler(metadata)
+            // ファクトリ経由でハンドラーを取得
+            val handler = executionHandlerFactory.createHandler(metadata)
 
-        // ハンドラーを実行して結果を処理
-        when (val result = handler.execute(metadata, resolvedParams)) {
-            is Either.Left -> handleExecutionError(call, result.value, metadata, resolvedParams)
-            is Either.Right -> handleResult(call, result.value)
+            // ハンドラーを実行して結果を処理
+            when (val result = handler.execute(metadata, resolvedParams)) {
+                is Either.Left -> handleExecutionError(call, result.value, metadata, resolvedParams)
+                is Either.Right -> handleResult(call, result.value)
+            }
         }
     }
 

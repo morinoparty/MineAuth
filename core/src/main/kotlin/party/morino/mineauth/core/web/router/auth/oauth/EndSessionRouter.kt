@@ -4,11 +4,13 @@ import com.auth0.jwt.exceptions.JWTVerificationException
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.opentelemetry.api.trace.Span
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.web.components.auth.ClientData
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 
 /**
  * OpenID Connect RP-Initiated Logout 1.0 エンドポイント
@@ -46,6 +48,8 @@ object EndSessionRouter : KoinComponent {
                     call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Invalid id_token_hint")
                     return@get
                 }
+                // テレメトリ: 検証済みクライアントIDをサーバースパンに記録する
+                Span.current().setAttribute(TelemetryAttributes.CLIENT_ID, validatedClientId)
             }
 
             // post_logout_redirect_uriが提供された場合、登録済みURIとの一致を検証

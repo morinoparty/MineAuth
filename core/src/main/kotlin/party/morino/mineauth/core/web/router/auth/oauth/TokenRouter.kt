@@ -6,6 +6,7 @@ import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.opentelemetry.api.common.Attributes
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
@@ -23,6 +24,8 @@ import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractC
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateCodeVerifier
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.TokenType
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
+import party.morino.mineauth.core.web.telemetry.withSpan
 import java.security.MessageDigest
 import java.util.*
 
@@ -34,165 +37,198 @@ object TokenRouter: KoinComponent {
 
     fun Route.tokenRouter() {
         post("/token") {
-            val formParameters = call.receiveParameters()
-            val grantType = formParameters["grant_type"]
+            // トークンエンドポイント全体をスパンで計測する
+            withSpan("oauth.token") { span ->
+                val formParameters = call.receiveParameters()
+                val grantType = formParameters["grant_type"]
 
-            // RFC 6749 Section 5.2: grant_type欠如はinvalid_request
-            if (grantType == null) {
-                call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: grant_type")
-                return@post
-            }
-
-            // クレデンシャル抽出（Basic認証 + フォームパラメータ、併用禁止チェック含む）
-            val credentials = when (val result = extractClientCredentials(formParameters)) {
-                is Either.Left -> {
-                    call.respondOAuthError(result.value.errorCode, result.value.message)
-                    return@post
+                // RFC 6749 Section 5.2: grant_type欠如はinvalid_request
+                if (grantType == null) {
+                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: grant_type")
+                    return@withSpan
                 }
-                is Either.Right -> result.value
-            }
+                span.setAttribute(TelemetryAttributes.OAUTH_GRANT_TYPE, grantType)
 
-            if (grantType == "refresh_token") {
-                //refresh_tokenの処理 https://tools.ietf.org/html/rfc6749#section-6
-                // クライアント認証（Confidential/Public両対応）
-                val clientData = when (val result = authenticateClient(credentials)) {
+                // クレデンシャル抽出（Basic認証 + フォームパラメータ、併用禁止チェック含む）
+                val credentials = when (val result = extractClientCredentials(formParameters)) {
                     is Either.Left -> {
                         call.respondOAuthError(result.value.errorCode, result.value.message)
-                        return@post
+                        return@withSpan
                     }
                     is Either.Right -> result.value
                 }
-                val clientId = clientData.clientId
+                span.setAttribute(TelemetryAttributes.CLIENT_ID, credentials.clientId)
 
-                val refreshToken = formParameters["refresh_token"]
-                if (refreshToken == null) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
-                    return@post
-                }
-
-                // リフレッシュトークンの検証（署名・有効期限・token_type）
-                val verified = verifyAndDecodeRefreshToken(refreshToken)
-                if (verified == null) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
-                    return@post
-                }
-
-                // クライアントIDの一致を確認
-                if (verified.authorizedData.clientId != clientId) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
-                    return@post
-                }
-
-                // リフレッシュトークン内のスコープを再検証（許可リスト変更に対応）
-                if (!OAuthScope.isValid(verified.authorizedData.scope)) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_SCOPE, "Refresh token contains invalid scope(s)")
-                    return@post
-                }
-
-                // RFC 6749 Section 10.4: リフレッシュトークンローテーション
-                // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
-                if (!revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)) {
-                    call.respondOAuthError(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
-                    return@post
-                }
-                val token = issueToken(verified.authorizedData, clientId)
-                val newRefreshToken = issueRefreshToken(verified.authorizedData, clientId)
-
-                // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
-                // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
-                // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
-                call.response.header(HttpHeaders.CacheControl, "no-store")
-                call.response.header(HttpHeaders.Pragma, "no-cache")
-                call.respond(HttpStatusCode.OK, TokenData(
-                    accessToken = token,
-                    tokenType = "Bearer",
-                    expiresIn = EXPIRES_IN,
-                    refreshToken = newRefreshToken,
-                    idToken = null,
-                    scope = verified.authorizedData.scope
-                ))
-            }else if (grantType == "authorization_code") {
-                //authorization_codeの処理 https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
-                // 期限切れ認可コードの遅延クリーンアップ（リクエスト契機で実行）
-                OAuthRouter.cleanupExpiredCodes(AUTHORIZATION_CODE_LIFETIME_MS)
-                val code = formParameters["code"]
-                val redirectUri = formParameters["redirect_uri"]
-                val codeVerifier = formParameters["code_verifier"]
-                val clientId = credentials.clientId
-
-                // RFC 6749 Section 5.2: 必須パラメータの欠如はinvalid_requestで返す
-                // 認可コード参照より先にチェックし、不要なデータ消費を防ぐ
-                val missingParams = buildList {
-                    if (code == null) add("code")
-                    if (redirectUri == null) add("redirect_uri")
-                    if (codeVerifier == null) add("code_verifier")
-                }
-                if (missingParams.isNotEmpty()) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters: ${missingParams.joinToString(", ")}")
-                    return@post
-                }
-
-                // クライアント認証（Confidential/Public両対応）
-                val clientData = when (val result = authenticateClient(credentials)) {
-                    is Either.Left -> {
-                        call.respondOAuthError(result.value.errorCode, result.value.message)
-                        return@post
+                if (grantType == "refresh_token") {
+                    //refresh_tokenの処理 https://tools.ietf.org/html/rfc6749#section-6
+                    // クライアント認証（Confidential/Public両対応）
+                    val authenticated = withSpan("oauth.client.authenticate") { authenticateClient(credentials) }
+                    val clientData = when (authenticated) {
+                        is Either.Left -> {
+                            call.respondOAuthError(authenticated.value.errorCode, authenticated.value.message)
+                            return@withSpan
+                        }
+                        is Either.Right -> authenticated.value
                     }
-                    is Either.Right -> result.value
-                }
+                    val clientId = clientData.clientId
 
-                // ConcurrentHashMap.removeで取得と削除を原子的に行い、並行リクエストによる二重使用を防止
-                val data = authorizedData.remove(code) ?: run {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The authorization code is invalid or expired")
-                    return@post
-                }
+                    val refreshToken = formParameters["refresh_token"]
+                    if (refreshToken == null) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: refresh_token")
+                        return@withSpan
+                    }
 
-                // RFC 6749 Section 4.1.2: 認可コードの有効期限チェック（最大10分）
-                val codeAge = System.currentTimeMillis() - data.authTime
-                if (codeAge > AUTHORIZATION_CODE_LIFETIME_MS) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The authorization code has expired")
-                    return@post
-                }
+                    // リフレッシュトークンの検証（署名・有効期限・token_type）
+                    val verified = withSpan("oauth.refresh_token.verify") { verifyAndDecodeRefreshToken(refreshToken) }
+                    if (verified == null) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
+                        return@withSpan
+                    }
+                    span.setAttribute(TelemetryAttributes.OAUTH_SCOPE, verified.authorizedData.scope)
+                    span.setAttribute(TelemetryAttributes.PLAYER_UUID, verified.authorizedData.uniqueId.toString())
 
-                // nullチェック済みのためnon-null変数に再代入
-                val validRedirectUri = redirectUri!!
-                val validCodeVerifier = codeVerifier!!
+                    // クライアントIDの一致を確認
+                    if (verified.authorizedData.clientId != clientId) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Refresh token was not issued to this client")
+                        return@withSpan
+                    }
 
-                if (data.clientId != clientId || data.redirectUri != validRedirectUri) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid client_id or redirect_uri")
-                    return@post
-                }
+                    // リフレッシュトークン内のスコープを再検証（許可リスト変更に対応）
+                    if (!OAuthScope.isValid(verified.authorizedData.scope)) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_SCOPE, "Refresh token contains invalid scope(s)")
+                        return@withSpan
+                    }
 
-                if (!validateCodeVerifier(data.codeChallenge, validCodeVerifier)) {
-                    call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The code_verifier is invalid")
-                    return@post
-                }
+                    // RFC 6749 Section 10.4: リフレッシュトークンローテーション
+                    // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
+                    val rotated = withSpan("oauth.refresh_token.rotate") {
+                        revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)
+                    }
+                    if (!rotated) {
+                        call.respondOAuthError(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
+                        return@withSpan
+                    }
+                    val token = withSpan("jwt.issue", attributes = tokenTypeAttributes("access")) {
+                        issueToken(verified.authorizedData, clientId)
+                    }
+                    val newRefreshToken = withSpan("jwt.issue", attributes = tokenTypeAttributes("refresh")) {
+                        issueRefreshToken(verified.authorizedData, clientId)
+                    }
 
-                val token = issueToken(data, clientId)
-                val refreshToken = issueRefreshToken(data, clientId)
-                // scopeに"openid"が含まれる場合のみID Tokenを発行（OIDC準拠）
-                val idToken = if (data.scope.contains("openid")) {
-                    issueIdToken(data, clientId, token)
-                } else null
-
-                // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
-                call.response.header(HttpHeaders.CacheControl, "no-store")
-                call.response.header(HttpHeaders.Pragma, "no-cache")
-                call.respond(
-                    HttpStatusCode.OK, TokenData(
+                    // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
+                    // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
+                    // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
+                    call.response.header(HttpHeaders.CacheControl, "no-store")
+                    call.response.header(HttpHeaders.Pragma, "no-cache")
+                    call.respond(HttpStatusCode.OK, TokenData(
                         accessToken = token,
                         tokenType = "Bearer",
                         expiresIn = EXPIRES_IN,
-                        refreshToken = refreshToken,
-                        idToken = idToken,
-                        scope = data.scope
+                        refreshToken = newRefreshToken,
+                        idToken = null,
+                        scope = verified.authorizedData.scope
+                    ))
+                }else if (grantType == "authorization_code") {
+                    //authorization_codeの処理 https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
+                    // 期限切れ認可コードの遅延クリーンアップ（リクエスト契機で実行）
+                    OAuthRouter.cleanupExpiredCodes(AUTHORIZATION_CODE_LIFETIME_MS)
+                    val code = formParameters["code"]
+                    val redirectUri = formParameters["redirect_uri"]
+                    val codeVerifier = formParameters["code_verifier"]
+                    val clientId = credentials.clientId
+
+                    // RFC 6749 Section 5.2: 必須パラメータの欠如はinvalid_requestで返す
+                    // 認可コード参照より先にチェックし、不要なデータ消費を防ぐ
+                    val missingParams = buildList {
+                        if (code == null) add("code")
+                        if (redirectUri == null) add("redirect_uri")
+                        if (codeVerifier == null) add("code_verifier")
+                    }
+                    if (missingParams.isNotEmpty()) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_REQUEST, "Missing required parameters: ${missingParams.joinToString(", ")}")
+                        return@withSpan
+                    }
+
+                    // クライアント認証（Confidential/Public両対応）
+                    val authenticated = withSpan("oauth.client.authenticate") { authenticateClient(credentials) }
+                    val clientData = when (authenticated) {
+                        is Either.Left -> {
+                            call.respondOAuthError(authenticated.value.errorCode, authenticated.value.message)
+                            return@withSpan
+                        }
+                        is Either.Right -> authenticated.value
+                    }
+
+                    // ConcurrentHashMap.removeで取得と削除を原子的に行い、並行リクエストによる二重使用を防止
+                    val data = authorizedData.remove(code) ?: run {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The authorization code is invalid or expired")
+                        return@withSpan
+                    }
+                    span.setAttribute(TelemetryAttributes.OAUTH_SCOPE, data.scope)
+                    span.setAttribute(TelemetryAttributes.PLAYER_UUID, data.uniqueId.toString())
+
+                    // RFC 6749 Section 4.1.2: 認可コードの有効期限チェック（最大10分）
+                    val codeAge = System.currentTimeMillis() - data.authTime
+                    if (codeAge > AUTHORIZATION_CODE_LIFETIME_MS) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The authorization code has expired")
+                        return@withSpan
+                    }
+
+                    // nullチェック済みのためnon-null変数に再代入
+                    val validRedirectUri = redirectUri!!
+                    val validCodeVerifier = codeVerifier!!
+
+                    if (data.clientId != clientId || data.redirectUri != validRedirectUri) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "Invalid client_id or redirect_uri")
+                        return@withSpan
+                    }
+
+                    if (!validateCodeVerifier(data.codeChallenge, validCodeVerifier)) {
+                        call.respondOAuthError(OAuthErrorCode.INVALID_GRANT, "The code_verifier is invalid")
+                        return@withSpan
+                    }
+
+                    val token = withSpan("jwt.issue", attributes = tokenTypeAttributes("access")) {
+                        issueToken(data, clientId)
+                    }
+                    val refreshToken = withSpan("jwt.issue", attributes = tokenTypeAttributes("refresh")) {
+                        issueRefreshToken(data, clientId)
+                    }
+                    // scopeに"openid"が含まれる場合のみID Tokenを発行（OIDC準拠）
+                    val idToken = if (data.scope.contains("openid")) {
+                        withSpan("jwt.issue", attributes = tokenTypeAttributes("id")) {
+                            issueIdToken(data, clientId, token)
+                        }
+                    } else null
+
+                    // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
+                    call.response.header(HttpHeaders.CacheControl, "no-store")
+                    call.response.header(HttpHeaders.Pragma, "no-cache")
+                    call.respond(
+                        HttpStatusCode.OK, TokenData(
+                            accessToken = token,
+                            tokenType = "Bearer",
+                            expiresIn = EXPIRES_IN,
+                            refreshToken = refreshToken,
+                            idToken = idToken,
+                            scope = data.scope
+                        )
                     )
-                )
-            }else{
-                call.respondOAuthError(OAuthErrorCode.UNSUPPORTED_GRANT_TYPE, "The grant_type is not supported")
+                }else{
+                    call.respondOAuthError(OAuthErrorCode.UNSUPPORTED_GRANT_TYPE, "The grant_type is not supported")
+                }
             }
         }
     }
+
+    /**
+     * jwt.issueスパン用のトークン種別属性を生成する
+     *
+     * @param tokenType トークンの種類（access / refresh / id）
+     * @return トークン種別属性
+     */
+    private fun tokenTypeAttributes(tokenType: String): Attributes =
+        Attributes.of(TelemetryAttributes.TOKEN_TYPE, tokenType)
 
     private fun issueToken(
         data: AuthorizedData, clientId: String?

@@ -12,6 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import party.morino.mineauth.core.database.Accounts
+import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
 import java.util.*
 
 /**
@@ -98,21 +99,24 @@ object AccountRepository {
      * @param accountId アカウントID（UUIDv7）
      * @return 成功時はアカウントデータ、失敗時はエラー
      */
-    suspend fun findById(accountId: String): Either<AccountError, AccountData> = newSuspendedTransaction {
-        try {
-            val row = Accounts.selectAll()
-                .where { Accounts.accountId eq accountId }
-                .firstOrNull()
+    suspend fun findById(accountId: String): Either<AccountError, AccountData> =
+        withDatabaseSpan("accounts", "select") {
+            newSuspendedTransaction {
+                try {
+                    val row = Accounts.selectAll()
+                        .where { Accounts.accountId eq accountId }
+                        .firstOrNull()
 
-            if (row == null) {
-                AccountError.NotFound.left()
-            } else {
-                row.toAccountData().right()
+                    if (row == null) {
+                        AccountError.NotFound.left()
+                    } else {
+                        row.toAccountData().right()
+                    }
+                } catch (e: Exception) {
+                    AccountError.DatabaseError(e.message ?: "Unknown error").left()
+                }
             }
-        } catch (e: Exception) {
-            AccountError.DatabaseError(e.message ?: "Unknown error").left()
         }
-    }
 
     /**
      * identifierでアカウントを取得する

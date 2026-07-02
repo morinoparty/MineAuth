@@ -14,6 +14,8 @@ import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.authenticateConfidentialClient
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractClientCredentials
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
+import party.morino.mineauth.core.web.telemetry.withSpan
 
 /**
  * RFC 7662 OAuth 2.0 Token Introspection エンドポイント
@@ -51,16 +53,24 @@ object IntrospectRouter : KoinComponent {
                 }
                 is Either.Right -> result.value
             }
-            when (val result = authenticateConfidentialClient(credentials)) {
+            val authenticated = withSpan("oauth.client.authenticate") { span ->
+                span.setAttribute(TelemetryAttributes.CLIENT_ID, credentials.clientId)
+                authenticateConfidentialClient(credentials)
+            }
+            when (authenticated) {
                 is Either.Left -> {
-                    call.respondOAuthError(result.value.errorCode, result.value.message)
+                    call.respondOAuthError(authenticated.value.errorCode, authenticated.value.message)
                     return@post
                 }
                 is Either.Right -> { /* 認証成功 */ }
             }
 
-            // トークンを検証してイントロスペクションレスポンスを生成
-            val response = introspectToken(token)
+            // トークンを検証してイントロスペクションレスポンスを生成（結果のactiveを記録する）
+            val response = withSpan("oauth.introspect") { span ->
+                introspectToken(token).also {
+                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, if (it.active) "active" else "inactive")
+                }
+            }
 
             // RFC 7662 Section 2.2: 常に200 OKで返す
             call.respond(HttpStatusCode.OK, response)

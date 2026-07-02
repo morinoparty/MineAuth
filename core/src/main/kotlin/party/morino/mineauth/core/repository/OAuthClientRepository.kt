@@ -14,6 +14,7 @@ import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTrans
 import org.jetbrains.exposed.v1.jdbc.update
 import party.morino.mineauth.core.database.OAuthClients
 import party.morino.mineauth.core.utils.Argon2Utils
+import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
 import java.security.SecureRandom
 import java.time.LocalDateTime
 import java.util.*
@@ -153,21 +154,24 @@ object OAuthClientRepository {
      * @param clientId クライアントID
      * @return 成功時はクライアントデータ、失敗時はエラー
      */
-    suspend fun findById(clientId: String): Either<OAuthClientError, OAuthClientData> = newSuspendedTransaction {
-        try {
-            val row = OAuthClients.selectAll()
-                .where { OAuthClients.clientId eq clientId }
-                .firstOrNull()
+    suspend fun findById(clientId: String): Either<OAuthClientError, OAuthClientData> =
+        withDatabaseSpan("oauth_clients", "select") {
+            newSuspendedTransaction {
+                try {
+                    val row = OAuthClients.selectAll()
+                        .where { OAuthClients.clientId eq clientId }
+                        .firstOrNull()
 
-            if (row == null) {
-                OAuthClientError.NotFound.left()
-            } else {
-                row.toOAuthClientData().right()
+                    if (row == null) {
+                        OAuthClientError.NotFound.left()
+                    } else {
+                        row.toOAuthClientData().right()
+                    }
+                } catch (e: Exception) {
+                    OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
+                }
             }
-        } catch (e: Exception) {
-            OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
         }
-    }
 
     /**
      * クライアントシークレットを検証する
@@ -179,35 +183,37 @@ object OAuthClientRepository {
     suspend fun verifyClientSecret(
         clientId: String,
         clientSecret: String
-    ): Either<OAuthClientError, OAuthClientData> = newSuspendedTransaction {
-        try {
-            val row = OAuthClients.selectAll()
-                .where { OAuthClients.clientId eq clientId }
-                .firstOrNull()
+    ): Either<OAuthClientError, OAuthClientData> = withDatabaseSpan("oauth_clients", "select") {
+        newSuspendedTransaction {
+            try {
+                val row = OAuthClients.selectAll()
+                    .where { OAuthClients.clientId eq clientId }
+                    .firstOrNull()
 
-            if (row == null) {
-                return@newSuspendedTransaction OAuthClientError.NotFound.left()
+                if (row == null) {
+                    return@newSuspendedTransaction OAuthClientError.NotFound.left()
+                }
+
+                val clientType = ClientType.fromValue(row[OAuthClients.clientType])
+                if (clientType != ClientType.CONFIDENTIAL) {
+                    // Publicクライアントにはシークレット検証は不要
+                    return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
+                }
+
+                val storedHash = row[OAuthClients.clientSecretHash]
+                if (storedHash == null) {
+                    return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
+                }
+
+                // Argon2idで検証（定数時間比較）
+                if (!Argon2Utils.verifySecret(clientSecret, storedHash)) {
+                    return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
+                }
+
+                row.toOAuthClientData().right()
+            } catch (e: Exception) {
+                OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
             }
-
-            val clientType = ClientType.fromValue(row[OAuthClients.clientType])
-            if (clientType != ClientType.CONFIDENTIAL) {
-                // Publicクライアントにはシークレット検証は不要
-                return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
-            }
-
-            val storedHash = row[OAuthClients.clientSecretHash]
-            if (storedHash == null) {
-                return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
-            }
-
-            // Argon2idで検証（定数時間比較）
-            if (!Argon2Utils.verifySecret(clientSecret, storedHash)) {
-                return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
-            }
-
-            row.toOAuthClientData().right()
-        } catch (e: Exception) {
-            OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
         }
     }
 
