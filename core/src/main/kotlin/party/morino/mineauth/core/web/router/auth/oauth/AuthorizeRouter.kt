@@ -5,6 +5,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.velocity.*
+import io.opentelemetry.api.trace.Span
 import java.security.SecureRandom
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -20,6 +21,8 @@ import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.buildErr
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.buildSuccessRedirectUri
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validatePKCE
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.validateScope
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
+import party.morino.mineauth.core.web.telemetry.withSpan
 
 /**
  * OAuth2.0の認可エンドポイントを提供するルーター
@@ -52,6 +55,10 @@ object AuthorizeRouter: KoinComponent {
             val codeChallengeMethod = call.parameters["code_challenge_method"]
             // OIDC nonce: リプレイ攻撃防止用（任意パラメータ）
             val nonce = call.parameters["nonce"]
+
+            // テレメトリ: サーバースパンにクライアントID・スコープを記録する
+            clientId?.let { Span.current().setAttribute(TelemetryAttributes.CLIENT_ID, it) }
+            scope?.let { Span.current().setAttribute(TelemetryAttributes.OAUTH_SCOPE, it) }
 
             // RFC 6749 Section 4.1.2.1: client_idまたはredirect_uriが不正/欠落の場合は400
             // これらが不正な場合はリダイレクトしてはならない（オープンリダイレクタ防止）
@@ -143,6 +150,10 @@ object AuthorizeRouter: KoinComponent {
             // OIDC nonce: リプレイ攻撃防止用（任意パラメータ）
             val nonce = formParameters["nonce"]
 
+            // テレメトリ: サーバースパンにクライアントID・スコープを記録する（ユーザー名・パスワードは記録しない）
+            clientId?.let { Span.current().setAttribute(TelemetryAttributes.CLIENT_ID, it) }
+            scope?.let { Span.current().setAttribute(TelemetryAttributes.OAUTH_SCOPE, it) }
+
             // パラメータのバリデーション
             if (username == null || password == null || responseType != "code" || clientId == null || redirectUri == null || scope == null || state == null || codeChallenge == null) {
                 // redirect_uriとstateが存在する場合のみエラーリダイレクト
@@ -178,8 +189,16 @@ object AuthorizeRouter: KoinComponent {
                 return@post
             }
 
-            // ユーザー認証
-            val authResult = OAuthService.authenticateUser(username, password)
+            // ユーザー認証（結果をスパンとして記録する。ユーザー名・パスワードは記録しない）
+            val authResult = withSpan("oauth.user.authenticate") { span ->
+                OAuthService.authenticateUser(username, password).also { result ->
+                    val resultLabel = when (result) {
+                        is AuthenticationResult.Success -> "success"
+                        is AuthenticationResult.Failed -> result.reason.name.lowercase()
+                    }
+                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, resultLabel)
+                }
+            }
             val uniqueId = when (authResult) {
                 is AuthenticationResult.Success -> authResult.uniqueId
                 is AuthenticationResult.Failed -> {
@@ -193,6 +212,9 @@ object AuthorizeRouter: KoinComponent {
                     return@post
                 }
             }
+
+            // テレメトリ: 認証成功したプレイヤーUUIDを記録する
+            Span.current().setAttribute(TelemetryAttributes.PLAYER_UUID, uniqueId.toString())
 
             // 認可コードの生成と保存
             // スコープ文字列を正規化（余分な空白を除去してから保存）

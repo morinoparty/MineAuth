@@ -4,6 +4,7 @@ import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.opentelemetry.api.trace.Span
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.file.data.MineAuthConfig
@@ -11,6 +12,7 @@ import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.web.components.auth.UserInfoResponse
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 
 /**
  * OpenID Connect UserInfo Endpoint
@@ -31,6 +33,9 @@ object ProfileRouter : KoinComponent {
                 val playerUniqueId = payload.getClaim("playerUniqueId").asString().toUUID()
                 val offlinePlayer = playerUniqueId.toOfflinePlayer()
                 val username = offlinePlayer.name ?: "Unknown"
+
+                // テレメトリ: サーバースパンにプレイヤーUUID・スコープを記録する
+                Span.current().setAttribute(TelemetryAttributes.PLAYER_UUID, playerUniqueId.toString())
 
                 // JWTからスコープを取得してリストに変換
                 val scopeString = payload.getClaim("scope").asString() ?: ""

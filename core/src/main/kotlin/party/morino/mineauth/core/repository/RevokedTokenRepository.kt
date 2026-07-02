@@ -11,6 +11,7 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import party.morino.mineauth.core.database.RevokedTokens
+import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
 import java.time.LocalDateTime
 
 /**
@@ -60,28 +61,30 @@ object RevokedTokenRepository {
         tokenType: TokenType,
         clientId: String,
         expiresAt: LocalDateTime
-    ): Either<RevokedTokenError, Unit> = newSuspendedTransaction {
-        try {
-            // 既に失効済みかチェック
-            val existing = RevokedTokens.selectAll()
-                .where { RevokedTokens.tokenId eq tokenId }
-                .firstOrNull()
+    ): Either<RevokedTokenError, Unit> = withDatabaseSpan("revoked_tokens", "insert") {
+        newSuspendedTransaction {
+            try {
+                // 既に失効済みかチェック
+                val existing = RevokedTokens.selectAll()
+                    .where { RevokedTokens.tokenId eq tokenId }
+                    .firstOrNull()
 
-            if (existing != null) {
-                // RFC 7009: 既に失効済みでも成功として扱う
-                return@newSuspendedTransaction Unit.right()
+                if (existing != null) {
+                    // RFC 7009: 既に失効済みでも成功として扱う
+                    return@newSuspendedTransaction Unit.right()
+                }
+
+                RevokedTokens.insert {
+                    it[RevokedTokens.tokenId] = tokenId
+                    it[RevokedTokens.tokenType] = tokenType.value
+                    it[RevokedTokens.clientId] = clientId
+                    it[RevokedTokens.expiresAt] = expiresAt
+                }
+
+                Unit.right()
+            } catch (e: Exception) {
+                RevokedTokenError.DatabaseError(e.message ?: "Unknown error").left()
             }
-
-            RevokedTokens.insert {
-                it[RevokedTokens.tokenId] = tokenId
-                it[RevokedTokens.tokenType] = tokenType.value
-                it[RevokedTokens.clientId] = clientId
-                it[RevokedTokens.expiresAt] = expiresAt
-            }
-
-            Unit.right()
-        } catch (e: Exception) {
-            RevokedTokenError.DatabaseError(e.message ?: "Unknown error").left()
         }
     }
 
@@ -91,14 +94,16 @@ object RevokedTokenRepository {
      * @param tokenId トークンのJWT ID（jti claim）
      * @return 失効済みの場合true
      */
-    suspend fun isRevoked(tokenId: String): Boolean = newSuspendedTransaction {
-        try {
-            RevokedTokens.selectAll()
-                .where { RevokedTokens.tokenId eq tokenId }
-                .firstOrNull() != null
-        } catch (e: Exception) {
-            // エラー時は安全側に倒して失効済みとして扱う
-            true
+    suspend fun isRevoked(tokenId: String): Boolean = withDatabaseSpan("revoked_tokens", "select") {
+        newSuspendedTransaction {
+            try {
+                RevokedTokens.selectAll()
+                    .where { RevokedTokens.tokenId eq tokenId }
+                    .firstOrNull() != null
+            } catch (e: Exception) {
+                // エラー時は安全側に倒して失効済みとして扱う
+                true
+            }
         }
     }
 

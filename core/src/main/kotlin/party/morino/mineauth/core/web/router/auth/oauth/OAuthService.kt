@@ -13,6 +13,7 @@ import party.morino.mineauth.core.web.components.auth.ClientData
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationError
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationResult
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationService
+import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
 import java.util.*
 
 object OAuthService : AuthenticationService, KoinComponent {
@@ -24,15 +25,19 @@ object OAuthService : AuthenticationService, KoinComponent {
         }
         
         val uniqueId = offlinePlayer.uniqueId
-        val exist = newSuspendedTransaction(Dispatchers.IO) {
-            UserAuthData.selectAll().where { uuid eq uniqueId.toString() }.count() > 0
+        val exist = withDatabaseSpan("user_auth_data", "select") {
+            newSuspendedTransaction(Dispatchers.IO) {
+                UserAuthData.selectAll().where { uuid eq uniqueId.toString() }.count() > 0
+            }
         }
         if (!exist) {
             return AuthenticationResult.Failed(AuthenticationError.PLAYER_NOT_REGISTERED)
         }
-        
-        val hashedPassword = newSuspendedTransaction {
-            UserAuthData.selectAll().where { uuid eq uniqueId.toString() }.first()[UserAuthData.password]
+
+        val hashedPassword = withDatabaseSpan("user_auth_data", "select") {
+            newSuspendedTransaction {
+                UserAuthData.selectAll().where { uuid eq uniqueId.toString() }.first()[UserAuthData.password]
+            }
         }
         val check = Password.check(password, hashedPassword).addPepper().withArgon2()
         if (!check) {

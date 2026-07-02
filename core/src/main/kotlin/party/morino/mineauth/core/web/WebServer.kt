@@ -15,9 +15,11 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.micrometer.core.instrument.composite.CompositeMeterRegistry
 import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import io.opentelemetry.instrumentation.ktor.v3_0.KtorServerTelemetry
+import io.opentelemetry.instrumentation.micrometer.v1_5.OpenTelemetryMeterRegistry
 import org.slf4j.event.Level
 import io.ktor.server.velocity.*
 import org.apache.velocity.runtime.RuntimeConstants
@@ -42,7 +44,10 @@ import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
 import party.morino.mineauth.core.plugin.PluginRouteRegistry
+import party.morino.mineauth.core.web.telemetry.MinecraftMetrics
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.TelemetryProvider
+import party.morino.mineauth.core.web.telemetry.withSpan
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 
@@ -99,8 +104,22 @@ internal fun Application.module() {
         }
     }
 
-    // Prometheusメトリクスレジストリ
-    val appMicrometerRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+    // Prometheusメトリクスレジストリ（/metricsエンドポイント用）
+    val prometheusRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+
+    // 複合レジストリ: 1回の登録でPrometheusとOTLPの両方にメトリクスを出す
+    val meterRegistry = CompositeMeterRegistry().apply {
+        add(prometheusRegistry)
+        // OTLPメトリクスが有効な場合はMicrometer→OTelブリッジを追加
+        if (observabilityConfig.enabled && observabilityConfig.otlpMetricsEnabled) {
+            add(OpenTelemetryMeterRegistry.create(openTelemetry))
+        }
+    }
+
+    // reload時にレジストリをクローズしてメーターのリークを防ぐ
+    monitor.subscribe(ApplicationStopped) {
+        meterRegistry.close()
+    }
 
     // HTTPリクエスト/レスポンスのロギング
     install(CallLogging) {
@@ -123,9 +142,16 @@ internal fun Application.module() {
 
     // Micrometerメトリクス
     install(MicrometerMetrics) {
-        registry = appMicrometerRegistry
+        registry = meterRegistry
         // メトリクス収集対象から除外するパス
         distinctNotRegisteredRoutes = false
+    }
+
+    // Minecraftサーバーのメトリクス（プレイヤー数・TPS・MSPTなど）を登録
+    // テスト環境などBukkitサーバーが未初期化の場合はスキップ
+    if (observabilityConfig.metricsEnabled) {
+        runCatching { MinecraftMetrics().bindTo(meterRegistry) }
+            .onFailure { plugin.logger.warning("Could not bind Minecraft metrics: ${it.message}") }
     }
 
     install(ContentNegotiation) {
@@ -151,20 +177,27 @@ internal fun Application.module() {
             }
 
             validate { credential ->
-                // JWTからクライアントIDを取得してDBで検証
-                val clientId = credential.payload.getClaim("client_id").asString()
-                val clientResult = OAuthClientRepository.findById(clientId)
-                if (clientResult.isLeft()) {
-                    return@validate null
-                }
+                // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）
+                withSpan("jwt.validate.user_token") { span ->
+                    // JWTからクライアントIDを取得してDBで検証
+                    val clientId = credential.payload.getClaim("client_id").asString()
+                    clientId?.let { span.setAttribute(TelemetryAttributes.CLIENT_ID, it) }
+                    val clientResult = OAuthClientRepository.findById(clientId)
+                    if (clientResult.isLeft()) {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "client_not_found")
+                        return@withSpan null
+                    }
 
-                // RFC 7009: トークンが失効済みかチェック
-                val tokenId = credential.payload.id
-                if (tokenId != null && RevokedTokenRepository.isRevokedBlocking(tokenId)) {
-                    return@validate null
-                }
+                    // RFC 7009: トークンが失効済みかチェック
+                    val tokenId = credential.payload.id
+                    if (tokenId != null && RevokedTokenRepository.isRevokedBlocking(tokenId)) {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "revoked")
+                        return@withSpan null
+                    }
 
-                JWTPrincipal(credential.payload)
+                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
+                    JWTPrincipal(credential.payload)
+                }
             }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, "Token is not valid or has expired")
@@ -179,32 +212,42 @@ internal fun Application.module() {
             }
 
             validate { credential ->
-                // token_typeがservice_tokenであることを確認
-                val tokenType = credential.payload.getClaim("token_type").asString()
-                if (tokenType != "service_token") {
-                    return@validate null
-                }
+                // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）
+                withSpan("jwt.validate.service_token") { span ->
+                    // token_typeがservice_tokenであることを確認
+                    val tokenType = credential.payload.getClaim("token_type").asString()
+                    if (tokenType != "service_token") {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "wrong_token_type")
+                        return@withSpan null
+                    }
 
-                // accountIdでアカウントの存在確認
-                val accountId = credential.payload.getClaim("account_id").asString()
-                    ?: return@validate null
-                val accountResult = AccountRepository.findById(accountId)
-                if (accountResult.isLeft()) {
-                    return@validate null
-                }
+                    // accountIdでアカウントの存在確認
+                    val accountId = credential.payload.getClaim("account_id").asString()
+                    if (accountId == null) {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "account_id_missing")
+                        return@withSpan null
+                    }
+                    val accountResult = AccountRepository.findById(accountId)
+                    if (accountResult.isLeft()) {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "account_not_found")
+                        return@withSpan null
+                    }
 
-                // トークンIDで失効チェック
-                val tokenId = credential.payload.id
-                if (tokenId != null && !ServiceAccountTokenRepository.isTokenValidBlocking(tokenId)) {
-                    return@validate null
-                }
+                    // トークンIDで失効チェック
+                    val tokenId = credential.payload.id
+                    if (tokenId != null && !ServiceAccountTokenRepository.isTokenValidBlocking(tokenId)) {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "revoked")
+                        return@withSpan null
+                    }
 
-                // 最終使用日時を更新（トークン監査用）
-                if (tokenId != null) {
-                    ServiceAccountTokenRepository.updateLastUsedAtBlocking(tokenId)
-                }
+                    // 最終使用日時を更新（トークン監査用）
+                    if (tokenId != null) {
+                        ServiceAccountTokenRepository.updateLastUsedAtBlocking(tokenId)
+                    }
 
-                JWTPrincipal(credential.payload)
+                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
+                    JWTPrincipal(credential.payload)
+                }
             }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, "Service token is not valid or has expired")
@@ -222,7 +265,7 @@ internal fun Application.module() {
         // Prometheusメトリクスエンドポイント（metricsEnabledが有効な場合のみ）
         if (observabilityConfig.metricsEnabled) {
             get("/metrics") {
-                call.respond(appMicrometerRegistry.scrape())
+                call.respond(prometheusRegistry.scrape())
             }
         }
 

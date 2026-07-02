@@ -1,0 +1,76 @@
+---
+title: Telemetry
+description: Span catalog and how to add instrumentation with withSpan / withDatabaseSpan
+---
+
+MineAuth uses OpenTelemetry for distributed tracing and metrics. This page describes the telemetry produced by the core plugin and how to add instrumentation to new code.
+
+## Architecture
+
+- `TelemetryProvider` (`core/.../web/telemetry/TelemetryProvider.kt`) bootstraps the OpenTelemetry SDK: tracer provider, meter provider, OTLP exporters, and resource attributes. When observability is disabled it returns a no-op implementation, so instrumentation helpers are always safe to call.
+- `KtorServerTelemetry` automatically creates one HTTP server span per inbound request. Manual spans created inside request handlers become children of that server span.
+- Micrometer metrics are registered once on a `CompositeMeterRegistry` that fans out to the Prometheus registry (`/metrics`) and, when enabled, to the OpenTelemetry bridge (OTLP export).
+
+## Span Catalog
+
+| Span name | Location | Attributes |
+|-----------|----------|------------|
+| `oauth.token` | `TokenRouter` | `mineauth.oauth.grant_type`, `mineauth.client.id`, `mineauth.oauth.scope`, `mineauth.player.uuid` |
+| `oauth.client.authenticate` | `TokenRouter`, `IntrospectRouter`, `RevokeRouter` | `mineauth.client.id` |
+| `oauth.user.authenticate` | `AuthorizeRouter` | `mineauth.auth.result` |
+| `oauth.refresh_token.verify` | `TokenRouter` | — |
+| `oauth.refresh_token.rotate` | `TokenRouter` | — |
+| `oauth.introspect` | `IntrospectRouter` | `mineauth.auth.result` (`active` / `inactive`) |
+| `oauth.revoke` | `RevokeRouter` | `mineauth.client.id`, `mineauth.token.type_hint` |
+| `jwt.issue` | `TokenRouter` | `mineauth.token.type` (`access` / `refresh` / `id`) |
+| `jwt.validate.user_token` | `WebServer` (JWT validation) | `mineauth.client.id`, `mineauth.auth.result` |
+| `jwt.validate.service_token` | `WebServer` (JWT validation) | `mineauth.auth.result` |
+| `db.<table>.<operation>` | Repositories, `OAuthService` | `db.system.name`, `db.collection.name`, `db.operation.name` |
+| `mineauth.plugin.handler` | `RouteExecutor` (all addon routes) | `mineauth.handler.class`, `mineauth.endpoint.path`, `mineauth.endpoint.method` |
+
+In addition, `respondOAuthError` records `mineauth.oauth.error_code` and sets the span status to `ERROR` on the current span for every OAuth error response.
+
+All attribute keys are defined in `TelemetryAttributes` (`core/.../web/telemetry/TelemetryAttributes.kt`).
+
+## Adding Instrumentation
+
+Use the helpers in `TracingSupport.kt` instead of the raw OpenTelemetry API.
+
+### withSpan
+
+```kotlin
+val result = withSpan("oauth.example", attributes = Attributes.of(TelemetryAttributes.CLIENT_ID, clientId)) { span ->
+    // The span is active in the coroutine context here,
+    // so nested withSpan calls become children automatically.
+    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
+    doSomething()
+}
+```
+
+- The current OpenTelemetry context is used as the parent, so spans created inside a Ktor handler nest under the HTTP server span.
+- Exceptions are recorded on the span and the status is set to `ERROR` before being rethrown.
+- When tracing is disabled the tracer is a no-op, so there is no overhead concern in calling it unconditionally.
+
+### withDatabaseSpan
+
+```kotlin
+suspend fun findById(id: String): Either<Error, Data> =
+    withDatabaseSpan("oauth_clients", "select") {
+        newSuspendedTransaction {
+            // Exposed query
+        }
+    }
+```
+
+This produces a `CLIENT` span named `db.<table>.<operation>` with semconv-style database attributes.
+
+## Rules for Telemetry Data
+
+- Never put identifiers in span names — use attributes instead. `SanitizingSpanProcessor` masks UUID-shaped values in span names as a safety net.
+- Player UUIDs are allowed as the `mineauth.player.uuid` attribute.
+- Never record usernames, passwords, client secrets, tokens, authorization codes, or PKCE verifiers — neither in names, attributes, nor events.
+- Prefer low-cardinality attribute values (result labels, grant types) so metrics and trace search stay usable.
+
+## Adding Metrics
+
+Register Micrometer meters on the registry passed to `MinecraftMetrics`-style binders in `WebServer.module()`. Anything registered on the composite registry automatically appears both at `/metrics` and in OTLP export. Use observable gauges (pull-based) where possible and only read values that are safe to access off the main server thread.

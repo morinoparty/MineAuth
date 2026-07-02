@@ -16,6 +16,8 @@ import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.TokenType
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.authenticateConfidentialClient
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthValidation.extractClientCredentials
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
+import party.morino.mineauth.core.web.telemetry.withSpan
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -59,16 +61,24 @@ object RevokeRouter : KoinComponent {
                 }
                 is Either.Right -> result.value
             }
-            val clientData = when (val result = authenticateConfidentialClient(credentials)) {
+            val authenticated = withSpan("oauth.client.authenticate") { span ->
+                span.setAttribute(TelemetryAttributes.CLIENT_ID, credentials.clientId)
+                authenticateConfidentialClient(credentials)
+            }
+            val clientData = when (authenticated) {
                 is Either.Left -> {
-                    call.respondOAuthError(result.value.errorCode, result.value.message)
+                    call.respondOAuthError(authenticated.value.errorCode, authenticated.value.message)
                     return@post
                 }
-                is Either.Right -> result.value
+                is Either.Right -> authenticated.value
             }
 
-            // トークンの検証と失効処理
-            val revocationResult = revokeToken(token, tokenTypeHint, clientData.clientId)
+            // トークンの検証と失効処理（クライアントID・種別ヒントを記録する。トークン本体は記録しない）
+            val revocationResult = withSpan("oauth.revoke") { span ->
+                span.setAttribute(TelemetryAttributes.CLIENT_ID, clientData.clientId)
+                tokenTypeHint?.let { span.setAttribute(TelemetryAttributes.TOKEN_TYPE_HINT, it) }
+                revokeToken(token, tokenTypeHint, clientData.clientId)
+            }
 
             // RFC 7009 Section 2.2:
             // 成功時は200 OKを返す（トークンの有効性に関わらず）

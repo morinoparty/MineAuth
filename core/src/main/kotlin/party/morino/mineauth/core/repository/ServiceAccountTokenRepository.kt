@@ -12,6 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.v1.jdbc.update
 import party.morino.mineauth.core.database.ServiceAccountTokens
+import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
 import java.time.LocalDateTime
 
 /**
@@ -219,15 +220,17 @@ object ServiceAccountTokenRepository {
     /**
      * トークンが有効かどうかを確認する（revoked = false）
      */
-    suspend fun isTokenValid(tokenId: String): Boolean = newSuspendedTransaction {
-        try {
-            val row = ServiceAccountTokens.selectAll()
-                .where { ServiceAccountTokens.tokenId eq tokenId }
-                .firstOrNull()
+    suspend fun isTokenValid(tokenId: String): Boolean = withDatabaseSpan("service_account_tokens", "select") {
+        newSuspendedTransaction {
+            try {
+                val row = ServiceAccountTokens.selectAll()
+                    .where { ServiceAccountTokens.tokenId eq tokenId }
+                    .firstOrNull()
 
-            row != null && !row[ServiceAccountTokens.revoked]
-        } catch (e: Exception) {
-            false
+                row != null && !row[ServiceAccountTokens.revoked]
+            } catch (e: Exception) {
+                false
+            }
         }
     }
 
@@ -242,16 +245,18 @@ object ServiceAccountTokenRepository {
      * 最終使用日時を更新する
      */
     suspend fun updateLastUsedAt(tokenId: String): Either<ServiceAccountTokenError, Unit> =
-        newSuspendedTransaction {
-            try {
-                ServiceAccountTokens.update(
-                    where = { ServiceAccountTokens.tokenId eq tokenId }
-                ) {
-                    it[lastUsedAt] = LocalDateTime.now()
+        withDatabaseSpan("service_account_tokens", "update") {
+            newSuspendedTransaction {
+                try {
+                    ServiceAccountTokens.update(
+                        where = { ServiceAccountTokens.tokenId eq tokenId }
+                    ) {
+                        it[lastUsedAt] = LocalDateTime.now()
+                    }
+                    Unit.right()
+                } catch (e: Exception) {
+                    ServiceAccountTokenError.DatabaseError(e.message ?: "Unknown error").left()
                 }
-                Unit.right()
-            } catch (e: Exception) {
-                ServiceAccountTokenError.DatabaseError(e.message ?: "Unknown error").left()
             }
         }
 

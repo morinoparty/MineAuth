@@ -74,12 +74,14 @@ jobs:
 
       # GitHub Attestations で署名（Core）
       - name: Attest Core JAR artifact
+        id: attest-core
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: './core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar'
 
       # GitHub Attestations で署名（Addons - 動的に検出）
       - name: Attest Addon JAR artifacts
+        id: attest-addons
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: './addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar'
@@ -115,4 +117,23 @@ jobs:
           gh release upload ${{ github.event.release.tag_name }} \
             ./addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar \
             --clobber
+
+      # リリースノートに SLSA provenance の確認リンクを追記する
+      - name: Append SLSA provenance link to release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          CORE_ATTESTATION_URL: ${{ steps.attest-core.outputs.attestation-url }}
+          ADDONS_ATTESTATION_URL: ${{ steps.attest-addons.outputs.attestation-url }}
+        run: |
+          gh release view "$TAG" --json body -q .body > notes.md
+          cat << EOF >> notes.md
+
+          ## 🔏 Provenance (SLSA)
+
+          Verify with \`gh attestation verify <jar-file> --owner morinoparty\`, or check the attestations directly:
+          - Core: [View attestation]($CORE_ATTESTATION_URL)
+          - Addons: [View attestation]($ADDONS_ATTESTATION_URL)
+          EOF
+          gh release edit "$TAG" --notes-file notes.md
 

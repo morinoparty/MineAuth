@@ -44,6 +44,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.mock.bukkit)
     testImplementation(libs.ktor.server.test.host)
+    // OpenTelemetryのテスト用（InMemorySpanExporter / InMemoryMetricReader）
+    testImplementation(libs.opentelemetry.sdk.testing)
+    // Allureレポート用（JUnit5の実行結果をallure-resultsとして出力する）
+    testImplementation(libs.allure.junit5)
     // compileOnlyのライブラリをテストでも使えるようにする
     testImplementation(libs.paper.api)
     testImplementation(libs.kotlinx.serialization.json)
