@@ -6,7 +6,7 @@ on:
 
 permissions:
   pull-requests: write
-  contents: write
+  contents: read
   id-token: write
   attestations: write
 
@@ -214,43 +214,7 @@ jobs:
           path: ./docs/out
           retention-days: 1
 
-  # GitHub Release にプレビュー版としてアップロード
-  upload-release:
-    needs: [setup, build-gradle]
-    runs-on: ubuntu-latest
-    env:
-      COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    outputs:
-      release_url: ${{ steps.create-release.outputs.release_url }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Download JAR artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: gradle-artifacts
-          path: ./artifacts
-
-      # プレビューリリースを作成（コミットSHAをタグに含めて各コミットを保持）
-      - name: Create preview release
-        id: create-release
-        run: |
-          TAG_NAME="preview-pr${{ github.event.pull_request.number }}-${{ env.COMMIT_SHORT_SHA }}"
-          RELEASE_URL=$(gh release create "$TAG_NAME" \
-            --title "🧪 Preview: PR #${{ github.event.pull_request.number }} (${{ env.COMMIT_SHORT_SHA }})" \
-            --notes "Preview build for PR #${{ github.event.pull_request.number }}
-
-          **Commit:** ${{ github.sha }}
-          **Branch:** ${{ github.head_ref }}
-
-          > ⚠️ This is a preview build and may be unstable.
-          > 📜 Verify with: \`gh attestation verify <jar-file> --owner morinoparty\`" \
-            --prerelease \
-            ./artifacts/jars/*.jar)
-          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/$TAG_NAME" >> $GITHUB_OUTPUT
-
-  # S3 アップロードジョブ（Docs とレポートのみ）
+  # S3 アップロードジョブ（JAR・Docs・レポート）
   upload-s3:
     needs: [setup, build-gradle, build-docs]
     runs-on: ubuntu-latest
@@ -265,6 +229,7 @@ jobs:
       - name: Prepare upload directory
         run: |
           mkdir -p ./upload
+          cp -r ./artifacts/gradle-artifacts/jars ./upload/ || echo "No JAR artifacts"
           cp -r ./artifacts/gradle-artifacts/junit ./upload/ || echo "No JUnit reports"
           cp -r ./artifacts/gradle-artifacts/detekt ./upload/ || echo "No Detekt reports"
           cp -r ./artifacts/gradle-artifacts/allure ./upload/ || echo "No Allure reports"
@@ -279,7 +244,8 @@ jobs:
           S3_BASE="s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}"
           S3_OPTS="--endpoint-url ${S3_ENDPOINT} --only-show-errors"
 
-          # Docs と レポートを並列でアップロード
+          # JAR・Docs・レポートを並列でアップロード
+          aws s3 cp ./upload/jars $S3_BASE/jars $S3_OPTS --recursive &
           aws s3 cp ./upload/junit $S3_BASE/junit $S3_OPTS --recursive &
           aws s3 cp ./upload/detekt $S3_BASE/detekt $S3_OPTS --recursive &
           aws s3 cp ./upload/allure $S3_BASE/allure $S3_OPTS --recursive &
@@ -291,7 +257,7 @@ jobs:
 
   # コメント作成ジョブ
   comment:
-    needs: [setup, build-gradle, upload-s3, upload-release]
+    needs: [setup, build-gradle, upload-s3]
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'opened' || github.event.action == 'synchronize' }}
     env:
@@ -313,8 +279,7 @@ jobs:
 
       - name: Create comment file
         env:
-          RELEASE_URL: "${{ needs.upload-release.outputs.release_url }}"
-          RELEASE_DOWNLOAD_BASE: "https://github.com/${{ github.repository }}/releases/download/preview-pr${{ github.event.pull_request.number }}-${{ env.COMMIT_SHORT_SHA }}"
+          JAR_BASE_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars"
           JUNIT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
           ALLURE_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/allure/index.html"
           DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
@@ -332,7 +297,7 @@ jobs:
               addon_name=$(echo "$jar_name" | sed "s/${{ env.PROJECT_NAME }}-addon-//" | sed "s/-${{ env.COMMIT_SHORT_SHA }}.jar//")
               # 表示名を整形 (quickshop-hikari -> QuickShop Hikari)
               display_name=$(echo "$addon_name" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
-              ADDON_ROWS="${ADDON_ROWS}| Addon: ${display_name} | [${jar_name}]($RELEASE_DOWNLOAD_BASE/${jar_name}) |
+              ADDON_ROWS="${ADDON_ROWS}| Addon: ${display_name} | [${jar_name}]($JAR_BASE_URL/${jar_name}) |
           "
             fi
           done
@@ -340,11 +305,12 @@ jobs:
           cat << EOF > comment.md
           ## 🚀 Preview of ${{ github.event.repository.name }}
 
-          ### 📦 Preview JARs ([Release Page]($RELEASE_URL))
+          ### 📦 Preview JARs
+          Available for 7 days (until $LIMIT_TIME)
           | Artifact | Download |
           |----------|----------|
-          | Core | [${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar) |
-          | API | [${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar]($RELEASE_DOWNLOAD_BASE/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar) |
+          | Core | [${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar]($JAR_BASE_URL/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar) |
+          | API | [${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar]($JAR_BASE_URL/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar) |
           ${ADDON_ROWS}
           > 📜 **Attestation** (SLSA provenance): [Verify on GitHub]($ATTESTATION_URL) or run \`gh attestation verify <jar-file> --owner morinoparty\`
 
