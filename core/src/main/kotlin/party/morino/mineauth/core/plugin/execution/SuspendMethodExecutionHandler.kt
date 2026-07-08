@@ -10,6 +10,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
+import kotlin.coroutines.intrinsics.intercepted
 import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
 import kotlin.reflect.jvm.javaMethod
 
@@ -39,6 +40,7 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
             ExecutionError.HttpErrorThrown(
                 status = e.status.code,
                 message = e.message,
+                code = e.code,
                 details = e.details
             ).left()
         } catch (e: InvocationTargetException) {
@@ -79,23 +81,22 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
 
         // suspendCoroutineUninterceptedOrReturn を使って継続を明示的に制御する
         return suspendCoroutineUninterceptedOrReturn { cont ->
-            try {
-                // アドオンのクラスローダーから見えるContinuationインターフェースを取得
-                val addonContinuationClass = javaMethod.parameterTypes.last()
+            // アドオンのクラスローダーから見えるContinuationインターフェースを取得
+            val addonContinuationClass = javaMethod.parameterTypes.last()
 
-                // 動的プロキシで異なるクラスローダー間のContinuation互換性を吸収する
-                val proxyContinuation = createContinuationProxy(addonContinuationClass, cont)
+            // 動的プロキシで異なるクラスローダー間のContinuation互換性を吸収する
+            // intercepted()でディスパッチャを経由させ、再開後のKtorレスポンス処理が
+            // アドオンの再開スレッド（例: Minecraftメインスレッド）上で走らないようにする
+            val proxyContinuation = createContinuationProxy(addonContinuationClass, cont.intercepted())
 
-                // suspend関数はContinuationを最後の引数として受け取る
-                val args = (params + proxyContinuation).toTypedArray()
-                val result = javaMethod.invoke(instance, *args)
+            // suspend関数はContinuationを最後の引数として受け取る
+            // InvocationTargetExceptionはここで剥がさずexecute()側に伝播させ、
+            // ハンドラー由来の例外（HttpError等）とリフレクション自体の失敗を区別して分類する
+            val args = (params + proxyContinuation).toTypedArray()
+            val result = javaMethod.invoke(instance, *args)
 
-                // COROUTINE_SUSPENDED の場合はそのまま返す（コルーチンがサスペンド中）
-                if (isCoroutineSuspended(result)) COROUTINE_SUSPENDED else result
-            } catch (e: InvocationTargetException) {
-                // ラップされた例外を再スロー
-                throw e.targetException
-            }
+            // COROUTINE_SUSPENDED の場合はそのまま返す（コルーチンがサスペンド中）
+            if (isCoroutineSuspended(result)) COROUTINE_SUSPENDED else result
         }
     }
 
@@ -207,6 +208,7 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
             ExecutionError.HttpErrorThrown(
                 status = targetException.status.code,
                 message = targetException.message,
+                code = targetException.code,
                 details = targetException.details
             ).left()
         } else {

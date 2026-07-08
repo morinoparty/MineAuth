@@ -10,12 +10,14 @@ import org.bukkit.OfflinePlayer
 import party.morino.mineauth.addons.betonquest.data.JournalEntryData
 import party.morino.mineauth.addons.betonquest.data.PlayerQuestDataResponse
 import party.morino.mineauth.addons.betonquest.utils.coroutines.minecraft
-import party.morino.mineauth.api.annotations.GetMapping
-import party.morino.mineauth.api.annotations.TargetPlayer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.PlayerParam
 
 /**
  * BetonQuestのクエスト情報を提供するハンドラー
- * /api/v1/plugins/{plugin-name}/ 配下にエンドポイントを提供する
+ * /api/v1/plugins/{namespace}/ 配下にエンドポイントを提供する
  */
 class QuestsHandler {
 
@@ -26,8 +28,11 @@ class QuestsHandler {
      * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return プレイヤーのクエストデータ（タグ、ポイント、ジャーナル、オブジェクティブ、デイリークエスト）
      */
-    @GetMapping("/quests/{player}")
-    suspend fun getMyQuests(@TargetPlayer player: OfflinePlayer): PlayerQuestDataResponse {
+    @Get("/quests/{player}")
+    // 旧実装ではユーザートークン・サービストークン双方からのアクセスを許可していたため、
+    // それを維持するためSELF_OR_SERVICE(デフォルト)かつcallersにSERVICEを含める
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getMyQuests(@PlayerParam("player") player: OfflinePlayer): PlayerQuestDataResponse {
         // Bukkit APIはメインスレッドで実行する必要がある
         // MCCoroutineではなく独自のディスパッチャーを使用してクラスローダー問題を回避
         return withContext(Dispatchers.minecraft) {

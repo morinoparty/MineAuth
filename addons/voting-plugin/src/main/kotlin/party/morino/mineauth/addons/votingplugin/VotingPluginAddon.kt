@@ -6,7 +6,8 @@ import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.votingplugin.routes.VotingPluginHandler
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.EndpointRegistrationException
+import party.morino.mineauth.api.MineAuthApi
 
 /**
  * VotingPlugin連携アドオン
@@ -14,20 +15,19 @@ import party.morino.mineauth.api.MineAuthAPI
  */
 class VotingPluginAddon : JavaPlugin() {
 
-    private lateinit var mineAuthAPI: MineAuthAPI
+    private lateinit var mineAuthApi: MineAuthApi
 
     override fun onEnable() {
         logger.info("VotingPlugin Addon enabling...")
 
-        // MineAuthAPIの取得
-        val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
-        val api = mineAuthPlugin as? MineAuthAPI
+        // MineAuthApiの取得（ServicesManager経由）
+        val api = MineAuthApi.get(server)
         if (api == null) {
-            logger.severe("MineAuth plugin not found or is not a valid MineAuthAPI instance")
+            logger.severe("MineAuth plugin not found")
             server.pluginManager.disablePlugin(this)
             return
         }
-        mineAuthAPI = api
+        mineAuthApi = api
 
         // VotingPluginの存在確認とKoinの初期化
         if (!setupKoin()) {
@@ -37,7 +37,10 @@ class VotingPluginAddon : JavaPlugin() {
         }
 
         // MineAuthにハンドラーを登録
-        setupMineAuth()
+        if (!setupMineAuth()) {
+            server.pluginManager.disablePlugin(this)
+            return
+        }
 
         logger.info("VotingPlugin Addon enabled")
     }
@@ -83,10 +86,19 @@ class VotingPluginAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
-     * 登録されたハンドラーは /api/v1/plugins/voting-plugin-addon/ 配下で利用可能
+     * 登録されたハンドラーは /api/v1/plugins/voting/ 配下で利用可能
+     *
+     * @return 登録に成功した場合はtrue
      */
-    private fun setupMineAuth() {
-        mineAuthAPI.createHandler(this)
-            .register(VotingPluginHandler())
+    private fun setupMineAuth(): Boolean {
+        return try {
+            val registration = mineAuthApi.register(this, "voting", VotingPluginHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+            true
+        } catch (e: EndpointRegistrationException) {
+            // 登録時の検証エラーをまとめて出力する
+            logger.severe(e.message)
+            false
+        }
     }
 }

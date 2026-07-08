@@ -8,7 +8,8 @@ import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.puretickets.routes.TicketHandler
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.EndpointRegistrationException
+import party.morino.mineauth.api.MineAuthApi
 
 /**
  * PureTickets連携アドオン
@@ -16,20 +17,19 @@ import party.morino.mineauth.api.MineAuthAPI
  */
 class PureTicketsAddon : JavaPlugin() {
 
-    private lateinit var mineAuthAPI: MineAuthAPI
+    private lateinit var mineAuthApi: MineAuthApi
 
     override fun onEnable() {
         logger.info("PureTickets Addon enabling...")
 
-        // MineAuthAPIの取得
-        val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
-        val api = mineAuthPlugin as? MineAuthAPI
+        // MineAuthApiの取得（ServicesManager経由）
+        val api = MineAuthApi.get(server)
         if (api == null) {
-            logger.severe("MineAuth plugin not found or is not a valid MineAuthAPI instance")
+            logger.severe("MineAuth plugin not found")
             server.pluginManager.disablePlugin(this)
             return
         }
-        mineAuthAPI = api
+        mineAuthApi = api
 
         // PureTicketsの内部サービスを取得してKoinに登録
         if (!setupKoin()) {
@@ -140,10 +140,15 @@ class PureTicketsAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
-     * 登録されたハンドラーは /api/v1/plugins/pure-tickets-addon/ 配下で利用可能
+     * 登録されたハンドラーは /api/v1/plugins/tickets/ 配下で利用可能
      */
     private fun setupMineAuth() {
-        mineAuthAPI.createHandler(this)
-            .register(TicketHandler())
+        try {
+            val registration = mineAuthApi.register(this, "tickets", TicketHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+        } catch (e: EndpointRegistrationException) {
+            logger.severe(e.message)
+            server.pluginManager.disablePlugin(this)
+        }
     }
 }

@@ -14,60 +14,35 @@ MineAuth uses JWT (JSON Web Tokens) for API authentication. Two types of tokens 
 | **User Token** | Issued via OAuth2 flow for individual players | Web applications, user-facing APIs |
 | **Service Token** | Issued to service accounts for M2M communication | Backend services, bots, automation |
 
-When a client makes a request with a valid access token, MineAuth extracts the authentication information and makes it available to your handler methods.
+Every endpoint must declare its access level explicitly with exactly one of `@Public` or `@Authenticated`. Endpoints without a declaration are rejected at registration time, so an endpoint can never be exposed publicly by accident.
 
-## Requiring Authentication
+## Declaring Public Endpoints
 
-### Basic Authentication (Self-Access)
-
-Use `@AuthedAccessUser` to require authentication and inject the authenticated player. This is used for endpoints where the user accesses or modifies their own data:
+Use `@Public` for endpoints that require no authentication:
 
 ```kotlin
-@PostMapping("/send")
-suspend fun sendMoney(
-    @AuthedAccessUser player: OfflinePlayer,
-    @RequestBody data: RemittanceData
-): TransferResult {
-    // player.uniqueId is the authenticated user's UUID
-    return economyService.transfer(player.uniqueId, data)
+@Get("/sites")
+@Public
+suspend fun getVoteSites(): VoteSitesResponse {
+    return voteService.listSites()
 }
 ```
 
-When no valid token is provided, MineAuth automatically returns a `401 Unauthorized` response.
-
-:::warning[Service Account Restriction]
-`@AuthedAccessUser` endpoints are only accessible with **user tokens**. Service accounts cannot access these endpoints because they don't have an associated player identity.
-:::
-
-### Flexible Player Resolution
-
-Use `@TargetPlayer` to support accessing any player's data via path parameters. The `{player}` path parameter accepts three formats:
-
-| Format | Example | Description |
-|--------|---------|-------------|
-| `me` | `/balance/me` | Authenticated user's own data |
-| UUID | `/balance/550e8400-e29b-41d4-a716-446655440000` | Access by player UUID |
-| Player Name | `/balance/Notch` | Access by player name |
+The optional `reason` property documents why the endpoint is public and is emitted into the OpenAPI specification:
 
 ```kotlin
-@GetMapping("/balance/{player}")
-suspend fun getBalance(@TargetPlayer player: OfflinePlayer): BalanceData {
-    return economyService.getBalance(player.uniqueId)
-}
+@Public(reason = "Vote site list contains no player data")
 ```
 
-**Access control rules:**
+### Optional Authentication on Public Endpoints
 
-- **User tokens**: Can only access their own data (`me` or their own UUID/name). Attempting to access another player's data returns `403 Forbidden`.
-- **Service tokens**: Can access any player's data. Cannot use `me` (returns `400 Bad Request`).
-
-### Optional Authentication
-
-Use `@AccessUser` when authentication is optional:
+A `@Public` endpoint may still personalize its response for authenticated callers by taking a **nullable** `@Caller` parameter:
 
 ```kotlin
-@GetMapping("/items")
-suspend fun listItems(@AccessUser player: OfflinePlayer?): List<ItemData> {
+@Get("/items")
+@Public
+suspend fun listItems(@Caller caller: Principal?): List<ItemData> {
+    val player = (caller as? Principal.User)?.offlinePlayer
     return if (player != null) {
         // Authenticated user - show personalized content
         itemService.findForUser(player.uniqueId)
@@ -78,71 +53,141 @@ suspend fun listItems(@AccessUser player: OfflinePlayer?): List<ItemData> {
 }
 ```
 
-## Permission Checking
+## Declaring Authenticated Endpoints
 
-### Method-Level Permissions
-
-Apply `@Permission` to individual methods:
+Use `@Authenticated` to require a valid access token. When no valid token is provided, MineAuth returns `401 Unauthorized` automatically.
 
 ```kotlin
-class ShopHandler {
-
-    @GetMapping("/shops")
-    suspend fun listShops(): List<ShopData> {
-        // No permission required - public endpoint
-        return shopService.findAll()
-    }
-
-    @PostMapping("/shops")
-    @Permission("shop.create")
-    suspend fun createShop(
-        @AuthedAccessUser player: OfflinePlayer,
-        @RequestBody shop: CreateShopRequest
-    ): ShopData {
-        // Requires "shop.create" permission
-        return shopService.create(player.uniqueId, shop)
-    }
+@Post("/send")
+@Authenticated
+suspend fun sendMoney(
+    @Caller caller: Principal.User,
+    @Body data: RemittanceData
+): TransferResponse {
+    // caller.uuid is the authenticated user's UUID
+    return economyService.transfer(caller.uuid, data)
 }
 ```
 
-### Class-Level Permissions
+### Allowed Callers
 
-Apply `@Permission` to the entire handler class:
+The `callers` property controls which token types may call the endpoint. The default is **user tokens only** — service tokens must be opted in explicitly:
 
 ```kotlin
-@Permission("admin.access")
-class AdminHandler {
+// User tokens only (default)
+@Authenticated
 
-    @GetMapping("/users")
-    suspend fun listUsers(): List<UserData> {
-        // Requires "admin.access"
+// User and service tokens
+@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+
+// Service tokens only
+@Authenticated(callers = [CallerType.SERVICE])
+```
+
+A request with a disallowed token type receives `403 Forbidden` with the error code `wrong_token_type`.
+
+### Permission Checking
+
+The `permission` property requires a Bukkit permission node:
+
+```kotlin
+@Post("/shops")
+@Authenticated(permission = "shop.create")
+suspend fun createShop(
+    @Caller caller: Principal.User,
+    @Body shop: CreateShopRequest
+): ShopData {
+    // Requires "shop.create" permission
+    return shopService.create(caller.uuid, shop)
+}
+```
+
+Permission semantics:
+
+- The check is evaluated **only for user tokens**. Service tokens are trusted credentials issued by an administrator and bypass the permission check (they still must be allowed via `callers`).
+- Permission evaluation requires the player to be online. If the player is offline, the request fails with `403 Forbidden` and the error code `player_offline`.
+- An empty `permission` (the default) means authentication only, with no permission check.
+
+## The Principal
+
+Authenticated endpoints receive the caller identity through a `@Caller` parameter of type `party.morino.mineauth.api.auth.Principal`:
+
+```kotlin
+sealed interface Principal {
+    val scopes: Set<String>       // OAuth scopes granted to the token
+    val clientId: String?         // OAuth client ID (null for service tokens)
+
+    interface User : Principal {
+        val uuid: UUID                        // Player's Minecraft UUID
+        val offlinePlayer: OfflinePlayer      // Always available
+        val onlinePlayer: Player?             // null when the player is offline
+        fun hasPermission(node: String): Boolean  // false when offline
     }
 
-    // Override class-level permission
-    @GetMapping("/public-info")
-    @Permission("user.view")
-    suspend fun getPublicInfo(): PublicInfo {
-        // Only requires "user.view"
+    interface Service : Principal {
+        val accountId: String     // Service account ID
     }
 }
 ```
 
-:::tip[Service Account and Permissions]
-Service accounts automatically bypass `@Permission` checks. This allows service tokens to access permission-protected endpoints without needing Bukkit permission assignments.
-:::
+Type and nullability rules, validated at registration:
 
-### Permission Denied Response
+| Endpoint | `@Caller` type | Nullability |
+|----------|----------------|-------------|
+| `@Authenticated`, `callers = [USER]` | `Principal.User` (or `Principal`) | Non-nullable |
+| `@Authenticated`, `callers = [USER, SERVICE]` | `Principal` (pattern-match on subtype) | Non-nullable |
+| `@Authenticated`, `callers = [SERVICE]` | `Principal.Service` (or `Principal`) | Non-nullable |
+| `@Public` | `Principal` | Nullable (`Principal?`) |
 
-When permission check fails, MineAuth returns:
-
-```json
-{
-    "error": "Permission denied",
-    "details": {
-        "required": "shop.create"
+```kotlin
+@Get("/report")
+@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+suspend fun getReport(@Caller caller: Principal): ReportData {
+    return when (caller) {
+        is Principal.User -> reportService.forPlayer(caller.uuid)
+        is Principal.Service -> reportService.full()
     }
 }
 ```
+
+## Player Resolution with @PlayerParam
+
+Use `@PlayerParam` to resolve an `OfflinePlayer` from a `{player}` path segment. It is only available on `@Authenticated` endpoints and binds `OfflinePlayer` only. The segment accepts three formats:
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `me` | `/balance/me` | Authenticated user's own data (user tokens only) |
+| UUID | `/balance/550e8400-e29b-41d4-a716-446655440000` | Access by player UUID |
+| Player Name | `/balance/Notch` | Access by player name |
+
+```kotlin
+@Get("/balance/{player}")
+@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+suspend fun getBalance(@PlayerParam("player") player: OfflinePlayer): BalanceResponse {
+    return BalanceResponse(economy.getBalance(player))
+}
+```
+
+### PlayerAccess Policies
+
+The `access` property of `@PlayerParam` selects who may target which player:
+
+| Policy | User token | Service token |
+|--------|-----------|---------------|
+| `SELF_ONLY` | Own data only (`me`, own UUID, own name) | Denied |
+| `SELF_OR_SERVICE` (default) | Own data only | Any player |
+| `ANY_AUTHENTICATED` | Any player | Any player |
+
+```kotlin
+// Only the player themselves may read their settings; service accounts are denied
+@Get("/settings/{player}")
+@Authenticated
+suspend fun getSettings(
+    @PlayerParam("player", access = PlayerAccess.SELF_ONLY) player: OfflinePlayer
+): SettingsData
+```
+
+A user token targeting another player under `SELF_ONLY` or `SELF_OR_SERVICE` receives `403 Forbidden` (`access_denied`). Remember that a service token can only reach the endpoint at all if `callers` includes `CallerType.SERVICE`.
 
 ## Service Account Access
 
@@ -154,26 +199,50 @@ Service accounts are designed for machine-to-machine (M2M) communication. They a
 2. A token is issued using `/ma service token <name>`
 3. The token is used as a Bearer token in API requests
 
-### Service Account Restrictions
+### Service Account Access Summary
 
 | Feature | User Token | Service Token |
 |---------|-----------|--------------|
-| `@AuthedAccessUser` endpoints | Available (self only) | Not available |
-| `@TargetPlayer` endpoints | `me` / own UUID / own name | Any player |
-| `@AccessUser` endpoints | Available | Not available |
-| `@Permission` check | Applied | Bypassed |
+| `@Authenticated` (default `callers`) | Available | Rejected (`wrong_token_type`) |
+| `@Authenticated(callers = [USER, SERVICE])` | Available | Available |
+| `@PlayerParam` with `SELF_OR_SERVICE` | Own data only | Any player (no `me`) |
+| `permission` check | Applied | Bypassed |
+| `@Caller caller: Principal.User` | Injected | Endpoint must not allow SERVICE |
 
 ### Example: Accessing Player Data with Service Token
 
 ```bash
 # Get a specific player's balance using service token
 curl -H "Authorization: Bearer <service-token>" \
-  https://mc.example.com/api/v1/plugins/vault-addon/balance/Notch
+  https://mc.example.com/api/v1/plugins/vault/balance/Notch
 
 # Get a player's claims by UUID
 curl -H "Authorization: Bearer <service-token>" \
-  https://mc.example.com/api/v1/plugins/mineauth-addon-griefprevention/claims/550e8400-e29b-41d4-a716-446655440000
+  https://mc.example.com/api/v1/plugins/griefprevention/claims/550e8400-e29b-41d4-a716-446655440000
 ```
+
+## Framework Error Codes
+
+Authentication and routing failures produce JSON error responses with a machine-readable `code` field:
+
+```json
+{
+    "error": "Permission denied",
+    "code": "access_denied"
+}
+```
+
+| HTTP Status | `code` | Meaning |
+|-------------|--------|---------|
+| 401 | `authentication_required` | No token provided on an `@Authenticated` endpoint |
+| 401 | `invalid_token` | Token is expired, malformed, or revoked |
+| 403 | `wrong_token_type` | Token type is not listed in the endpoint's `callers` |
+| 403 | `access_denied` | Permission check failed, or `@PlayerParam` access policy denied the target |
+| 403 | `player_offline` | Permission check could not run because the player is offline |
+| 404 | `not_found` | No endpoint matches the request path |
+| 405 | `method_not_allowed` | Path matches, but not with this HTTP method |
+
+Handlers can return their own codes via `HttpError(status, message, code, details)` or the `fail()` helper — see [Registering Handlers](/docs/developer/addons/register-handler#error-handling).
 
 ## JWT Token Structure
 
@@ -201,90 +270,16 @@ curl -H "Authorization: Bearer <service-token>" \
 | `exp` | Expiration time (default: 1 year) |
 | `iat` | Issued at time |
 
-## Authentication Flow
-
-### User Token Flow
-
-```
-┌─────────────┐                    ┌─────────────┐
-│   Client    │                    │  MineAuth   │
-└──────┬──────┘                    └──────┬──────┘
-       │                                  │
-       │  1. Request with Bearer token    │
-       │ ─────────────────────────────►   │
-       │                                  │
-       │                           2. Validate JWT
-       │                           3. Check permissions
-       │                           4. Execute handler
-       │                                  │
-       │  5. Response                     │
-       │ ◄─────────────────────────────   │
-       │                                  │
-```
-
-### Service Token Flow
-
-```
-┌─────────────┐                    ┌─────────────┐
-│   Service   │                    │  MineAuth   │
-└──────┬──────┘                    └──────┬──────┘
-       │                                  │
-       │  1. Request with Bearer token    │
-       │ ─────────────────────────────►   │
-       │                                  │
-       │                           2. Validate JWT
-       │                           3. Verify token not revoked
-       │                           4. Skip permission check
-       │                           5. Execute handler
-       │                                  │
-       │  6. Response                     │
-       │ ◄─────────────────────────────   │
-       │                                  │
-```
-
-## Error Responses
-
-### 401 Unauthorized
-
-No valid token provided:
-
-```json
-{
-    "error": "Authentication required",
-    "error_description": "Valid access token is required"
-}
-```
-
-### 403 Forbidden
-
-Permission denied or access to another player's data:
-
-```json
-{
-    "error": "Permission denied",
-    "details": {
-        "required": "shop.admin"
-    }
-}
-```
-
-```json
-{
-    "error": "Access denied",
-    "error_description": "You can only access your own data"
-}
-```
-
 ## Best Practices
 
-1. **Use `@TargetPlayer` for read endpoints** - Allows both user self-access and service account access to any player
+1. **Opt service tokens in deliberately** - The default `callers = [USER]` keeps endpoints self-service. Add `CallerType.SERVICE` only where backend automation genuinely needs access, typically on `@PlayerParam` read endpoints.
 
-2. **Use `@AuthedAccessUser` for write/action endpoints** - Ensures only the player themselves can perform actions like sending money or changing settings
+2. **Use `@PlayerParam` for read endpoints** - The default `SELF_OR_SERVICE` policy allows user self-access and service account access to any player, matching typical dashboard/bot needs.
 
-3. **Use `@AccessUser` for public endpoints** - When you want to personalize content but still serve anonymous users
+3. **Use `@Caller caller: Principal.User` for write/action endpoints** - Ensures only the player themselves can perform actions like sending money or changing settings.
 
-4. **Apply class-level permissions for admin handlers** - Reduces boilerplate and ensures consistent security
+4. **Use `@Public` with a nullable `@Caller` for personalized public content** - Serve anonymous users while enriching responses for authenticated ones.
 
-5. **Be specific with permission strings** - Use hierarchical permissions like `shop.create`, `shop.delete`, `shop.admin`
+5. **Be specific with permission strings** - Use hierarchical permissions like `shop.create`, `shop.delete`, `shop.admin`.
 
-6. **Validate business logic in handlers** - Even with service account bypass of `@Permission`, ensure your handler validates ownership and authorization as needed
+6. **Validate business logic in handlers** - Even though service tokens bypass the `permission` check, ensure your handler validates ownership and authorization as needed.

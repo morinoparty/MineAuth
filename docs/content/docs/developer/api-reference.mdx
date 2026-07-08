@@ -60,20 +60,22 @@ The specification includes:
 
 ## Dynamic Endpoint Discovery
 
-MineAuth automatically generates OpenAPI documentation for all registered addons. When an addon registers endpoints using `@GetMapping`, `@PostMapping`, etc., they are automatically included in the OpenAPI specification.
+MineAuth automatically generates OpenAPI documentation for all registered addons. When an addon registers endpoints via `MineAuthApi.register()` using `@Get`, `@Post`, etc., they are automatically included in the OpenAPI specification.
 
 ### Example
 
-If VaultAddon registers these endpoints:
+If the Vault addon registers these endpoints under the `vault` namespace:
 
 ```kotlin
-@GetMapping("/balance/{player}")
-suspend fun getMyBalance(@TargetPlayer player: OfflinePlayer): BalanceResponse
+@Get("/balance/{player}")
+@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+suspend fun getMyBalance(@PlayerParam("player") player: OfflinePlayer): BalanceResponse
 
-@PostMapping("/send")
+@Post("/send")
+@Authenticated
 suspend fun sendMoney(
-    @AuthedAccessUser player: OfflinePlayer,
-    @RequestBody data: RemittanceData
+    @Caller caller: Principal.User,
+    @Body data: RemittanceData
 ): TransferResponse
 ```
 
@@ -82,7 +84,7 @@ They will appear in the OpenAPI spec as:
 ```json
 {
   "paths": {
-    "/api/v1/plugins/vault-addon/balance/{player}": {
+    "/api/v1/plugins/vault/balance/{player}": {
       "get": {
         "summary": "Get My Balance",
         "parameters": [
@@ -132,9 +134,33 @@ MineAuth automatically generates JSON schemas from Kotlin data classes:
 | `@Serializable` class | `object` with properties |
 | `enum class` | `string` with enum values |
 
+Typed `@Query` parameters are documented with their declared type; nullable Kotlin types appear as optional parameters, non-nullable types as required.
+
 ## Security
 
-Endpoints with `@AuthedAccessUser` or `@TargetPlayer` annotations are marked with OAuth2 security requirements in the OpenAPI spec. Public endpoints (without authentication annotations) have no security requirements.
+Endpoints declared with `@Authenticated` are marked with OAuth2 security requirements in the OpenAPI spec. Endpoints declared with `@Public` carry no security requirements; if a `reason` was provided on the `@Public` annotation, it is included in the endpoint documentation.
+
+## Public API Surface
+
+The `party.morino.mineauth:api` artifact exposes the following types for addon developers:
+
+| Type | Package | Description |
+|------|---------|-------------|
+| `MineAuthApi` | `...api` | Entry point; obtained via `MineAuthApi.get(server)`, registers handlers |
+| `MineAuthRegistration` | `...api` | Registration handle: `basePath`, `endpoints`, `unregister()` |
+| `RegisteredEndpoint` | `...api` | Mounted endpoint metadata (method, full path, access info) |
+| `EndpointRegistrationException` | `...api` | Thrown by `register()` with the full list of validation errors |
+| `RegistrationError` | `...api` | Sealed hierarchy of typed validation errors |
+| `CallerType` | `...api` | `USER` / `SERVICE` token types for `@Authenticated(callers = ...)` |
+| `PlayerAccess` | `...api` | `SELF_ONLY` / `SELF_OR_SERVICE` / `ANY_AUTHENTICATED` policies for `@PlayerParam` |
+| `HttpMethod` | `...api` | HTTP method enumeration |
+| `Principal`, `Principal.User`, `Principal.Service` | `...api.auth` | Authenticated caller injected via `@Caller` |
+| `HttpError`, `fail()` | `...api.http` | Error responses with optional machine-readable `code` and `details` |
+| `HttpStatus` | `...api.http` | HTTP status enumeration (200–503) |
+| `@Get` / `@Post` / `@Put` / `@Delete` / `@Patch` | `...api.annotations` | HTTP method annotations |
+| `@Route` | `...api.annotations` | Class-level path prefix |
+| `@Public` / `@Authenticated` | `...api.annotations` | Mandatory access declarations |
+| `@Path` / `@Query` / `@QueryMap` / `@Body` / `@Caller` / `@PlayerParam` | `...api.annotations` | Parameter annotations |
 
 ## Integration with External Tools
 

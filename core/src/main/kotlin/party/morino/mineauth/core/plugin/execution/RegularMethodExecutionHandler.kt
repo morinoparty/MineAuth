@@ -26,6 +26,9 @@ class RegularMethodExecutionHandler : MethodExecutionHandler {
             ?: return ExecutionError.MethodNotFound(metadata.method.name).left()
 
         return try {
+            // 非publicなハンドラークラス上のpublicメソッドにもアクセスできるようにする
+            javaMethod.isAccessible = true
+
             // 通常のメソッド呼び出し
             val result = javaMethod.invoke(metadata.handlerInstance, *resolvedParams.toTypedArray())
             result.right()
@@ -34,6 +37,7 @@ class RegularMethodExecutionHandler : MethodExecutionHandler {
             ExecutionError.HttpErrorThrown(
                 status = e.status.code,
                 message = e.message,
+                code = e.code,
                 details = e.details
             ).left()
         } catch (e: InvocationTargetException) {
@@ -66,6 +70,7 @@ class RegularMethodExecutionHandler : MethodExecutionHandler {
             ExecutionError.HttpErrorThrown(
                 status = targetException.status.code,
                 message = targetException.message,
+                code = targetException.code,
                 details = targetException.details
             ).left()
         } else {

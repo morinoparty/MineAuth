@@ -33,62 +33,64 @@ depend:
   - MineAuth
 ```
 
-## Service Registration Pattern
+## Quick Start
 
-### Obtaining MineAuthAPI
-
-Get the `MineAuthAPI` instance from the Bukkit services manager:
+Obtain the `MineAuthApi` instance via `MineAuthApi.get(server)` and register your handlers in a single call:
 
 ```kotlin
 class MyPlugin : JavaPlugin() {
-    private lateinit var mineAuthAPI: MineAuthAPI
-
     override fun onEnable() {
-        // Get MineAuth API from services
-        mineAuthAPI = server.servicesManager
-            .getRegistration(MineAuthAPI::class.java)?.provider
-            ?: throw IllegalStateException("MineAuth plugin not found")
-
-        // Register your handlers
-        registerHandlers()
+        // Look up MineAuthApi through the ServicesManager (null if MineAuth is absent)
+        val api = MineAuthApi.get(server)
+            ?: run { logger.severe("MineAuth not found"); server.pluginManager.disablePlugin(this); return }
+        try {
+            // Register all handlers under an explicit URL namespace
+            val registration = api.register(this, "myplugin", MyHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+        } catch (e: EndpointRegistrationException) {
+            logger.severe(e.message) // contains the full list of validation errors
+            server.pluginManager.disablePlugin(this)
+        }
     }
+}
 
-    private fun registerHandlers() {
-        mineAuthAPI.createHandler(this)
-            .register(MyHandler())
-    }
+class MyHandler {
+    @Get("/hello")
+    @Public
+    suspend fun hello(): Map<String, String> = mapOf("message" to "Hello, World!")
 }
 ```
 
-### Alternative: Direct Plugin Cast
+Key points:
 
-You can also get the API by casting the plugin directly:
-
-```kotlin
-val mineAuthAPI = server.pluginManager.getPlugin("MineAuth") as? MineAuthAPI
-    ?: throw IllegalStateException("MineAuth plugin not found")
-```
+- **All-or-nothing registration**: `register()` validates every endpoint up front. If any endpoint is invalid, nothing is mounted and an `EndpointRegistrationException` is thrown describing every error.
+- **Explicit namespace**: the second argument (`"myplugin"`) becomes the URL namespace. It must match `[a-z0-9-]{2,32}` and must not be in use by another plugin. A two-argument overload derives the namespace from `plugin.name.lowercase()`, but an explicit namespace is recommended for clean URLs.
+- **Explicit access declaration**: every endpoint method must be annotated with exactly one of `@Public` or `@Authenticated`. Registration fails otherwise, preventing endpoints from being exposed unintentionally.
+- **Automatic cleanup**: registrations are unregistered automatically when your plugin is disabled. No manual cleanup is required.
 
 ## Basic Handler Example
 
-Create a simple handler class with annotated methods:
+Create a handler class with annotated methods:
 
 ```kotlin
 class MyHandler {
 
-    @GetMapping("/hello")
+    @Get("/hello")
+    @Public
     suspend fun hello(): Map<String, String> {
         return mapOf("message" to "Hello, World!")
     }
 
-    @GetMapping("/users/{uuid}")
-    suspend fun getUser(@PathParam("uuid") uuid: String): UserData? {
+    @Get("/users/{uuid}")
+    @Public
+    suspend fun getUser(@Path("uuid") uuid: UUID): UserData? {
         // Return user data by UUID
         return userService.findByUuid(uuid)
     }
 
-    @PostMapping("/items")
-    suspend fun createItem(@RequestBody item: ItemData): ItemData {
+    @Post("/items")
+    @Authenticated(permission = "myplugin.items.create")
+    suspend fun createItem(@Body item: ItemData): ItemData {
         // Create and return item
         return itemService.create(item)
     }
@@ -97,7 +99,7 @@ class MyHandler {
 
 ### Generated Endpoints
 
-For a plugin named "MyPlugin", the endpoints will be:
+With the namespace `"myplugin"`, the endpoints will be:
 
 | Method | Path |
 |--------|------|

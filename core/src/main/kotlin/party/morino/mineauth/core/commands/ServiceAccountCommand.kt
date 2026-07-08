@@ -8,7 +8,7 @@ import org.incendo.cloud.annotations.Argument
 import org.incendo.cloud.annotations.Command
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
-import party.morino.mineauth.api.annotations.Permission
+import org.incendo.cloud.annotations.Permission
 import party.morino.mineauth.core.dialog.ServiceAccountCreateDialog
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.utils.JwtProvider

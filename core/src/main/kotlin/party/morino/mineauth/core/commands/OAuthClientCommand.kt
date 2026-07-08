@@ -5,7 +5,7 @@ import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.incendo.cloud.annotations.Argument
 import org.incendo.cloud.annotations.Command
-import party.morino.mineauth.api.annotations.Permission
+import org.incendo.cloud.annotations.Permission
 import party.morino.mineauth.core.dialog.OAuthClientCreateDialog
 import party.morino.mineauth.core.model.ClientId
 import party.morino.mineauth.core.repository.OAuthClientError

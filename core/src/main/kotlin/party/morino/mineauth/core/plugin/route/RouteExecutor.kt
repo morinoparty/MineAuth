@@ -6,9 +6,9 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.util.reflect.TypeInfo
 import io.opentelemetry.api.common.Attributes
-import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.component.KoinComponent
 import org.slf4j.LoggerFactory
+import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
@@ -22,21 +22,23 @@ import kotlin.reflect.jvm.javaType
  * ハンドラーメソッドを実行するクラス
  * Cloud (Incendo/cloud) のパターンに基づきファクトリを使用してハンドラーを選択する
  *
- * パラメータ解決、認証チェック、メソッド実行、レスポンス生成を担当する
+ * パラメータ解決、メソッド実行、レスポンス生成を担当する
+ * （認証・認可はディスパッチャで実施済みの前提）
  */
 class RouteExecutor(
     private val parameterResolver: ParameterResolver,
-    private val authHandler: AuthenticationHandler,
     private val executionHandlerFactory: MethodExecutionHandlerFactory
 ) : KoinComponent {
 
     /**
      * エンドポイントメタデータに基づいてハンドラーを実行する
      *
-     * @param call ApplicationCall
+     * @param context 認証・パスマッチング済みのリクエストコンテキスト
      * @param metadata エンドポイントメタデータ
      */
-    suspend fun execute(call: ApplicationCall, metadata: EndpointMetadata) {
+    suspend fun execute(context: RequestContext, metadata: EndpointMetadata) {
+        val call = context.call
+
         // アドオンルート全体の処理を1つのスパンで計測する（全アドオンルートの単一チョークポイント）
         val attributes = Attributes.builder()
             .put(TelemetryAttributes.HANDLER_CLASS, metadata.handlerInstance::class.qualifiedName ?: "unknown")
@@ -44,13 +46,8 @@ class RouteExecutor(
             .put(TelemetryAttributes.ENDPOINT_METHOD, metadata.httpMethod.name)
             .build()
         withSpan("mineauth.plugin.handler", attributes = attributes) {
-            // 認証・認可が必要なら先にチェックする
-            if (!authenticateIfNeeded(call, metadata)) {
-                return@withSpan
-            }
-
             // パラメータ解決に失敗した場合はレスポンス済みで終了
-            val resolvedParams = resolveParameters(call, metadata) ?: return@withSpan
+            val resolvedParams = resolveParameters(context, metadata) ?: return@withSpan
 
             // ファクトリ経由でハンドラーを取得
             val handler = executionHandlerFactory.createHandler(metadata)
@@ -64,50 +61,21 @@ class RouteExecutor(
     }
 
     /**
-     * 認証・認可の必要性を判定して実行する
-     *
-     * @param call ApplicationCall
-     * @param metadata エンドポイントメタデータ
-     * @return 認証に成功した場合true
-     */
-    private suspend fun authenticateIfNeeded(call: ApplicationCall, metadata: EndpointMetadata): Boolean {
-        if (!metadata.requiresAuthentication) {
-            return true
-        }
-
-        val authResult = if (metadata.requiredPermission != null) {
-            // パーミッションチェックを含む認証
-            authHandler.authenticateAndCheckPermission(call, metadata.requiredPermission)
-        } else {
-            // 認証のみ
-            authHandler.authenticate(call)
-        }
-
-        return when (authResult) {
-            is Either.Left -> {
-                handleAuthError(call, authResult.value)
-                false
-            }
-            is Either.Right -> true
-        }
-    }
-
-    /**
      * パラメータを順序通りに解決する
      *
-     * @param call ApplicationCall
+     * @param context リクエストコンテキスト
      * @param metadata エンドポイントメタデータ
      * @return 解決結果、失敗時はnull
      */
     private suspend fun resolveParameters(
-        call: ApplicationCall,
+        context: RequestContext,
         metadata: EndpointMetadata
     ): List<Any?>? {
         val resolvedParams = mutableListOf<Any?>()
         for (paramInfo in metadata.parameters) {
-            when (val result = parameterResolver.resolve(call, paramInfo)) {
+            when (val result = parameterResolver.resolve(context, paramInfo)) {
                 is Either.Left -> {
-                    handleResolveError(call, result.value)
+                    handleResolveError(context.call, result.value)
                     return null
                 }
                 is Either.Right -> resolvedParams.add(result.value)
@@ -119,32 +87,101 @@ class RouteExecutor(
     /**
      * メソッドの戻り値をHTTPレスポンスに変換する
      *
+     * 戻り値がEither<HttpError, T>の場合はアンラップし、
+     * LeftならHttpErrorレスポンス、Rightなら値をシリアライズして返す。
+     *
      * リフレクション経由の呼び出しでは戻り値の静的型情報（ジェネリクス含む）が失われ、
      * Ktorの`guessSerializer`によるリスト要素の型推測が外部プラグインのクラスに対して失敗するため、
-     * ハンドラーの宣言上の戻り値型（`KType`）から`TypeInfo`を構築して`respond`に明示的に渡す。
+     * 登録時に解決した宣言上のレスポンス型（`KType`）から`TypeInfo`を構築して`respond`に明示的に渡す。
      *
      * @param call ApplicationCall
      * @param result メソッドの戻り値
-     * @param metadata エンドポイントメタデータ（宣言上の戻り値型を取得するために使用）
+     * @param metadata エンドポイントメタデータ
      */
     private suspend fun handleResult(call: ApplicationCall, result: Any?, metadata: EndpointMetadata) {
-        when (result) {
+        // Either<HttpError, T>のアンラップ（アドオンのクラスローダー差異に備えてリフレクションで処理）
+        val value = if (metadata.returnsEither && result != null) {
+            when (val unwrapped = unwrapEither(result)) {
+                is EitherUnwrap.Success -> unwrapped.value
+                is EitherUnwrap.HttpFailure -> {
+                    respondHttpError(call, unwrapped.error)
+                    return
+                }
+                is EitherUnwrap.Unknown -> {
+                    logger.error("Unexpected Either shape from handler: {}", sanitizeForLog(unwrapped.reason))
+                    respondInternalServerError(call)
+                    return
+                }
+            }
+        } else {
+            result
+        }
+
+        when (value) {
             null -> call.respond(HttpStatusCode.NoContent)
             is Unit -> call.respond(HttpStatusCode.OK)
-            else -> call.respond(result, resolveTypeInfo(metadata))
+            else -> call.respond(value, resolveTypeInfo(metadata))
+        }
+    }
+
+    /** Eitherアンラップの結果を表すsealed class */
+    private sealed class EitherUnwrap {
+        data class Success(val value: Any?) : EitherUnwrap()
+        data class HttpFailure(val error: HttpError) : EitherUnwrap()
+        data class Unknown(val reason: String) : EitherUnwrap()
+    }
+
+    /**
+     * ArrowのEitherをリフレクションでアンラップする
+     *
+     * アドオンがArrowをshade/relocateしている場合、coreのEitherクラスとは
+     * 別クラスになるため、クラス名のsuffix比較とリフレクションで処理する。
+     * HttpErrorはMineAuth本体のクラスローダーから提供されるため直接型チェック可能。
+     */
+    private fun unwrapEither(result: Any): EitherUnwrap {
+        val className = result.javaClass.name
+        // パッケージ境界を含めて比較し、無関係な同名クラスの誤判定を防ぐ
+        fun matches(suffix: String) = className == suffix || className.endsWith(".$suffix")
+        return try {
+            when {
+                matches("arrow.core.Either\$Right") -> {
+                    EitherUnwrap.Success(result.javaClass.getMethod("getValue").invoke(result))
+                }
+                matches("arrow.core.Either\$Left") -> {
+                    val leftValue = result.javaClass.getMethod("getValue").invoke(result)
+                    if (leftValue is HttpError) {
+                        EitherUnwrap.HttpFailure(leftValue)
+                    } else {
+                        EitherUnwrap.Unknown("Left value is not HttpError: ${leftValue?.javaClass?.name}")
+                    }
+                }
+                else -> EitherUnwrap.Unknown("Not an Either instance: $className")
+            }
+        } catch (e: ReflectiveOperationException) {
+            EitherUnwrap.Unknown("Failed to unwrap Either: ${e.message}")
         }
     }
 
     /**
-     * ハンドラーメソッドの宣言上の戻り値型から`TypeInfo`を構築する
+     * 登録時に解決済みのレスポンス型から`TypeInfo`を構築する
      *
      * @param metadata エンドポイントメタデータ
-     * @return 戻り値型に基づく`TypeInfo`
+     * @return レスポンス型に基づく`TypeInfo`
      */
     private fun resolveTypeInfo(metadata: EndpointMetadata): TypeInfo {
-        val returnType = metadata.method.returnType
-        val classifier = returnType.classifier as? KClass<*> ?: Any::class
-        return TypeInfo(classifier, returnType.javaType, returnType)
+        val responseType = metadata.responseType
+        val classifier = responseType.classifier as? KClass<*> ?: Any::class
+        return TypeInfo(classifier, responseType.javaType, responseType)
+    }
+
+    /**
+     * HttpErrorをHTTPレスポンスに変換する
+     */
+    private suspend fun respondHttpError(call: ApplicationCall, error: HttpError) {
+        call.respond(
+            HttpStatusCode.fromValue(error.status.code),
+            ErrorResponse.fromDetails(error.message, error.details, error.code)
+        )
     }
 
     /**
@@ -199,7 +236,7 @@ class RouteExecutor(
                 // HttpErrorは意図的にスローされたものなのでメッセージを返す
                 call.respond(
                     HttpStatusCode.fromValue(error.status),
-                    ErrorResponse.fromDetails(error.message, error.details ?: emptyMap())
+                    ErrorResponse.fromDetails(error.message, error.details ?: emptyMap(), error.code)
                 )
             }
 
@@ -218,21 +255,47 @@ class RouteExecutor(
      * @param call ApplicationCall
      * @param error 認証エラー
      */
-    private suspend fun handleAuthError(call: ApplicationCall, error: AuthError) {
+    suspend fun respondAuthError(call: ApplicationCall, error: AuthError) {
         when (error) {
             is AuthError.NotAuthenticated ->
-                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Authentication required"))
+                call.respond(
+                    HttpStatusCode.Unauthorized,
+                    ErrorResponse("Authentication required", code = "authentication_required")
+                )
 
             is AuthError.InvalidToken -> {
                 // 詳細はログにのみ出力
                 logger.warn("InvalidToken: {}", sanitizeForLog(error.reason))
-                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Invalid token"))
+                call.respond(
+                    HttpStatusCode.Unauthorized,
+                    ErrorResponse("Invalid token", code = "invalid_token")
+                )
+            }
+
+            is AuthError.WrongTokenType -> {
+                logger.warn("WrongTokenType: allowed={}", error.allowed)
+                call.respond(
+                    HttpStatusCode.Forbidden,
+                    ErrorResponse("This endpoint does not accept this token type", code = "wrong_token_type")
+                )
             }
 
             is AuthError.PermissionDenied -> {
                 // パーミッション名はログにのみ出力
                 logger.warn("PermissionDenied: {}", sanitizeForLog(error.permission))
-                call.respond(HttpStatusCode.Forbidden, ErrorResponse("Permission denied"))
+                call.respond(
+                    HttpStatusCode.Forbidden,
+                    ErrorResponse("Permission denied", code = "access_denied")
+                )
+            }
+
+            is AuthError.PlayerOffline -> {
+                // パーミッション評価不能はパーミッション不足と区別してクライアントに返す
+                logger.warn("PlayerOffline: permission check skipped for {}", sanitizeForLog(error.permission))
+                call.respond(
+                    HttpStatusCode.Forbidden,
+                    ErrorResponse("Player must be online for permission check", code = "player_offline")
+                )
             }
         }
     }
@@ -249,7 +312,13 @@ class RouteExecutor(
             is ResolveError.MissingPathParameter ->
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse("Missing required parameter: ${error.name}")
+                    ErrorResponse("Missing required parameter: ${error.name}", code = "missing_parameter")
+                )
+
+            is ResolveError.MissingQueryParameter ->
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse("Missing required query parameter: ${error.name}", code = "missing_parameter")
                 )
 
             is ResolveError.InvalidBodyFormat -> {
@@ -257,24 +326,15 @@ class RouteExecutor(
                 logger.warn("InvalidBodyFormat: {}", sanitizeForLog(error.cause.message))
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse("Invalid request body format")
+                    ErrorResponse("Invalid request body format", code = "invalid_body")
                 )
             }
 
             is ResolveError.AuthenticationRequired ->
                 call.respond(
                     HttpStatusCode.Unauthorized,
-                    ErrorResponse("Authentication required")
+                    ErrorResponse("Authentication required", code = "authentication_required")
                 )
-
-            is ResolveError.PlayerNotFound -> {
-                // UUIDはログにのみ出力
-                logger.warn("PlayerNotFound: {}", sanitizeForLog(error.uuid))
-                call.respond(
-                    HttpStatusCode.NotFound,
-                    ErrorResponse("Player not found")
-                )
-            }
 
             is ResolveError.TypeConversionFailed -> {
                 // 詳細はログにのみ出力（サニタイズしてログ注入を防止）
@@ -286,7 +346,7 @@ class RouteExecutor(
                 )
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse("Invalid parameter format")
+                    ErrorResponse("Invalid parameter format", code = "invalid_parameter")
                 )
             }
 
@@ -295,7 +355,7 @@ class RouteExecutor(
                 logger.warn("AccessDenied: {}", sanitizeForLog(error.reason))
                 call.respond(
                     HttpStatusCode.Forbidden,
-                    ErrorResponse("Access denied")
+                    ErrorResponse("Access denied", code = "access_denied")
                 )
             }
         }
@@ -308,7 +368,10 @@ class RouteExecutor(
      * @param call ApplicationCall
      */
     private suspend fun respondInternalServerError(call: ApplicationCall) {
-        call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error"))
+        call.respond(
+            HttpStatusCode.InternalServerError,
+            ErrorResponse("Internal server error", code = "internal_error")
+        )
     }
 
     companion object {

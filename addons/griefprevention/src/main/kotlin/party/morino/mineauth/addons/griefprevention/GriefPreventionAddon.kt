@@ -12,7 +12,8 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.griefprevention.config.GriefPreventionConfig
 import party.morino.mineauth.addons.griefprevention.routes.ClaimHandler
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.EndpointRegistrationException
+import party.morino.mineauth.api.MineAuthApi
 
 /**
  * GriefPrevention連携アドオン
@@ -26,20 +27,19 @@ class GriefPreventionAddon : JavaPlugin() {
         prettyPrint = true
     }
 
-    private lateinit var mineAuthAPI: MineAuthAPI
+    private lateinit var mineAuthApi: MineAuthApi
 
     override fun onEnable() {
         logger.info("GriefPrevention Addon enabling...")
 
-        // MineAuthAPIの取得
-        val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
-        val api = mineAuthPlugin as? MineAuthAPI
+        // MineAuthApiの取得（ServicesManager経由）
+        val api = MineAuthApi.get(server)
         if (api == null) {
-            logger.severe("MineAuth plugin not found or is not a valid MineAuthAPI instance")
+            logger.severe("MineAuth not found")
             server.pluginManager.disablePlugin(this)
             return
         }
-        mineAuthAPI = api
+        mineAuthApi = api
 
         // GriefPreventionプラグインの検証
         if (!verifyGriefPrevention()) {
@@ -135,9 +135,15 @@ class GriefPreventionAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
+     * 登録はall-or-nothingであり、検証エラーが発生した場合はプラグインを無効化する
      */
     private fun setupMineAuth() {
-        mineAuthAPI.createHandler(this)
-            .register(ClaimHandler())
+        try {
+            val registration = mineAuthApi.register(this, "griefprevention", ClaimHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+        } catch (e: EndpointRegistrationException) {
+            logger.severe(e.message)
+            server.pluginManager.disablePlugin(this)
+        }
     }
 }

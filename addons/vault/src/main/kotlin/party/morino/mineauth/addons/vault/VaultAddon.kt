@@ -10,7 +10,8 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.vault.config.VaultConfig
 import party.morino.mineauth.addons.vault.routes.VaultHandler
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.EndpointRegistrationException
+import party.morino.mineauth.api.MineAuthApi
 
 /**
  * Vault連携アドオン
@@ -24,20 +25,19 @@ class VaultAddon : JavaPlugin() {
         prettyPrint = true
     }
 
-    private lateinit var mineAuthAPI: MineAuthAPI
+    private lateinit var mineAuthApi: MineAuthApi
 
     override fun onEnable() {
         logger.info("Vault Addon enabling...")
 
-        // MineAuthAPIの取得（safe castを使用してgraceful disableに対応）
-        val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
-        val api = mineAuthPlugin as? MineAuthAPI
+        // MineAuthApiの取得（ServicesManager経由、MineAuth未ロード時はnull）
+        val api = MineAuthApi.get(server)
         if (api == null) {
-            logger.severe("MineAuth plugin not found or is not a valid MineAuthAPI instance")
+            logger.severe("MineAuth plugin not found")
             server.pluginManager.disablePlugin(this)
             return
         }
-        mineAuthAPI = api
+        mineAuthApi = api
 
         // Koinの初期化
         if (!setupKoin()) {
@@ -47,7 +47,10 @@ class VaultAddon : JavaPlugin() {
         }
 
         // MineAuthにハンドラーを登録
-        setupMineAuth()
+        if (!setupMineAuth()) {
+            server.pluginManager.disablePlugin(this)
+            return
+        }
 
         logger.info("Vault Addon enabled")
     }
@@ -111,10 +114,19 @@ class VaultAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
-     * 登録されたハンドラーは /api/v1/plugins/vault-addon/ 配下で利用可能
+     * 登録されたハンドラーは /api/v1/plugins/vault 配下で利用可能
+     *
+     * @return 登録に成功した場合はtrue
      */
-    private fun setupMineAuth() {
-        mineAuthAPI.createHandler(this)
-            .register(VaultHandler())
+    private fun setupMineAuth(): Boolean {
+        return try {
+            val registration = mineAuthApi.register(this, "vault", VaultHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+            true
+        } catch (e: EndpointRegistrationException) {
+            // 登録は全件失敗（all-or-nothing）のため、検証エラーの詳細をログに出力する
+            logger.severe(e.message)
+            false
+        }
     }
 }

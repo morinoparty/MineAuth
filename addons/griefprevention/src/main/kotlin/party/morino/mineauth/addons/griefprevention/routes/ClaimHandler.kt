@@ -11,11 +11,14 @@ import org.koin.core.component.inject
 import party.morino.mineauth.addons.griefprevention.config.GriefPreventionConfig
 import party.morino.mineauth.addons.griefprevention.data.*
 import party.morino.mineauth.addons.griefprevention.utils.coroutines.minecraft
-import party.morino.mineauth.api.annotations.AuthedAccessUser
-import party.morino.mineauth.api.annotations.GetMapping
-import party.morino.mineauth.api.annotations.PostMapping
-import party.morino.mineauth.api.annotations.RequestBody
-import party.morino.mineauth.api.annotations.TargetPlayer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Body
+import party.morino.mineauth.api.annotations.Caller
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.PlayerParam
+import party.morino.mineauth.api.annotations.Post
+import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 
@@ -35,8 +38,9 @@ class ClaimHandler : KoinComponent {
      * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return クレーム情報のサマリー
      */
-    @GetMapping("/claims/{player}")
-    suspend fun getMyClaims(@TargetPlayer player: OfflinePlayer): ClaimSummaryResponse {
+    @Get("/claims/{player}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getMyClaims(@PlayerParam("player") player: OfflinePlayer): ClaimSummaryResponse {
         return withContext(Dispatchers.minecraft) {
             // プレイヤーデータをGriefPreventionから取得
             val playerData = dataStore.getPlayerData(player.uniqueId)
@@ -61,15 +65,18 @@ class ClaimHandler : KoinComponent {
      * アドオン設定（GriefPreventionConfig.claimBlockCost）で設定された単価を使用する。
      * GriefPrevention 18.0.0 で本体の経済機能が削除されたため、単価はアドオン側で管理する。
      *
-     * @param player 認証済みプレイヤー
+     * @param caller 認証済みプレイヤー
      * @param request 購入リクエスト
      * @return 購入結果
      */
-    @PostMapping("/claims/purchase")
+    @Post("/claims/purchase")
+    @Authenticated
     suspend fun purchaseClaimBlocks(
-        @AuthedAccessUser player: OfflinePlayer,
-        @RequestBody request: PurchaseRequest,
+        @Caller caller: Principal.User,
+        @Body request: PurchaseRequest,
     ): PurchaseResponse {
+        val player = caller.offlinePlayer
+
         // 購入数のバリデーション
         if (request.blockCount <= 0) {
             throw HttpError(HttpStatus.BAD_REQUEST, "Block count must be greater than 0")

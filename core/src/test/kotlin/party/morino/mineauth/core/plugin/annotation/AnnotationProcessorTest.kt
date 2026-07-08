@@ -1,20 +1,27 @@
 package party.morino.mineauth.core.plugin.annotation
 
-import arrow.core.getOrElse
-import org.bukkit.entity.Player
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import party.morino.mineauth.api.annotations.*
+import party.morino.mineauth.api.RegistrationError
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Caller
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.Path
+import party.morino.mineauth.api.annotations.Public
+import party.morino.mineauth.api.annotations.Query
+import party.morino.mineauth.api.annotations.Route
+import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.core.MineAuthTest
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * AnnotationProcessorのユニットテスト
+ * 新API（@Get/@Public/@Authenticated等）を対象とする
  */
 @ExtendWith(MineAuthTest::class)
 class AnnotationProcessorTest {
@@ -22,203 +29,197 @@ class AnnotationProcessorTest {
     private val processor = AnnotationProcessor()
 
     // テスト用のサンプルハンドラークラス
-    class SimpleHandler {
-        @GetMapping("/test")
-        suspend fun getTest(@PathParam("id") id: String): String = id
+
+    class ValidHandler {
+        @Get("/items/{id}")
+        @Public
+        suspend fun getItem(@Path("id") id: String, @Query("limit") limit: Int?): String = id
     }
 
-    class MultiMethodHandler {
-        @GetMapping("/get")
-        suspend fun get(@PathParam("id") id: String): String = id
-
-        @PostMapping("/post")
-        suspend fun post(@RequestBody body: String): String = body
-
-        @PutMapping("/put")
-        suspend fun put(@PathParam("id") id: String, @RequestBody body: String): String = "$id:$body"
-
-        @DeleteMapping("/delete")
-        suspend fun delete(@PathParam("id") id: String): Unit {}
+    class MissingAccessHandler {
+        @Get("/x")
+        suspend fun x(): String = "x"
     }
 
-    class AuthenticatedHandler {
-        @GetMapping("/protected")
-        suspend fun protectedEndpoint(@AuthedAccessUser player: Player): String = player.name
+    class ConflictingAccessHandler {
+        @Get("/x")
+        @Public
+        @Authenticated
+        suspend fun x(): String = "x"
     }
 
-    @Permission("global.permission")
-    class PermissionHandler {
-        @GetMapping("/global")
-        suspend fun globalPermission(@PathParam("id") id: String): String = id
-
-        @GetMapping("/override")
-        @Permission("method.permission")
-        suspend fun overridePermission(@PathParam("id") id: String): String = id
+    class MissingParamAnnotationHandler {
+        @Get("/x")
+        @Public
+        suspend fun x(id: String): String = id
     }
 
-    class NoMappingHandler {
+    class UnsupportedPathTypeHandler {
+        @Get("/items/{id}")
+        @Public
+        suspend fun getItem(@Path("id") id: List<String>): String = id.toString()
+    }
+
+    class PathMismatchHandler {
+        @Get("/items")
+        @Public
+        suspend fun getItem(@Path("id") id: String): String = id
+    }
+
+    class CallerMismatchHandler {
+        @Get("/x")
+        @Public
+        suspend fun x(@Caller caller: Principal): String = caller.toString()
+    }
+
+    @Route("/prefix")
+    class RoutePrefixHandler {
+        @Get("/items")
+        @Public
+        suspend fun items(): String = "ok"
+    }
+
+    class MultipleErrorsHandler {
+        @Get("/a")
+        suspend fun a(): String = "a"
+
+        @Get("/b")
+        suspend fun b(): String = "b"
+    }
+
+    class NoEndpointsHandler {
         fun notAnEndpoint(): String = "not an endpoint"
     }
 
     @Nested
-    @DisplayName("Basic annotation processing")
-    inner class BasicProcessing {
+    @DisplayName("Valid handler processing")
+    inner class ValidProcessing {
 
         @Test
-        @DisplayName("Process simple handler with GET mapping")
-        fun processSimpleHandler() {
-            val handler = SimpleHandler()
-            val result = processor.process(handler)
+        @DisplayName("Valid handler with @Get, @Public and typed params produces correct metadata")
+        fun processValidHandler() {
+            val result = processor.process(ValidHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
+            val endpoints = assertNotNull(result.getOrNull())
             assertEquals(1, endpoints.size)
 
             val endpoint = endpoints.first()
-            assertEquals("/test", endpoint.path)
+            assertEquals("/items/{id}", endpoint.path)
             assertEquals(HttpMethodType.GET, endpoint.httpMethod)
+            assertTrue(endpoint.access is EndpointAccess.Public)
             assertTrue(endpoint.isSuspending)
-            assertFalse(endpoint.requiresAuthentication)
-            assertNull(endpoint.requiredPermission)
+
+            assertEquals(2, endpoint.parameters.size)
+            val pathParam = endpoint.parameters[0]
+            assertTrue(pathParam is ParameterInfo.PathParam)
+            assertEquals("id", (pathParam as ParameterInfo.PathParam).name)
+
+            val queryParam = endpoint.parameters[1]
+            assertTrue(queryParam is ParameterInfo.QueryParam)
+            assertEquals("limit", (queryParam as ParameterInfo.QueryParam).name)
+            // Int?であるため省略可能として扱われる
+            assertTrue(queryParam.optional)
         }
 
         @Test
-        @DisplayName("Process handler with multiple HTTP methods")
-        fun processMultiMethodHandler() {
-            val handler = MultiMethodHandler()
-            val result = processor.process(handler)
+        @DisplayName("Class-level @Route prefix is prepended to endpoint path")
+        fun routePrefixIsApplied() {
+            val result = processor.process(RoutePrefixHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-            assertEquals(4, endpoints.size)
-
-            val methods = endpoints.map { it.httpMethod }.toSet()
-            assertTrue(methods.contains(HttpMethodType.GET))
-            assertTrue(methods.contains(HttpMethodType.POST))
-            assertTrue(methods.contains(HttpMethodType.PUT))
-            assertTrue(methods.contains(HttpMethodType.DELETE))
-        }
-
-        @Test
-        @DisplayName("Handler without mappings returns empty list")
-        fun processNoMappingHandler() {
-            val handler = NoMappingHandler()
-            val result = processor.process(handler)
-
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-            assertTrue(endpoints.isEmpty())
-        }
-    }
-
-    @Nested
-    @DisplayName("Authentication handling")
-    inner class AuthenticationHandling {
-
-        @Test
-        @DisplayName("Handler with @AuthedAccessUser requires authentication")
-        fun authenticatedHandlerRequiresAuth() {
-            val handler = AuthenticatedHandler()
-            val result = processor.process(handler)
-
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
+            val endpoints = assertNotNull(result.getOrNull())
             assertEquals(1, endpoints.size)
-
-            val endpoint = endpoints.first()
-            assertTrue(endpoint.requiresAuthentication)
-        }
-
-        @Test
-        @DisplayName("Handler without auth annotation does not require authentication")
-        fun simpleHandlerDoesNotRequireAuth() {
-            val handler = SimpleHandler()
-            val result = processor.process(handler)
-
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-            val endpoint = endpoints.first()
-            assertFalse(endpoint.requiresAuthentication)
+            assertEquals("/prefix/items", endpoints.first().path)
         }
     }
 
     @Nested
-    @DisplayName("Permission handling")
-    inner class PermissionHandling {
+    @DisplayName("Access declaration validation")
+    inner class AccessValidation {
 
         @Test
-        @DisplayName("Class-level permission applies to methods")
-        fun classLevelPermission() {
-            val handler = PermissionHandler()
-            val result = processor.process(handler)
+        @DisplayName("Missing @Public/@Authenticated yields MissingAccessDeclaration")
+        fun missingAccessDeclaration() {
+            val result = processor.process(MissingAccessHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-
-            val globalEndpoint = endpoints.find { it.path == "/global" }
-            assertEquals("global.permission", globalEndpoint?.requiredPermission)
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.MissingAccessDeclaration })
         }
 
         @Test
-        @DisplayName("Method-level permission overrides class-level")
-        fun methodLevelPermissionOverrides() {
-            val handler = PermissionHandler()
-            val result = processor.process(handler)
+        @DisplayName("Both @Public and @Authenticated yields ConflictingAccessDeclaration")
+        fun conflictingAccessDeclaration() {
+            val result = processor.process(ConflictingAccessHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-
-            val overrideEndpoint = endpoints.find { it.path == "/override" }
-            assertEquals("method.permission", overrideEndpoint?.requiredPermission)
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.ConflictingAccessDeclaration })
         }
     }
 
     @Nested
-    @DisplayName("Parameter handling")
-    inner class ParameterHandling {
+    @DisplayName("Parameter validation")
+    inner class ParameterValidation {
 
         @Test
-        @DisplayName("@PathParam creates PathParam info")
-        fun paramCreatesPathParam() {
-            val handler = SimpleHandler()
-            val result = processor.process(handler)
+        @DisplayName("Parameter without annotation yields MissingParameterAnnotation")
+        fun missingParameterAnnotation() {
+            val result = processor.process(MissingParamAnnotationHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-            val endpoint = endpoints.first()
-
-            assertEquals(1, endpoint.parameters.size)
-            val param = endpoint.parameters.first()
-            assertTrue(param is ParameterInfo.PathParam)
-            assertEquals("id", (param as ParameterInfo.PathParam).name)
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.MissingParameterAnnotation })
         }
 
         @Test
-        @DisplayName("@RequestBody creates Body info")
-        fun requestBodyCreatesBodyParam() {
-            val handler = MultiMethodHandler()
-            val result = processor.process(handler)
+        @DisplayName("@Path with unsupported type yields UnsupportedParameterType")
+        fun unsupportedPathParameterType() {
+            val result = processor.process(UnsupportedPathTypeHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-            val postEndpoint = endpoints.find { it.httpMethod == HttpMethodType.POST }
-
-            val param = postEndpoint?.parameters?.first()
-            assertTrue(param is ParameterInfo.Body)
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.UnsupportedParameterType })
         }
 
         @Test
-        @DisplayName("@AuthedAccessUser creates AuthenticatedPlayer info")
-        fun authedAccessUserCreatesAuthPlayer() {
-            val handler = AuthenticatedHandler()
-            val result = processor.process(handler)
+        @DisplayName("@Path name absent from route path yields PathParameterMismatch")
+        fun pathParameterMismatch() {
+            val result = processor.process(PathMismatchHandler())
 
-            assertTrue(result.isRight())
-            val endpoints = result.getOrElse { emptyList() }
-            val endpoint = endpoints.first()
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.PathParameterMismatch })
+        }
 
-            val param = endpoint.parameters.first()
-            assertTrue(param is ParameterInfo.AuthenticatedPlayer)
+        @Test
+        @DisplayName("Non-nullable @Caller on @Public endpoint yields CallerNullabilityMismatch")
+        fun callerNullabilityMismatch() {
+            val result = processor.process(CallerMismatchHandler())
+
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.CallerNullabilityMismatch })
+        }
+    }
+
+    @Nested
+    @DisplayName("Error accumulation and edge cases")
+    inner class ErrorAccumulation {
+
+        @Test
+        @DisplayName("Errors from multiple broken endpoints are accumulated")
+        fun errorsAccumulateAcrossEndpoints() {
+            val result = processor.process(MultipleErrorsHandler())
+
+            val errors = assertNotNull(result.leftOrNull())
+            val missingAccessErrors = errors.filterIsInstance<RegistrationError.MissingAccessDeclaration>()
+            assertEquals(2, missingAccessErrors.size)
+            assertTrue(missingAccessErrors.any { it.function == "a" })
+            assertTrue(missingAccessErrors.any { it.function == "b" })
+        }
+
+        @Test
+        @DisplayName("Handler with no endpoint methods yields NoEndpoints")
+        fun noEndpointsInHandler() {
+            val result = processor.process(NoEndpointsHandler())
+
+            val errors = assertNotNull(result.leftOrNull())
+            assertTrue(errors.any { it is RegistrationError.NoEndpoints })
+            assertNull(result.getOrNull())
         }
     }
 }

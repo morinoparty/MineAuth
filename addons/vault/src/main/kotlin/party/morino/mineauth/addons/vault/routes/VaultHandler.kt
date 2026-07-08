@@ -7,11 +7,14 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.addons.vault.config.VaultConfig
 import party.morino.mineauth.addons.vault.data.RemittanceData
-import party.morino.mineauth.api.annotations.AuthedAccessUser
-import party.morino.mineauth.api.annotations.GetMapping
-import party.morino.mineauth.api.annotations.PostMapping
-import party.morino.mineauth.api.annotations.RequestBody
-import party.morino.mineauth.api.annotations.TargetPlayer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Body
+import party.morino.mineauth.api.annotations.Caller
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.PlayerParam
+import party.morino.mineauth.api.annotations.Post
+import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 import java.util.logging.Logger
@@ -37,7 +40,7 @@ data class TransferResponse(
 
 /**
  * Vaultの経済機能を提供するハンドラー
- * /api/v1/plugins/{plugin-name}/ 配下にエンドポイントを提供する
+ * /api/v1/plugins/vault/ 配下にエンドポイントを提供する
  */
 class VaultHandler : KoinComponent {
     private val economy: Economy by inject()
@@ -51,11 +54,15 @@ class VaultHandler : KoinComponent {
      * プレイヤーの残高を取得する
      * GET /balance/{player}
      *
+     * ユーザートークンは自分自身のみ、サービストークンは任意のプレイヤーの残高を取得できる
+     * （旧TargetPlayerの挙動を維持）
+     *
      * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return 残高を含むレスポンス
      */
-    @GetMapping("/balance/{player}")
-    suspend fun getMyBalance(@TargetPlayer player: OfflinePlayer): BalanceResponse {
+    @Get("/balance/{player}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getMyBalance(@PlayerParam("player") player: OfflinePlayer): BalanceResponse {
         val balance = economy.getBalance(player)
         return BalanceResponse(balance = balance)
     }
@@ -64,15 +71,19 @@ class VaultHandler : KoinComponent {
      * 他のプレイヤーに送金する
      * POST /send
      *
-     * @param player 認証済みプレイヤー（送金元）
+     * 自分自身の口座からの送金のみを許可するため、ユーザートークンでの呼び出しのみ許可する
+     *
+     * @param caller 認証済み呼び出し元（送金元プレイヤー）
      * @param data 送金データ（送金先と金額）
      * @return 送金結果のレスポンス
      */
-    @PostMapping("/send")
+    @Post("/send")
+    @Authenticated
     suspend fun sendMoney(
-        @AuthedAccessUser player: OfflinePlayer,
-        @RequestBody data: RemittanceData
+        @Caller caller: Principal.User,
+        @Body data: RemittanceData
     ): TransferResponse {
+        val player = caller.offlinePlayer
         val target = data.target
         val amount = data.amount
 
