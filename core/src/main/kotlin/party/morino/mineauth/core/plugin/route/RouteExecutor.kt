@@ -4,6 +4,7 @@ import arrow.core.Either
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
+import io.ktor.util.reflect.TypeInfo
 import io.opentelemetry.api.common.Attributes
 import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.component.KoinComponent
@@ -13,7 +14,9 @@ import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
+import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
+import kotlin.reflect.jvm.javaType
 
 /**
  * ハンドラーメソッドを実行するクラス
@@ -55,7 +58,7 @@ class RouteExecutor(
             // ハンドラーを実行して結果を処理
             when (val result = handler.execute(metadata, resolvedParams)) {
                 is Either.Left -> handleExecutionError(call, result.value, metadata, resolvedParams)
-                is Either.Right -> handleResult(call, result.value)
+                is Either.Right -> handleResult(call, result.value, metadata)
             }
         }
     }
@@ -116,15 +119,32 @@ class RouteExecutor(
     /**
      * メソッドの戻り値をHTTPレスポンスに変換する
      *
+     * リフレクション経由の呼び出しでは戻り値の静的型情報（ジェネリクス含む）が失われ、
+     * Ktorの`guessSerializer`によるリスト要素の型推測が外部プラグインのクラスに対して失敗するため、
+     * ハンドラーの宣言上の戻り値型（`KType`）から`TypeInfo`を構築して`respond`に明示的に渡す。
+     *
      * @param call ApplicationCall
      * @param result メソッドの戻り値
+     * @param metadata エンドポイントメタデータ（宣言上の戻り値型を取得するために使用）
      */
-    private suspend fun handleResult(call: ApplicationCall, result: Any?) {
+    private suspend fun handleResult(call: ApplicationCall, result: Any?, metadata: EndpointMetadata) {
         when (result) {
             null -> call.respond(HttpStatusCode.NoContent)
             is Unit -> call.respond(HttpStatusCode.OK)
-            else -> call.respond(result)
+            else -> call.respond(result, resolveTypeInfo(metadata))
         }
+    }
+
+    /**
+     * ハンドラーメソッドの宣言上の戻り値型から`TypeInfo`を構築する
+     *
+     * @param metadata エンドポイントメタデータ
+     * @return 戻り値型に基づく`TypeInfo`
+     */
+    private fun resolveTypeInfo(metadata: EndpointMetadata): TypeInfo {
+        val returnType = metadata.method.returnType
+        val classifier = returnType.classifier as? KClass<*> ?: Any::class
+        return TypeInfo(classifier, returnType.javaType, returnType)
     }
 
     /**
