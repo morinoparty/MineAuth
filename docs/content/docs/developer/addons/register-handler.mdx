@@ -222,6 +222,10 @@ suspend fun getShop(@PathParam("id") id: String): ShopData {
 }
 ```
 
+## Notes on List Responses
+
+Handler methods may return `List<T>` of any `@Serializable` data class, including classes defined in the calling plugin. MineAuth resolves the handler's declared return type when serializing the response, so list element types are serialized correctly without relying on runtime type guessing.
+
 ## Method Chaining
 
 `register()` returns the `RegisterHandler` instance, allowing method chaining:
