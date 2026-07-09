@@ -3,13 +3,15 @@ title: Examples
 description: Example addon implementations for MineAuth API
 ---
 
+All bundled addons register their handlers with an explicit URL namespace via `api.register(this, "<namespace>", handler)`, so their endpoints are mounted under short base paths such as `/api/v1/plugins/vault`.
+
 ## QuickShop-Hikari Addon
 
 A complete example addon implementation is available in the MineAuth repository:
 
 **[morinoparty/MineAuth/addons/quickshop-hikari](https://github.com/morinoparty/MineAuth/tree/master/addons/quickshop-hikari)**
 
-This addon provides HTTP endpoints for QuickShop-Hikari shop data:
+This addon provides HTTP endpoints for QuickShop-Hikari shop data (namespace: `quickshop`):
 
 | File | Description |
 |------|-------------|
@@ -21,24 +23,29 @@ This addon provides HTTP endpoints for QuickShop-Hikari shop data:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/plugins/quickshophikari/shops` | - | List all shops (cursor-based pagination) |
-| GET | `/api/v1/plugins/quickshophikari/shops/{id}` | - | Get shop by ID |
-| GET | `/api/v1/plugins/quickshophikari/users/{uuid}/shops` | - | Get shops by owner |
-| GET | `/api/v1/plugins/quickshophikari/users/{player}/shops` | `@TargetPlayer` | Get own or target player's shops |
-| GET | `/api/v1/plugins/quickshophikari/shops/{shopId}/setting` | `@AuthedAccessUser` | Get shop settings (owner only) |
-| POST | `/api/v1/plugins/quickshophikari/shops/{shopId}/setting` | `@AuthedAccessUser` | Update shop settings (owner only) |
+| GET | `/api/v1/plugins/quickshop/shops` | `@Public` | List all shops (cursor-based pagination) |
+| GET | `/api/v1/plugins/quickshop/shops/{shopId}` | `@Public` | Get shop by ID |
+| GET | `/api/v1/plugins/quickshop/users/{player}/shops` | `@Authenticated` + `@PlayerParam` | Get own or target player's shops |
+| GET | `/api/v1/plugins/quickshop/shops/{shopId}/setting` | `@Authenticated` + `@Caller` | Get shop settings (owner only) |
+| POST | `/api/v1/plugins/quickshop/shops/{shopId}/setting` | `@Authenticated` + `@Caller` | Update shop settings (owner only) |
 
-The `users/{player}/shops` endpoint uses `@TargetPlayer`, which means:
+The `users/{player}/shops` endpoint is declared with `@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])` and `@PlayerParam("player")`, which means:
 - Users can access their own shops via `/users/me/shops`
 - Service accounts can access any player's shops via `/users/Notch/shops` or `/users/<uuid>/shops`
 
 #### Pagination Example
 
-The `/shops` endpoint supports cursor-based pagination with `cursor` and `limit` query parameters.
+The `/shops` endpoint uses typed optional query parameters — `@Query("cursor") cursor: Long?` and `@Query("limit") limit: Int?` — so no manual parsing is required in the handler:
+
+```kotlin
+@Get("/shops")
+@Public
+suspend fun listAllShops(@Query("cursor") cursor: Long?, @Query("limit") limit: Int?): PaginatedShopsResponse
+```
 
 ```
-GET /api/v1/plugins/quickshophikari/shops?limit=200
-GET /api/v1/plugins/quickshophikari/shops?cursor=12345&limit=200
+GET /api/v1/plugins/quickshop/shops?limit=200
+GET /api/v1/plugins/quickshop/shops?cursor=12345&limit=200
 ```
 
 ```json
@@ -62,7 +69,7 @@ GET /api/v1/plugins/quickshophikari/shops?cursor=12345&limit=200
 
 ## Vault Addon
 
-Provides HTTP endpoints for Vault economy operations:
+Provides HTTP endpoints for Vault economy operations (namespace: `vault`):
 
 **[morinoparty/MineAuth/addons/vault](https://github.com/morinoparty/MineAuth/tree/master/addons/vault)**
 
@@ -76,16 +83,61 @@ Provides HTTP endpoints for Vault economy operations:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/plugins/vault-addon/balance/{player}` | `@TargetPlayer` | Get own or target player's balance |
-| POST | `/api/v1/plugins/vault-addon/send` | `@AuthedAccessUser` | Send money to another player (user only) |
+| GET | `/api/v1/plugins/vault/balance/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's balance |
+| POST | `/api/v1/plugins/vault/send` | `@Authenticated` + `@Caller` | Send money to another player (user tokens only) |
 
-The balance endpoint uses `@TargetPlayer`:
+### Handler Code
+
+The actual handler illustrates both authentication styles:
+
+```kotlin
+class VaultHandler : KoinComponent {
+    private val economy: Economy by inject()
+
+    // ユーザートークンは自分自身のみ、サービストークンは任意のプレイヤーの残高を取得できる
+    @Get("/balance/{player}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getMyBalance(@PlayerParam("player") player: OfflinePlayer): BalanceResponse {
+        return BalanceResponse(balance = economy.getBalance(player))
+    }
+
+    // 自分自身の口座からの送金のみを許可するため、ユーザートークンでの呼び出しのみ許可する
+    @Post("/send")
+    @Authenticated
+    suspend fun sendMoney(
+        @Caller caller: Principal.User,
+        @Body data: RemittanceData
+    ): TransferResponse {
+        val player = caller.offlinePlayer
+        // 入力検証・残高チェックの後に送金処理を実行し、失敗時はHttpErrorをスローする
+        // ...
+    }
+}
+```
+
+The registration in `VaultAddon.kt`:
+
+```kotlin
+private fun setupMineAuth(): Boolean {
+    return try {
+        val registration = mineAuthApi.register(this, "vault", VaultHandler())
+        logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+        true
+    } catch (e: EndpointRegistrationException) {
+        // 登録は全件失敗（all-or-nothing）のため、検証エラーの詳細をログに出力する
+        logger.severe(e.message)
+        false
+    }
+}
+```
+
+The balance endpoint uses `@PlayerParam` with the default `SELF_OR_SERVICE` policy:
 - Users: `GET /balance/me` to check own balance
 - Service accounts: `GET /balance/Notch` or `GET /balance/<uuid>` to check any player's balance
 
 ## GriefPrevention Addon
 
-Provides HTTP endpoints for GriefPrevention claim data and claim block purchasing:
+Provides HTTP endpoints for GriefPrevention claim data and claim block purchasing (namespace: `griefprevention`):
 
 **[morinoparty/MineAuth/addons/griefprevention](https://github.com/morinoparty/MineAuth/tree/master/addons/griefprevention)**
 
@@ -99,8 +151,8 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/plugins/mineauth-addon-griefprevention/claims/{player}` | `@TargetPlayer` | Get own or target player's claims |
-| POST | `/api/v1/plugins/mineauth-addon-griefprevention/claims/purchase` | `@AuthedAccessUser` | Purchase claim blocks (user only) |
+| GET | `/api/v1/plugins/griefprevention/claims/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's claims |
+| POST | `/api/v1/plugins/griefprevention/claims/purchase` | `@Authenticated` + `@Caller` | Purchase claim blocks (user tokens only) |
 
 ### Response Example
 
@@ -142,7 +194,7 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
 
 ## PureTickets Addon
 
-Provides HTTP endpoints for PureTickets support ticket data:
+Provides HTTP endpoints for PureTickets support ticket data (namespace: `tickets`):
 
 **[morinoparty/MineAuth/addons/pure-tickets](https://github.com/morinoparty/MineAuth/tree/master/addons/pure-tickets)**
 
@@ -156,10 +208,10 @@ Provides HTTP endpoints for PureTickets support ticket data:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/plugins/mineauth-addon-pure-tickets/tickets/{player}` | `@TargetPlayer` | Get own or target player's tickets |
-| GET | `/api/v1/plugins/mineauth-addon-pure-tickets/tickets/{player}/{id}` | `@TargetPlayer` | Get ticket detail with interaction history |
+| GET | `/api/v1/plugins/tickets/tickets/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's tickets |
+| GET | `/api/v1/plugins/tickets/tickets/{player}/{id}` | `@Authenticated` + `@PlayerParam` | Get ticket detail with interaction history |
 
-The tickets endpoint uses `@TargetPlayer`:
+Both endpoints are declared with `@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])` and `@PlayerParam("player")`:
 - Users: `GET /tickets/me` to check own tickets
 - Service accounts: `GET /tickets/Notch` or `GET /tickets/<uuid>` to check any player's tickets
 
@@ -212,7 +264,7 @@ PureTickets does not expose a public API for external plugins. This addon uses r
 
 ## VotingPlugin Addon
 
-Provides HTTP endpoints for VotingPlugin vote data:
+Provides HTTP endpoints for VotingPlugin vote data (namespace: `voting`):
 
 **[morinoparty/MineAuth/addons/voting-plugin](https://github.com/morinoparty/MineAuth/tree/master/addons/voting-plugin)**
 
@@ -226,11 +278,11 @@ Provides HTTP endpoints for VotingPlugin vote data:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/plugins/mineauth-addon-voting-plugin/stats/{player}` | `@TargetPlayer` | Get own or target player's vote statistics |
-| GET | `/api/v1/plugins/mineauth-addon-voting-plugin/sites` | - | Get all available vote sites |
-| GET | `/api/v1/plugins/mineauth-addon-voting-plugin/sites/{player}` | `@TargetPlayer` | Get own or target player's per-site vote status |
+| GET | `/api/v1/plugins/voting/stats/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's vote statistics |
+| GET | `/api/v1/plugins/voting/sites` | `@Public` | Get all available vote sites |
+| GET | `/api/v1/plugins/voting/sites/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's per-site vote status |
 
-The stats endpoint uses `@TargetPlayer`:
+The stats endpoint uses `@PlayerParam` with the default `SELF_OR_SERVICE` policy:
 - Users: `GET /stats/me` to check own vote statistics
 - Service accounts: `GET /stats/Notch` or `GET /stats/<uuid>` to check any player's vote statistics
 
@@ -288,7 +340,7 @@ The stats endpoint uses `@TargetPlayer`:
 
 ## BetonQuest Addon
 
-Provides HTTP endpoints for BetonQuest quest data:
+Provides HTTP endpoints for BetonQuest quest data (namespace: `betonquest`):
 
 **[morinoparty/MineAuth/addons/betonquest](https://github.com/morinoparty/MineAuth/tree/master/addons/betonquest)**
 
@@ -302,9 +354,9 @@ Provides HTTP endpoints for BetonQuest quest data:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/plugins/betonquest-addon/quests/{player}` | `@TargetPlayer` | Get target player's quests |
+| GET | `/api/v1/plugins/betonquest/quests/{player}` | `@Authenticated` + `@PlayerParam` | Get target player's quests |
 
-The quests endpoint uses `@TargetPlayer`:
+The quests endpoint uses `@PlayerParam` with the default `SELF_OR_SERVICE` policy:
 - Users: `GET /quests/me` to check own quests
 - Service accounts: `GET /quests/Notch` or `GET /quests/<uuid>` to check any player's quests
 

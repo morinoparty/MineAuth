@@ -11,6 +11,12 @@ sealed class ResolveError {
     data class MissingPathParameter(val name: String) : ResolveError()
 
     /**
+     * 必須のクエリパラメータが見つからない
+     * @property name パラメータ名
+     */
+    data class MissingQueryParameter(val name: String) : ResolveError()
+
+    /**
      * リクエストボディの形式が不正
      * @property cause 原因となった例外
      */
@@ -21,12 +27,6 @@ sealed class ResolveError {
      * @property message エラーメッセージ
      */
     data class AuthenticationRequired(val message: String) : ResolveError()
-
-    /**
-     * 指定されたプレイヤーが見つからない
-     * @property uuid プレイヤーUUID
-     */
-    data class PlayerNotFound(val uuid: String) : ResolveError()
 
     /**
      * パラメータの型変換に失敗

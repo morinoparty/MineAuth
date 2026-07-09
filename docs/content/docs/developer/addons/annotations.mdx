@@ -3,76 +3,147 @@ title: Annotation Reference
 description: Complete reference for all annotations available in MineAuth API
 ---
 
-This document provides a comprehensive reference for all annotations available in the MineAuth API.
+This document provides a comprehensive reference for all annotations available in the MineAuth API. All annotations live in the `party.morino.mineauth.api.annotations` package.
 
 ## HTTP Method Annotations
 
-These annotations define the HTTP method and path for your endpoint methods.
+These annotations define the HTTP method and path for your endpoint methods. Exactly one HTTP method annotation must be present per endpoint method.
 
-### @GetMapping
+### @Get
 
 Defines a GET request endpoint.
 
 ```kotlin
-@GetMapping("/users")
+@Get("/users")
+@Public
 suspend fun listUsers(): List<UserData>
 
-@GetMapping("/users/{id}")
-suspend fun getUser(@PathParam("id") id: String): UserData?
+@Get("/users/{id}")
+@Public
+suspend fun getUser(@Path("id") id: UUID): UserData?
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `value` | String | The URL path for the endpoint |
 
-### @PostMapping
+### @Post
 
 Defines a POST request endpoint.
 
 ```kotlin
-@PostMapping("/users")
-suspend fun createUser(@RequestBody user: CreateUserRequest): UserData
+@Post("/users")
+@Authenticated(permission = "myplugin.users.create")
+suspend fun createUser(@Body user: CreateUserRequest): UserData
 ```
 
-### @PutMapping
+### @Put
 
 Defines a PUT request endpoint.
 
 ```kotlin
-@PutMapping("/users/{id}")
+@Put("/users/{id}")
+@Authenticated(permission = "myplugin.users.edit")
 suspend fun updateUser(
-    @PathParam("id") id: String,
-    @RequestBody user: UpdateUserRequest
+    @Path("id") id: UUID,
+    @Body user: UpdateUserRequest
 ): UserData
 ```
 
-### @DeleteMapping
+### @Delete
 
 Defines a DELETE request endpoint.
 
 ```kotlin
-@DeleteMapping("/users/{id}")
-suspend fun deleteUser(@PathParam("id") id: String)
+@Delete("/users/{id}")
+@Authenticated(permission = "myplugin.users.delete")
+suspend fun deleteUser(@Path("id") id: UUID)
 ```
+
+### @Patch
+
+Defines a PATCH request endpoint.
+
+```kotlin
+@Patch("/users/{id}")
+@Authenticated(permission = "myplugin.users.edit")
+suspend fun patchUser(@Path("id") id: UUID, @Body patch: UserPatch): UserData
+```
+
+### @Route
+
+Class-level annotation that adds a path prefix to every endpoint in the handler class.
+
+```kotlin
+@Route("/shops")
+class ShopHandler {
+
+    @Get("/{shopId}")   // => GET /shops/{shopId}
+    @Public
+    suspend fun getShop(@Path("shopId") shopId: Long): ShopData
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | String | The path prefix applied to all endpoints in the class |
+
+---
+
+## Access Declaration Annotations
+
+Every endpoint method **must** declare exactly one of `@Public` or `@Authenticated`. Registration fails with an `EndpointRegistrationException` if the declaration is missing or if both are present. This prevents endpoints from being exposed unintentionally.
+
+### @Public
+
+Declares an endpoint that requires no authentication.
+
+```kotlin
+@Get("/sites")
+@Public
+suspend fun getVoteSites(): VoteSitesResponse
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `reason` | String | Optional justification for exposing the endpoint publicly; emitted into the OpenAPI documentation |
+
+### @Authenticated
+
+Declares an endpoint that requires a valid access token.
+
+```kotlin
+@Get("/balance/{player}")
+@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+suspend fun getBalance(@PlayerParam("player") player: OfflinePlayer): BalanceResponse
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `permission` | String | Required permission node (empty string = authentication only, no permission check). Evaluated only for user tokens; the check fails with `403 player_offline` if the player is offline |
+| `callers` | Array&lt;CallerType&gt; | Token types allowed to call the endpoint. Defaults to `[CallerType.USER]`; service tokens must be opted in explicitly with `[CallerType.USER, CallerType.SERVICE]` |
+
+See the [Authentication Guide](/docs/developer/addons/authentication) for details.
 
 ---
 
 ## Parameter Annotations
 
-These annotations extract data from the HTTP request.
+These annotations extract data from the HTTP request. Every handler parameter must carry exactly one parameter annotation.
 
-### @PathParam
+### @Path
 
-Extracts a single path parameter.
+Extracts a single path parameter. The named segment must appear as `{name}` in the route path, otherwise registration fails.
 
 ```kotlin
-@GetMapping("/shops/{shopId}")
-suspend fun getShop(@PathParam("shopId") shopId: String): ShopData?
+@Get("/shops/{shopId}")
+@Public
+suspend fun getShop(@Path("shopId") shopId: Long): ShopData?
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `value` | String | The name of the path parameter to extract |
+| `value` | String | The name of the path segment to extract |
 
 **Supported Types:**
 - `String`
@@ -83,29 +154,42 @@ suspend fun getShop(@PathParam("shopId") shopId: String): ShopData?
 - `Boolean`
 - `UUID`
 
-### @QueryParams
+### @Query
 
-Extracts all query parameters as a Map.
+Extracts a single, typed query parameter. The Kotlin type's nullability determines whether the parameter is required:
+
+- **Nullable type** (`Int?`, `String?`, ...) — optional; resolved to `null` when absent
+- **Non-nullable type** (`Int`, `String`, ...) — required; `400 Bad Request` when absent
 
 ```kotlin
-@GetMapping("/shops")
-suspend fun searchShops(
-    @QueryParams params: Map<String, String>
-): List<ShopData> {
-    val limit = params["limit"]?.toIntOrNull() ?: 10
-    val offset = params["offset"]?.toIntOrNull() ?: 0
-    val search = params["search"]
-    // ...
-}
+@Get("/shops")
+@Public
+suspend fun listShops(
+    @Query("limit") limit: Int?,       // optional
+    @Query("cursor") cursor: String?   // optional
+): PaginatedShopsResponse
 ```
 
-### @RequestBody
+Supported types are the same as `@Path`. Manual parsing such as `params["limit"]?.toInt()` is no longer necessary.
 
-Extracts and deserializes the JSON request body.
+### @QueryMap
+
+Extracts all query parameters as a `Map<String, String>`. This is an escape hatch for endpoints that genuinely iterate arbitrary query keys; prefer typed `@Query` parameters otherwise.
 
 ```kotlin
-@PostMapping("/shops")
-suspend fun createShop(@RequestBody shop: CreateShopRequest): ShopData
+@Get("/search")
+@Public
+suspend fun search(@QueryMap params: Map<String, String>): SearchResult
+```
+
+### @Body
+
+Extracts and deserializes the JSON request body. The type must be `@Serializable`; the serializer is resolved and validated at registration time.
+
+```kotlin
+@Post("/shops")
+@Authenticated(permission = "myshop.create")
+suspend fun createShop(@Body shop: CreateShopRequest): ShopData
 
 // Data class must be @Serializable
 @Serializable
@@ -116,22 +200,49 @@ data class CreateShopRequest(
 )
 ```
 
----
+### @Caller
 
-## Authentication Annotations
-
-These annotations handle authentication and authorization.
-
-### @TargetPlayer
-
-Resolves a player from a `{player}` path parameter. The parameter accepts `me` (authenticated user), a UUID, or a player name. Requires authentication.
+Injects the authenticated request principal (`party.morino.mineauth.api.auth.Principal`).
 
 ```kotlin
-@GetMapping("/balance/{player}")
-suspend fun getBalance(@TargetPlayer player: OfflinePlayer): BalanceData {
-    return economyService.getBalance(player.uniqueId)
+@Post("/send")
+@Authenticated
+suspend fun sendMoney(
+    @Caller caller: Principal.User,
+    @Body data: RemittanceData
+): TransferResponse {
+    val sender = caller.offlinePlayer
+    // ...
 }
 ```
+
+**Bindable types:**
+
+| Type | Accepted tokens | Constraint |
+|------|-----------------|------------|
+| `Principal` | User and service tokens | — |
+| `Principal.User` | User tokens only | Requires `callers = [CallerType.USER]` (the default) |
+| `Principal.Service` | Service tokens only | Requires `callers = [CallerType.SERVICE]` |
+
+**Nullability rules (validated at registration):**
+
+- On `@Authenticated` endpoints the parameter must be **non-nullable** (authentication is guaranteed)
+- On `@Public` endpoints the parameter must be **nullable** (`Principal?`); it is `null` for anonymous requests
+
+### @PlayerParam
+
+Resolves an `OfflinePlayer` from a path segment. Only usable on `@Authenticated` endpoints, and the segment must appear as `{name}` in the route path. The segment value accepts `me` (the authenticated user), a UUID, or a player name.
+
+```kotlin
+@Get("/balance/{player}")
+@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+suspend fun getBalance(@PlayerParam("player") player: OfflinePlayer): BalanceResponse
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | String | Path segment name to resolve from (default: `"player"`) |
+| `access` | PlayerAccess | Access policy for the target player (default: `SELF_OR_SERVICE`) |
 
 | `{player}` value | Behavior |
 |-------------------|----------|
@@ -139,77 +250,15 @@ suspend fun getBalance(@TargetPlayer player: OfflinePlayer): BalanceData {
 | UUID format | Resolves to the player with that UUID |
 | Player name | Resolves to the player with that name |
 
-**Access control:**
-- User tokens can only resolve to themselves (`me`, own UUID, or own name)
-- Service tokens can resolve to any player but cannot use `me`
+**PlayerAccess policies:**
 
-See [Authentication Guide](/docs/developer/addons/authentication) for details.
+| Policy | User token | Service token |
+|--------|-----------|---------------|
+| `SELF_ONLY` | Own data only | Denied |
+| `SELF_OR_SERVICE` (default) | Own data only | Any player |
+| `ANY_AUTHENTICATED` | Any player | Any player |
 
-### @AuthedAccessUser
-
-Requires authentication and injects the authenticated `OfflinePlayer`. Used for endpoints where the user performs actions on their own data (e.g., sending money, changing settings).
-
-```kotlin
-@PostMapping("/send")
-suspend fun sendMoney(
-    @AuthedAccessUser player: OfflinePlayer,
-    @RequestBody data: RemittanceData
-): TransferResult {
-    return economyService.transfer(player.uniqueId, data)
-}
-```
-
-:::warning[Service Account Restriction]
-This annotation is only available with user tokens. Service accounts cannot access `@AuthedAccessUser` endpoints.
-:::
-
-### @AccessUser
-
-Optional authentication. Returns `null` if no valid JWT is provided.
-
-```kotlin
-@GetMapping("/items")
-suspend fun listItems(@AccessUser player: OfflinePlayer?): List<ItemData> {
-    return if (player != null) {
-        // Show personalized items
-        itemService.findForUser(player.uniqueId)
-    } else {
-        // Show public items
-        itemService.findPublic()
-    }
-}
-```
-
-### @Permission
-
-Specifies required permissions. Can be applied at class or method level.
-
-```kotlin
-// Class-level: applies to all methods
-@Permission("myshop.admin")
-class AdminHandler {
-
-    @GetMapping("/stats")
-    suspend fun getStats(): StatsData {
-        // Requires "myshop.admin"
-    }
-
-    // Method-level overrides class-level
-    @GetMapping("/public-stats")
-    @Permission("myshop.view")
-    suspend fun getPublicStats(): StatsData {
-        // Only requires "myshop.view"
-    }
-}
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `value` | String | The permission string required |
-
-:::tip[Service Account Behavior]
-Service accounts automatically bypass `@Permission` checks. Business logic validation (e.g., ownership checks) in handler code is still applied.
-:::
+See the [Authentication Guide](/docs/developer/addons/authentication) for details.
 
 ---
 
@@ -217,29 +266,29 @@ Service accounts automatically bypass `@Permission` checks. Business logic valid
 
 | Annotation | Target | Description |
 |------------|--------|-------------|
-| `@GetMapping` | Function | Define GET endpoint |
-| `@PostMapping` | Function | Define POST endpoint |
-| `@PutMapping` | Function | Define PUT endpoint |
-| `@DeleteMapping` | Function | Define DELETE endpoint |
-| `@PathParam` | Parameter | Extract path parameter |
-| `@QueryParams` | Parameter | Extract query parameters |
-| `@RequestBody` | Parameter | Extract JSON body |
-| `@TargetPlayer` | Parameter | Resolve player from `{player}` path param (supports me/UUID/name) |
-| `@AuthedAccessUser` | Parameter | Require auth, inject OfflinePlayer (user tokens only) |
-| `@AccessUser` | Parameter | Optional auth, inject nullable OfflinePlayer |
-| `@Permission` | Class/Function | Require permission (bypassed by service accounts) |
+| `@Get` / `@Post` / `@Put` / `@Delete` / `@Patch` | Function | Define an endpoint with the corresponding HTTP method |
+| `@Route` | Class | Path prefix for all endpoints in the class |
+| `@Public` | Function | Declare a public (unauthenticated) endpoint |
+| `@Authenticated` | Function | Require authentication; optional `permission` and `callers` |
+| `@Path` | Parameter | Extract a typed path parameter |
+| `@Query` | Parameter | Extract a typed query parameter (nullable = optional) |
+| `@QueryMap` | Parameter | Extract all query parameters as a Map |
+| `@Body` | Parameter | Extract and deserialize the JSON body |
+| `@Caller` | Parameter | Inject the authenticated `Principal` |
+| `@PlayerParam` | Parameter | Resolve an `OfflinePlayer` from a path segment (me/UUID/name) |
 
-## Choosing the Right Authentication Annotation
+## Choosing the Right Access Declaration
 
 ```
-Do you need to access player data?
-├── Yes → Is this a read-only endpoint?
-│   ├── Yes → Should service accounts access any player?
-│   │   ├── Yes → Use @TargetPlayer with /{player} path
-│   │   └── No  → Use @AuthedAccessUser
-│   └── No (write/action endpoint)
-│       └── Use @AuthedAccessUser
-└── No → Is authentication optional?
-    ├── Yes → Use @AccessUser
-    └── No  → Don't use auth annotations
+Does the endpoint need authentication?
+├── No → @Public
+│   └── Personalize for logged-in users? → add @Caller caller: Principal?
+└── Yes → @Authenticated
+    ├── Operates on a player given in the path?
+    │   └── Use @PlayerParam with /{player} in the path
+    │       ├── Service accounts should reach any player? → callers = [USER, SERVICE] (default access = SELF_OR_SERVICE)
+    │       └── Strictly self-service? → access = PlayerAccess.SELF_ONLY
+    ├── Acts on behalf of the caller (write/action)?
+    │   └── Use @Caller caller: Principal.User (default callers = [USER])
+    └── Needs a Bukkit permission? → @Authenticated(permission = "...")
 ```

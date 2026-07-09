@@ -10,12 +10,15 @@ import party.morino.mineauth.addons.votingplugin.data.PlayerVoteSitesResponse
 import party.morino.mineauth.addons.votingplugin.data.VoteSiteResponse
 import party.morino.mineauth.addons.votingplugin.data.VoteSitesResponse
 import party.morino.mineauth.addons.votingplugin.data.VoteStatsResponse
-import party.morino.mineauth.api.annotations.GetMapping
-import party.morino.mineauth.api.annotations.TargetPlayer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.PlayerParam
+import party.morino.mineauth.api.annotations.Public
 
 /**
  * VotingPluginの投票データを提供するハンドラー
- * /api/v1/plugins/{plugin-name}/ 配下にエンドポイントを提供する
+ * /api/v1/plugins/{namespace}/ 配下にエンドポイントを提供する
  */
 class VotingPluginHandler : KoinComponent {
     private val hooks: VotingPluginHooks by inject()
@@ -27,8 +30,9 @@ class VotingPluginHandler : KoinComponent {
      * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return 投票統計を含むレスポンス
      */
-    @GetMapping("/stats/{player}")
-    suspend fun getVoteStats(@TargetPlayer player: OfflinePlayer): VoteStatsResponse {
+    @Get("/stats/{player}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getVoteStats(@PlayerParam("player") player: OfflinePlayer): VoteStatsResponse {
         val user = hooks.userManager.getVotingPluginUser(player)
 
         return VoteStatsResponse(
@@ -58,7 +62,8 @@ class VotingPluginHandler : KoinComponent {
      *
      * @return 投票サイト一覧のレスポンス
      */
-    @GetMapping("/sites")
+    @Get("/sites")
+    @Public
     suspend fun getVoteSites(): VoteSitesResponse {
         val plugin = hooks.mainClass
         val allSites = plugin.voteSites
@@ -82,8 +87,9 @@ class VotingPluginHandler : KoinComponent {
      * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return プレイヤーの投票サイト状況一覧のレスポンス
      */
-    @GetMapping("/sites/{player}")
-    suspend fun getPlayerVoteSites(@TargetPlayer player: OfflinePlayer): PlayerVoteSitesResponse {
+    @Get("/sites/{player}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getPlayerVoteSites(@PlayerParam("player") player: OfflinePlayer): PlayerVoteSitesResponse {
         val user = hooks.userManager.getVotingPluginUser(player)
         val plugin = hooks.mainClass
         val allSites = plugin.voteSites

@@ -43,7 +43,7 @@ import party.morino.mineauth.core.openapi.OpenApiRouter.openApiRouter
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
-import party.morino.mineauth.core.plugin.PluginRouteRegistry
+import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 import party.morino.mineauth.core.web.telemetry.MinecraftMetrics
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.TelemetryProvider
@@ -155,12 +155,8 @@ internal fun Application.module() {
     }
 
     install(ContentNegotiation) {
-        json(kotlinx.serialization.json.Json {
-            // nullフィールドをJSONに出力しない（OpenAPIドキュメント等で必要）
-            explicitNulls = false
-            // 未知のフィールドを無視
-            ignoreUnknownKeys = true
-        })
+        // プラグインエンドポイントのボディ解析と同一のJson設定を共有する（Koinシングルトン）
+        json(get<kotlinx.serialization.json.Json>(kotlinx.serialization.json.Json::class.java))
     }
 
     install(Velocity) {
@@ -179,6 +175,14 @@ internal fun Application.module() {
             validate { credential ->
                 // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）
                 withSpan("jwt.validate.user_token") { span ->
+                    // セキュリティ: アクセストークンのみを受け付ける
+                    // （リフレッシュトークンがアクセストークンとして使われるのを防ぐ）
+                    val tokenType = credential.payload.getClaim("token_type").asString()
+                    if (tokenType != "token") {
+                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "wrong_token_type")
+                        return@withSpan null
+                    }
+
                     // JWTからクライアントIDを取得してDBで検証
                     val clientId = credential.payload.getClaim("client_id").asString()
                     clientId?.let { span.setAttribute(TelemetryAttributes.CLIENT_ID, it) }
@@ -200,7 +204,13 @@ internal fun Application.module() {
                 }
             }
             challenge { _, _ ->
-                call.respond(HttpStatusCode.Unauthorized, "Token is not valid or has expired")
+                // ドキュメント記載のエラーエンベロープ（error/code）に合わせてJSONで応答する
+                call.respond(
+                    HttpStatusCode.Unauthorized,
+                    party.morino.mineauth.core.plugin.route.ErrorResponse(
+                        "Token is not valid or has expired", code = "invalid_token"
+                    )
+                )
             }
         }
 
@@ -250,7 +260,13 @@ internal fun Application.module() {
                 }
             }
             challenge { _, _ ->
-                call.respond(HttpStatusCode.Unauthorized, "Service token is not valid or has expired")
+                // ドキュメント記載のエラーエンベロープ（error/code）に合わせてJSONで応答する
+                call.respond(
+                    HttpStatusCode.Unauthorized,
+                    party.morino.mineauth.core.plugin.route.ErrorResponse(
+                        "Service token is not valid or has expired", code = "invalid_token"
+                    )
+                )
             }
         }
     }
@@ -290,9 +306,22 @@ internal fun Application.module() {
             pluginRouter()
         }
 
-        // 外部プラグインから登録されたルートを適用
-        val routeRegistry: PluginRouteRegistry = get(PluginRouteRegistry::class.java)
-        routeRegistry.applyAll(this)
+        // 外部プラグインのエンドポイントをライブディスパッチャで処理する
+        // Ktorルートは1つの静的なサブツリーのみで、実際のマッチングはディスパッチャが行う。
+        // これによりWebサーバー起動後の登録・登録解除が即座に反映される。
+        // 認証はOptional: 公開エンドポイントも同一パスで扱うため、認証の要否はディスパッチャが判断する
+        val dispatcher: PluginEndpointDispatcher = get(PluginEndpointDispatcher::class.java)
+        authenticate(
+            JwtCompleteCode.USER_TOKEN.code,
+            JwtCompleteCode.SERVICE_TOKEN.code,
+            strategy = AuthenticationStrategy.Optional
+        ) {
+            route("/api/v1/plugins/{namespace}/{path...}") {
+                handle {
+                    dispatcher.dispatch(call)
+                }
+            }
+        }
 
         authenticate("user-oauth-token") {
             get("/hello") {

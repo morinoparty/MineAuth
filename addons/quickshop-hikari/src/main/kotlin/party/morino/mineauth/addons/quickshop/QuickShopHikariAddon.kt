@@ -9,7 +9,8 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.quickshop.config.QuickShopConfig
 import party.morino.mineauth.addons.quickshop.routes.ShopHandler
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.EndpointRegistrationException
+import party.morino.mineauth.api.MineAuthApi
 
 /**
  * QuickShop-Hikari連携アドオン
@@ -23,20 +24,19 @@ class QuickShopHikariAddon : JavaPlugin() {
         prettyPrint = true
     }
 
-    private lateinit var mineAuthAPI: MineAuthAPI
+    private lateinit var mineAuthApi: MineAuthApi
 
     override fun onEnable() {
         logger.info("QuickShop Hikari Addon enabling...")
 
-        // MineAuthAPIの取得（safe castを使用してgraceful disableに対応）
-        val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
-        val api = mineAuthPlugin as? MineAuthAPI
+        // MineAuthApiの取得（ServicesManager経由。未ロードの場合はnullが返る）
+        val api = MineAuthApi.get(server)
         if (api == null) {
-            logger.severe("MineAuth plugin not found or is not a valid MineAuthAPI instance")
+            logger.severe("MineAuth plugin not found")
             server.pluginManager.disablePlugin(this)
             return
         }
-        mineAuthAPI = api
+        mineAuthApi = api
 
         // QuickShop-Hikariプラグインの存在確認
         if (!verifyQuickShop()) {
@@ -115,10 +115,16 @@ class QuickShopHikariAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
-     * 登録されたハンドラーは /api/v1/plugins/quickshophikari/ 配下で利用可能
+     * 登録されたハンドラーは /api/v1/plugins/quickshop/ 配下で利用可能
+     * 登録はall-or-nothingであり、検証エラー時は例外がスローされる
      */
     private fun setupMineAuth() {
-        mineAuthAPI.createHandler(this)
-            .register(ShopHandler())
+        try {
+            val registration = mineAuthApi.register(this, "quickshop", ShopHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+        } catch (e: EndpointRegistrationException) {
+            logger.severe(e.message ?: "MineAuth endpoint registration failed")
+            server.pluginManager.disablePlugin(this)
+        }
     }
 }

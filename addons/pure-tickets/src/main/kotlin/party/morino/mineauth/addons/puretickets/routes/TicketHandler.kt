@@ -13,9 +13,11 @@ import party.morino.mineauth.addons.puretickets.data.InteractionResponse
 import party.morino.mineauth.addons.puretickets.data.TicketDetailResponse
 import party.morino.mineauth.addons.puretickets.data.TicketResponse
 import party.morino.mineauth.addons.puretickets.data.TicketsResponse
-import party.morino.mineauth.api.annotations.GetMapping
-import party.morino.mineauth.api.annotations.PathParam
-import party.morino.mineauth.api.annotations.TargetPlayer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.Path
+import party.morino.mineauth.api.annotations.PlayerParam
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 import java.time.format.DateTimeFormatter
@@ -39,8 +41,9 @@ class TicketHandler : KoinComponent {
      * @param player 対象プレイヤー（me/UUID/名前で指定）
      * @return チケット一覧のレスポンス
      */
-    @GetMapping("/tickets/{player}")
-    suspend fun getTickets(@TargetPlayer player: OfflinePlayer): TicketsResponse {
+    @Get("/tickets/{player}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getTickets(@PlayerParam("player") player: OfflinePlayer): TicketsResponse {
         // UUIDからSoulを生成してチケットを検索
         val soul = userService.wrap(player.uniqueId)
         val allStatuses = EnumSet.allOf(TicketStatus::class.java)
@@ -64,10 +67,11 @@ class TicketHandler : KoinComponent {
      * @param id チケットID
      * @return チケット詳細のレスポンス
      */
-    @GetMapping("/tickets/{player}/{id}")
+    @Get("/tickets/{player}/{id}")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
     suspend fun getTicketDetail(
-        @TargetPlayer player: OfflinePlayer,
-        @PathParam("id") id: Int,
+        @PlayerParam("player") player: OfflinePlayer,
+        @Path("id") id: Int,
     ): TicketDetailResponse {
         // チケットをIDで取得
         val ticket = ticketService.get(id).orElse(null)

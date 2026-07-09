@@ -6,7 +6,7 @@ import org.incendo.cloud.annotations.Command
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
-import party.morino.mineauth.core.plugin.PluginRouteRegistry
+import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 
 /**
  * バージョン情報を表示するコマンド
@@ -16,7 +16,7 @@ import party.morino.mineauth.core.plugin.PluginRouteRegistry
 class VersionCommand : KoinComponent {
 
     private val plugin: MineAuth by inject()
-    private val routeRegistry: PluginRouteRegistry by inject()
+    private val dispatcher: PluginEndpointDispatcher by inject()
 
     /**
      * バージョン情報を表示する
@@ -30,7 +30,7 @@ class VersionCommand : KoinComponent {
         sender.sendRichMessage("<gold><bold>MineAuth</bold></gold> <gray>${coreVersion}</gray>")
 
         // 登録済みアドオンの一覧を取得
-        val registeredPlugins = routeRegistry.getRegisteredPlugins()
+        val registeredPlugins = dispatcher.registeredPlugins()
 
         if (registeredPlugins.isEmpty()) {
             sender.sendRichMessage("<gray>  No addons registered.</gray>")

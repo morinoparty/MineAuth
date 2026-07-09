@@ -33,12 +33,14 @@ sealed class ExecutionError {
      * HTTP エラーがスローされた場合
      * @property status HTTPステータスコード
      * @property message エラーメッセージ
+     * @property code 機械可読なエラーコード（任意）
      * @property details 詳細情報
      */
     data class HttpErrorThrown(
         val status: Int,
         val message: String,
-        val details: Map<String, Any>?
+        val code: String?,
+        val details: Map<String, String>?
     ) : ExecutionError()
 
     /**

@@ -9,6 +9,7 @@ import party.morino.mineauth.core.openapi.model.PathItem
 import party.morino.mineauth.core.openapi.model.RequestBody
 import party.morino.mineauth.core.openapi.model.Response
 import party.morino.mineauth.core.openapi.model.Schema
+import party.morino.mineauth.core.plugin.annotation.EndpointAccess
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.annotation.ParameterInfo
@@ -37,16 +38,23 @@ class PathItemGenerator : KoinComponent {
                     required = true,
                     schema = schemaGenerator.generateSchema(param.type)
                 )
-                // TargetPlayerは{player}パスパラメータとしてOpenAPIに公開する
+                // TargetPlayerはアノテーションで指定されたパスセグメントとしてOpenAPIに公開する
                 is ParameterInfo.TargetPlayer -> Parameter(
-                    name = "player",
+                    name = param.segment,
                     location = "path",
                     required = true,
                     schema = Schema(type = "string", description = "Player identifier: 'me', UUID, or player name")
                 )
-                // QueryParamsはMapなので個別パラメータとしては定義しない
-                is ParameterInfo.QueryParams -> null
-                // その他のパラメータタイプは無視
+                // 型付きクエリパラメータはqueryパラメータとして公開する
+                is ParameterInfo.QueryParam -> Parameter(
+                    name = param.name,
+                    location = "query",
+                    required = !param.optional,
+                    schema = schemaGenerator.generateSchema(param.type)
+                )
+                // QueryMapはMapなので個別パラメータとしては定義しない
+                is ParameterInfo.QueryMap -> null
+                // その他のパラメータタイプ（Body, Caller）はここでは扱わない
                 else -> null
             }
         }
@@ -68,7 +76,7 @@ class PathItemGenerator : KoinComponent {
             }
 
         // セキュリティ要件を生成
-        val security = if (endpoint.requiresAuthentication) {
+        val security = if (endpoint.access is EndpointAccess.Authenticated) {
             listOf(mapOf("oauth2" to listOf("openid", "plugin")))
         } else {
             null
@@ -79,6 +87,8 @@ class PathItemGenerator : KoinComponent {
 
         return Operation(
             summary = generateSummary(endpoint),
+            // @Public(reason)が指定されている場合はドキュメントに出力する
+            description = (endpoint.access as? EndpointAccess.Public)?.reason?.let { "Public endpoint: $it" },
             operationId = generateOperationId(basePath, endpoint),
             tags = listOf(extractPluginTag(basePath)),
             parameters = parameters.takeIf { it.isNotEmpty() },
@@ -148,8 +158,8 @@ class PathItemGenerator : KoinComponent {
     private fun generateResponses(endpoint: EndpointMetadata): Map<String, Response> {
         val responses = mutableMapOf<String, Response>()
 
-        // 成功レスポンス
-        val returnSchema = schemaGenerator.generateResponseSchema(endpoint.method.returnType)
+        // 成功レスポンス（Either<HttpError, T>の場合は登録時に解決済みのTを使用する）
+        val returnSchema = schemaGenerator.generateResponseSchema(endpoint.responseType)
         responses["200"] = if (returnSchema != null) {
             Response(
                 description = "Successful response",
@@ -165,12 +175,11 @@ class PathItemGenerator : KoinComponent {
         responses["400"] = Response(description = "Bad Request")
 
         // 認証が必要な場合
-        if (endpoint.requiresAuthentication) {
+        val access = endpoint.access
+        if (access is EndpointAccess.Authenticated) {
             responses["401"] = Response(description = "Unauthorized")
-        }
 
-        // パーミッションが必要な場合
-        if (endpoint.requiredPermission != null) {
+            // パーミッションまたはトークン種別の制限がある場合
             responses["403"] = Response(description = "Forbidden")
         }
 

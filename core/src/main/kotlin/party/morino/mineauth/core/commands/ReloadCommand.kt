@@ -2,7 +2,7 @@ package party.morino.mineauth.core.commands
 
 import org.bukkit.command.CommandSender
 import org.incendo.cloud.annotations.Command
-import party.morino.mineauth.api.annotations.Permission
+import org.incendo.cloud.annotations.Permission
 import party.morino.mineauth.core.file.load.FileUtils
 import party.morino.mineauth.core.web.WebServer
 

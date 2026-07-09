@@ -16,13 +16,17 @@ import party.morino.mineauth.addons.quickshop.data.ShopData
 import party.morino.mineauth.addons.quickshop.data.ShopMode
 import party.morino.mineauth.addons.quickshop.data.ShopSetting
 import party.morino.mineauth.addons.quickshop.utils.coroutines.minecraft
-import party.morino.mineauth.api.annotations.AuthedAccessUser
-import party.morino.mineauth.api.annotations.GetMapping
-import party.morino.mineauth.api.annotations.PathParam
-import party.morino.mineauth.api.annotations.PostMapping
-import party.morino.mineauth.api.annotations.QueryParams
-import party.morino.mineauth.api.annotations.RequestBody
-import party.morino.mineauth.api.annotations.TargetPlayer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.annotations.Authenticated
+import party.morino.mineauth.api.annotations.Body
+import party.morino.mineauth.api.annotations.Caller
+import party.morino.mineauth.api.annotations.Get
+import party.morino.mineauth.api.annotations.Path
+import party.morino.mineauth.api.annotations.PlayerParam
+import party.morino.mineauth.api.annotations.Post
+import party.morino.mineauth.api.annotations.Public
+import party.morino.mineauth.api.annotations.Query
+import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 import party.morino.mineauth.api.model.bukkit.ItemStackData
@@ -43,22 +47,24 @@ class ShopHandler : KoinComponent {
      * cursorにはshopIdを指定し、そのIDより後のショップを返す（排他的カーソル）。
      * allShopsでメモリ上の全ショップを1回で取得し、N+1問題を回避する。
      *
-     * @param params クエリパラメータ（cursor, limit）
+     * @param cursor カーソル（このshopIdより後のショップを返す。省略時は先頭から）
+     * @param limit 取得件数（省略時はデフォルト値、最大値でクランプされる）
      * @return ページネーション付きショップ一覧
      */
-    @GetMapping("/shops")
-    suspend fun listAllShops(@QueryParams params: Map<String, String>): PaginatedShopsResponse { // クエリパラメータの解析とバリデーション
-        val cursor = parseCursor(params["cursor"])
-        val limit = parseLimit(params["limit"])
+    @Get("/shops")
+    @Public
+    suspend fun listAllShops(@Query("cursor") cursor: Long?, @Query("limit") limit: Int?): PaginatedShopsResponse {
+        // limitパラメータのバリデーションと範囲制限
+        val resolvedLimit = resolveLimit(limit)
 
         // メインスレッドでショップ一覧のスナップショットを取得（スレッドセーフ）
         val fetched = quickShopAPI.shopManager.allShops.asSequence().sortedBy { it.shopId }.let { seq -> // カーソルが指定されている場合、そのIDより後のショップのみ取得
                     if (cursor != null) seq.filter { it.shopId > cursor } else seq
-                }.take(limit + 1) // 1件多く取得してhasMoreを判定
+                }.take(resolvedLimit + 1) // 1件多く取得してhasMoreを判定
                 .toList()
 
         // limit+1件目が存在すれば次のページがある
-        val hasMore = fetched.size > limit
+        val hasMore = fetched.size > resolvedLimit
         val resultShops = if (hasMore) fetched.dropLast(1) else fetched
 
         // ShopDataに変換
@@ -78,9 +84,10 @@ class ShopHandler : KoinComponent {
      * ショップ詳細を取得する
      * GET /shops/{shopId}
      */
-    @GetMapping("/shops/{shopId}")
-    suspend fun getShop(@PathParam("shopId") shopId: String): ShopData {
-        val shop = findShopOrThrow(parseShopId(shopId))
+    @Get("/shops/{shopId}")
+    @Public
+    suspend fun getShop(@Path("shopId") shopId: Long): ShopData {
+        val shop = findShopOrThrow(shopId)
         return shop.toShopData()
     }
 
@@ -95,8 +102,9 @@ class ShopHandler : KoinComponent {
      * ユーザートークン: 自分のショップのみ取得可能（me/UUID/名前）
      * サービストークン: 任意のプレイヤーのショップを取得可能
      */
-    @GetMapping("/users/{player}/shops")
-    suspend fun getMyShops(@TargetPlayer player: OfflinePlayer): List<Long> {
+    @Get("/users/{player}/shops")
+    @Authenticated(callers = [CallerType.USER, CallerType.SERVICE])
+    suspend fun getMyShops(@PlayerParam("player") player: OfflinePlayer): List<Long> {
         return shopIdsFor(player.uniqueId)
     }
 
@@ -104,10 +112,11 @@ class ShopHandler : KoinComponent {
      * ショップ設定を取得する（オーナーのみ）
      * GET /shops/{shopId}/setting
      */
-    @GetMapping("/shops/{shopId}/setting")
-    suspend fun getShopSetting(@AuthedAccessUser player: OfflinePlayer, @PathParam("shopId") shopId: String): ShopSetting {
-        val shop = findShopOrThrow(parseShopId(shopId))
-        ensureOwner(player, shop)
+    @Get("/shops/{shopId}/setting")
+    @Authenticated
+    suspend fun getShopSetting(@Caller caller: Principal.User, @Path("shopId") shopId: Long): ShopSetting {
+        val shop = findShopOrThrow(shopId)
+        ensureOwner(caller.offlinePlayer, shop)
         return shop.toShopSetting()
     }
 
@@ -115,10 +124,11 @@ class ShopHandler : KoinComponent {
      * ショップ設定を更新する（オーナーのみ）
      * POST /shops/{shopId}/setting
      */
-    @PostMapping("/shops/{shopId}/setting")
-    suspend fun updateShopSetting(@AuthedAccessUser player: OfflinePlayer, @PathParam("shopId") shopId: String, @RequestBody setting: ShopSetting) {
-        val shop = findShopOrThrow(parseShopId(shopId))
-        ensureOwner(player, shop)
+    @Post("/shops/{shopId}/setting")
+    @Authenticated
+    suspend fun updateShopSetting(@Caller caller: Principal.User, @Path("shopId") shopId: Long, @Body setting: ShopSetting) {
+        val shop = findShopOrThrow(shopId)
+        ensureOwner(caller.offlinePlayer, shop)
         validateShopSetting(shop, setting)
 
         // 設定を適用
@@ -165,31 +175,15 @@ class ShopHandler : KoinComponent {
     }
 
     /**
-     * カーソルパラメータをパースする
-     * null/空文字はnull（先頭から開始）として扱う
+     * limitパラメータを解決し、範囲内に制限する
+     * 省略時はデフォルト値を使用する
      */
-    private fun parseCursor(cursor: String?): Long? {
-        if (cursor.isNullOrBlank()) return null
-        return cursor.toLongOrNull() ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid cursor format")
-    }
-
-    /**
-     * limitパラメータをパースし、範囲内に制限する
-     */
-    private fun parseLimit(limit: String?): Int {
-        if (limit.isNullOrBlank()) return config.defaultLimit
-        val parsed = limit.toIntOrNull() ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid limit format")
-        if (parsed <= 0) {
+    private fun resolveLimit(limit: Int?): Int {
+        if (limit == null) return config.defaultLimit
+        if (limit <= 0) {
             throw HttpError(HttpStatus.BAD_REQUEST, "Limit must be greater than 0")
         }
-        return parsed.coerceAtMost(config.maxLimit)
-    }
-
-    /**
-     * shopIdをLongに変換する
-     */
-    private fun parseShopId(shopId: String): Long {
-        return shopId.toLongOrNull() ?: throw HttpError(HttpStatus.BAD_REQUEST, "Invalid shop id")
+        return limit.coerceAtMost(config.maxLimit)
     }
 
     /**

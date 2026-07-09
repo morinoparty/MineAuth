@@ -2,7 +2,8 @@ package party.morino.mineauth.addons.betonquest
 
 import org.bukkit.plugin.java.JavaPlugin
 import party.morino.mineauth.addons.betonquest.routes.QuestsHandler
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.EndpointRegistrationException
+import party.morino.mineauth.api.MineAuthApi
 
 /**
  * BetonQuest連携アドオン
@@ -10,20 +11,19 @@ import party.morino.mineauth.api.MineAuthAPI
  */
 class BetonQuestAddon : JavaPlugin() {
 
-    private lateinit var mineAuthAPI: MineAuthAPI
+    private lateinit var mineAuthApi: MineAuthApi
 
     override fun onEnable() {
         logger.info("BetonQuest Addon enabling...")
 
-        // MineAuthAPIの取得（safe castを使用してgraceful disableに対応）
-        val mineAuthPlugin = server.pluginManager.getPlugin("MineAuth")
-        val api = mineAuthPlugin as? MineAuthAPI
+        // MineAuthApiの取得（ServicesManager経由。未ロードの場合はgraceful disableに対応）
+        val api = MineAuthApi.get(server)
         if (api == null) {
-            logger.severe("MineAuth plugin not found or is not a valid MineAuthAPI instance")
+            logger.severe("MineAuth plugin not found")
             server.pluginManager.disablePlugin(this)
             return
         }
-        mineAuthAPI = api
+        mineAuthApi = api
 
         // BetonQuestプラグインの存在確認
         if (!verifyBetonQuest()) {
@@ -33,7 +33,10 @@ class BetonQuestAddon : JavaPlugin() {
         }
 
         // MineAuthにハンドラーを登録
-        setupMineAuth()
+        if (!setupMineAuth()) {
+            server.pluginManager.disablePlugin(this)
+            return
+        }
 
         logger.info("BetonQuest Addon enabled")
     }
@@ -64,10 +67,19 @@ class BetonQuestAddon : JavaPlugin() {
 
     /**
      * MineAuthにハンドラーを登録する
-     * 登録されたハンドラーは /api/v1/plugins/betonquest-addon/ 配下で利用可能
+     * 登録されたハンドラーは /api/v1/plugins/betonquest 配下で利用可能
+     *
+     * @return 登録に成功した場合はtrue
      */
-    private fun setupMineAuth() {
-        mineAuthAPI.createHandler(this)
-            .register(QuestsHandler())
+    private fun setupMineAuth(): Boolean {
+        return try {
+            val registration = mineAuthApi.register(this, "betonquest", QuestsHandler())
+            logger.info("Mounted ${registration.endpoints.size} endpoints under ${registration.basePath}")
+            true
+        } catch (e: EndpointRegistrationException) {
+            // 検証エラーの全リストを含むメッセージをログ出力する
+            logger.severe(e.message)
+            false
+        }
     }
 }

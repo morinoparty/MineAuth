@@ -1,5 +1,8 @@
 package party.morino.mineauth.core.plugin.annotation
 
+import kotlinx.serialization.KSerializer
+import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.api.PlayerAccess
 import kotlin.reflect.KFunction
 import kotlin.reflect.KType
 
@@ -11,69 +14,131 @@ enum class HttpMethodType {
 }
 
 /**
+ * コンパイル済みのパスセグメントを表すsealed class
+ * 登録時にパスを解析しておくことで、リクエスト時のマッチングを高速化する
+ */
+sealed class PathSegment {
+    /**
+     * リテラルセグメント（例: /shops の "shops"）
+     * @property value セグメントの文字列
+     */
+    data class Literal(val value: String) : PathSegment()
+
+    /**
+     * パラメータセグメント（例: /{shopId} の "shopId"）
+     * @property name パラメータ名
+     */
+    data class Param(val name: String) : PathSegment()
+}
+
+/**
+ * エンドポイントのアクセス制御を表すsealed class
+ * `@Public` xor `@Authenticated` の宣言から生成される
+ */
+sealed class EndpointAccess {
+    /**
+     * 認証不要の公開エンドポイント
+     * @property reason 公開する理由（OpenAPIドキュメント用、任意）
+     */
+    data class Public(val reason: String?) : EndpointAccess()
+
+    /**
+     * 認証必須のエンドポイント
+     * @property permission 必要なパーミッションノード（nullの場合は認証のみ）
+     * @property callers 許可されるトークン種別
+     */
+    data class Authenticated(
+        val permission: String?,
+        val callers: Set<CallerType>
+    ) : EndpointAccess()
+}
+
+/**
+ * `@Caller`パラメータが要求するPrincipalの種類
+ */
+enum class CallerKind {
+    /** Principal型（ユーザー・サービスどちらでも可） */
+    ANY,
+
+    /** Principal.User型（ユーザートークンのみ） */
+    USER,
+
+    /** Principal.Service型（サービストークンのみ） */
+    SERVICE
+}
+
+/**
  * パラメータの種類を表すsealed class
  * 各パラメータタイプに対応した情報を保持する
  */
 sealed class ParameterInfo {
     /**
      * パスパラメータ（例: /shops/{id} の id）
-     * @property name パラメータ名
+     * @property name パスセグメント名
      * @property type パラメータの型
      */
     data class PathParam(val name: String, val type: KType) : ParameterInfo()
 
     /**
-     * クエリパラメータ
-     * @property type パラメータの型（通常はMap<String, String>）
+     * 型付き単一クエリパラメータ
+     * @property name クエリパラメータ名
+     * @property type パラメータの型
+     * @property optional Kotlin型がnullableの場合true（省略可能）
      */
-    data class QueryParams(val type: KType) : ParameterInfo()
+    data class QueryParam(val name: String, val type: KType, val optional: Boolean) : ParameterInfo()
+
+    /**
+     * 全クエリパラメータのMap（エスケープハッチ）
+     * @property type パラメータの型（Map<String, String>）
+     */
+    data class QueryMap(val type: KType) : ParameterInfo()
 
     /**
      * リクエストボディ（JSONデシリアライズ）
      * @property type ボディの型
+     * @property serializer 登録時に解決・検証済みのシリアライザ
      */
-    data class Body(val type: KType) : ParameterInfo()
+    data class Body(val type: KType, val serializer: KSerializer<Any?>) : ParameterInfo()
 
     /**
-     * 認証済みプレイヤー
-     * @property type プレイヤーの型（Player, OfflinePlayer等）
+     * 認証主体（Principal）の注入
+     * @property kind 要求されるPrincipalの種類
+     * @property optional nullableの場合true（@Publicエンドポイント用）
      */
-    data class AuthenticatedPlayer(val type: KType) : ParameterInfo()
+    data class Caller(val kind: CallerKind, val optional: Boolean) : ParameterInfo()
 
     /**
-     * アクセスユーザー（認証不要でも取得可能）
-     * @property type プレイヤーの型
+     * パスセグメントから解決される対象プレイヤー
+     * @property segment 解決に使用するパスセグメント名
+     * @property access アクセスポリシー
      */
-    data class AccessPlayer(val type: KType) : ParameterInfo()
-
-    /**
-     * パスパラメータ {player} で指定されたプレイヤー
-     * "me", UUID, プレイヤー名を受け付ける
-     * @property type プレイヤーの型（OfflinePlayer等）
-     */
-    data class TargetPlayer(val type: KType) : ParameterInfo()
+    data class TargetPlayer(val segment: String, val access: PlayerAccess) : ParameterInfo()
 }
 
 /**
  * エンドポイントのメタデータ
- * アノテーション解析の結果を格納し、ルート生成時に使用する
+ * アノテーション解析の結果を格納し、ディスパッチ時に使用する
  *
  * @property method 対象のメソッド
  * @property handlerInstance ハンドラーインスタンス
- * @property path エンドポイントのパス（プラグインベースパスからの相対パス）
+ * @property path 正規化済みの相対パス（@Routeプレフィックスを含む、例: /shops/{shopId}）
+ * @property pathSegments コンパイル済みのパスセグメント（マッチング用）
  * @property httpMethod HTTPメソッド
- * @property requiresAuthentication 認証が必要かどうか
- * @property requiredPermission 必要なパーミッション（nullの場合は不要）
+ * @property access アクセス制御情報
  * @property parameters パラメータ情報のリスト（引数の順序を保持）
  * @property isSuspending suspending関数かどうか
+ * @property responseType レスポンスの型（Either<HttpError, T>の場合はT）
+ * @property returnsEither 戻り値がArrowのEitherかどうか
  */
 data class EndpointMetadata(
     val method: KFunction<*>,
     val handlerInstance: Any,
     val path: String,
+    val pathSegments: List<PathSegment>,
     val httpMethod: HttpMethodType,
-    val requiresAuthentication: Boolean,
-    val requiredPermission: String?,
+    val access: EndpointAccess,
     val parameters: List<ParameterInfo>,
-    val isSuspending: Boolean
+    val isSuspending: Boolean,
+    val responseType: KType,
+    val returnsEither: Boolean
 )

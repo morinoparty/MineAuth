@@ -3,7 +3,7 @@ package party.morino.mineauth.core
 import com.github.shynixn.mccoroutine.bukkit.SuspendingJavaPlugin
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
-import org.bukkit.plugin.java.JavaPlugin
+import org.bukkit.plugin.ServicePriority
 import org.incendo.cloud.annotations.AnnotationParser
 import org.incendo.cloud.bukkit.CloudBukkitCapabilities
 import org.incendo.cloud.execution.ExecutionCoordinator
@@ -13,13 +13,12 @@ import org.incendo.cloud.setting.ManagerSetting
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.getOrNull
 import org.koin.dsl.module
-import party.morino.mineauth.api.MineAuthAPI
+import party.morino.mineauth.api.MineAuthApi
 import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.config.PluginDirectoryImpl
-import party.morino.mineauth.api.RegisterHandler
-import party.morino.mineauth.core.plugin.PluginContext
+import party.morino.mineauth.core.plugin.MineAuthApiImpl
+import party.morino.mineauth.core.plugin.PluginDisableListener
 import party.morino.mineauth.core.plugin.pluginModule
-import party.morino.mineauth.core.plugin.RegisterHandlerImpl
 import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.commands.OAuthClientCommand
 import party.morino.mineauth.core.commands.RegisterCommand
@@ -34,13 +33,14 @@ import party.morino.mineauth.core.web.WebServer
 import party.morino.mineauth.core.web.router.common.server.PluginInfoService
 import party.morino.mineauth.core.web.router.common.server.PluginInfoServiceImpl
 
-open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
+open class MineAuth: SuspendingJavaPlugin() {
     private lateinit var plugin: MineAuth
     override suspend fun onEnableAsync() {
         println("MineAuth is enabling...")
         plugin = this
         setCommand()
         setupKoin()
+        registerApi()
         FileUtils.loadFiles()
         FileUtils.settingDatabase()
         IntegrationInitializer.initialize()
@@ -49,6 +49,18 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
             WebServer.settingServer()
             WebServer.startServer()
         })
+    }
+
+    /**
+     * MineAuthApiをServicesManagerに登録する
+     * ディスパッチャ方式によりWebサーバー起動前でもエンドポイント登録が可能なため、
+     * サーバー起動を待たずに公開できる
+     */
+    private fun registerApi() {
+        val apiImpl = org.koin.java.KoinJavaComponent.get<MineAuthApiImpl>(MineAuthApiImpl::class.java)
+        server.servicesManager.register(MineAuthApi::class.java, apiImpl, this, ServicePriority.Normal)
+        // プラグイン無効化時の自動登録解除（クラスローダーリーク防止）
+        server.pluginManager.registerEvents(PluginDisableListener(apiImpl), this)
     }
 
 
@@ -104,18 +116,6 @@ open class MineAuth: SuspendingJavaPlugin() , MineAuthAPI {
                 VersionCommand(),
             )
         }
-    }
-
-    /**
-     * 外部プラグイン用のRegisterHandlerを作成する
-     * プラグイン名から基本パスを生成し、エンドポイント登録を可能にする
-     *
-     * @param plugin ハンドラーを作成するプラグインのインスタンス
-     * @return 作成されたRegisterHandler
-     */
-    override fun createHandler(plugin: JavaPlugin): RegisterHandler {
-        val context = PluginContext.from(plugin)
-        return RegisterHandlerImpl(context)
     }
 
 }
