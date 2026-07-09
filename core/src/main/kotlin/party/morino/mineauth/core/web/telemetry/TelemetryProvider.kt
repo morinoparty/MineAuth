@@ -86,9 +86,12 @@ object TelemetryProvider : KoinComponent {
             }
             plugin.logger.info("Initializing OpenTelemetry ${exporter.protocol} exporter for: $endpointHost")
 
-            // HTTPプロトコルで/v1/tracesが含まれている場合は警告
-            if (exporter.protocol == OtlpExporterProtocol.HTTP && exporter.endpoint.contains("/v1/traces")) {
-                plugin.logger.warning("HTTP endpoint contains '/v1/traces' suffix - this will be automatically removed (SDK appends it)")
+            // HTTPプロトコルではSDKがパスを自動付与しないため、シグナル別のフルパスを含める必要がある
+            if (exporter.protocol == OtlpExporterProtocol.HTTP &&
+                !exporter.endpoint.contains("/v1/traces") &&
+                !exporter.endpoint.contains("/v1/metrics")
+            ) {
+                plugin.logger.warning("HTTP endpoint does not include a signal path (e.g. '/v1/traces') - the SDK does not append it automatically, exports will likely 404")
             }
         }
 
@@ -237,11 +240,9 @@ object TelemetryProvider : KoinComponent {
             }
             OtlpExporterProtocol.HTTP -> {
                 // HTTPエクスポーターを構築
-                // 注意: OtlpHttpSpanExporterは自動的に/v1/tracesを追加する
-                // ユーザーが誤って/v1/tracesを含めた場合は除去する
-                val normalizedEndpoint = config.endpoint
-                    .removeSuffix("/v1/traces")
-                    .removeSuffix("/")
+                // 注意: OtlpHttpSpanExporterはパスを自動付与しないため、
+                // config.endpointにシグナル別のフルパス（例: /v1/traces）を含める必要がある
+                val normalizedEndpoint = config.endpoint.removeSuffix("/")
 
                 val builder = OtlpHttpSpanExporter.builder()
                     .setEndpoint(normalizedEndpoint)
@@ -282,12 +283,9 @@ object TelemetryProvider : KoinComponent {
             }
             OtlpExporterProtocol.HTTP -> {
                 // HTTPエクスポーターを構築
-                // 注意: OtlpHttpMetricExporterは自動的に/v1/metricsを追加する
-                // ユーザーが誤ってシグナル別のパスを含めた場合は除去する
-                val normalizedEndpoint = config.endpoint
-                    .removeSuffix("/v1/metrics")
-                    .removeSuffix("/v1/traces")
-                    .removeSuffix("/")
+                // 注意: OtlpHttpMetricExporterはパスを自動付与しないため、
+                // config.endpointにシグナル別のフルパス（例: /v1/metrics）を含める必要がある
+                val normalizedEndpoint = config.endpoint.removeSuffix("/")
 
                 val builder = OtlpHttpMetricExporter.builder()
                     .setEndpoint(normalizedEndpoint)
