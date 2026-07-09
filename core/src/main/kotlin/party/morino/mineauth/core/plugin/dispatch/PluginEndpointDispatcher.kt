@@ -5,7 +5,12 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
+import io.opentelemetry.api.trace.Span
+import io.opentelemetry.context.Context
+import io.opentelemetry.instrumentation.api.semconv.http.HttpServerRoute
+import io.opentelemetry.instrumentation.api.semconv.http.HttpServerRouteSource
 import org.koin.core.component.KoinComponent
+import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.core.plugin.annotation.EndpointAccess
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
@@ -14,6 +19,7 @@ import party.morino.mineauth.core.plugin.route.AuthenticationHandler
 import party.morino.mineauth.core.plugin.route.ErrorResponse
 import party.morino.mineauth.core.plugin.route.RequestContext
 import party.morino.mineauth.core.plugin.route.RouteExecutor
+import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -79,7 +85,11 @@ class PluginEndpointDispatcher(
     suspend fun dispatch(call: ApplicationCall) {
         // 名前空間のテーブルを取得（未登録の名前空間は404）
         val namespace = call.parameters["namespace"]
-        val table = namespace?.let { tables[it] }
+        if (namespace == null) {
+            respondNotFound(call)
+            return
+        }
+        val table = tables[namespace]
         if (table == null) {
             respondNotFound(call)
             return
@@ -125,6 +135,27 @@ class PluginEndpointDispatcher(
         // 例: /shops/mine と /shops/{id} が両方マッチしたら /shops/mine を選ぶ
         val (endpoint, pathParams) = methodMatches.maxByOrNull { specificity(it.first.pathSegments) }!!
 
+        // OpenTelemetryのhttp.route（サーバースパン名）を実エンドポイントのテンプレートに補正する。
+        // Ktorのルートは単一のキャッチオール（/api/v1/plugins/{namespace}/{path...}）のため、
+        // ディスパッチャがマッチさせた実際のテンプレート（例: /api/v1/plugins/vault/shops/{id}）に
+        // 上書きすることで、エンドポイント単位で識別・集計できるようにする。
+        // NESTED_CONTROLLER(order=4)はサニタイザのCONTROLLER(order=3)より優先度が高いため、
+        // ルート文字列の長短に関わらず必ずこの値が採用される。
+        val routeTemplate = table.basePath + endpoint.path
+        HttpServerRoute.update(
+            Context.current(),
+            HttpServerRouteSource.NESTED_CONTROLLER,
+            routeTemplate
+        )
+        // サーバースパンにプラグイン・ルートの識別属性を付与する（トップレベルHTTPスパンを検索可能にする）
+        // トレーシング無効時はSpan.current()がNoOpとなり、setAttributeは安全に無視される
+        Span.current().apply {
+            setAttribute(TelemetryAttributes.PLUGIN_NAMESPACE, namespace)
+            setAttribute(TelemetryAttributes.PLUGIN_OWNER, table.pluginName)
+            setAttribute(TelemetryAttributes.ROUTE_TEMPLATE, routeTemplate)
+            setAttribute(TelemetryAttributes.ENDPOINT_ACCESS, accessLabel(endpoint.access))
+        }
+
         // 認証・認可（失敗時はレスポンス済みで終了）
         val principal = when (val access = endpoint.access) {
             is EndpointAccess.Public -> when (val result = authHandler.optionalPrincipal(call)) {
@@ -144,8 +175,34 @@ class PluginEndpointDispatcher(
             }
         }
 
+        // 認証結果が確定したので、呼び出し元の種別をサーバースパンに記録する
+        Span.current().setAttribute(TelemetryAttributes.CALLER_TYPE, callerTypeLabel(principal))
+
         // ハンドラーを実行
         executor.execute(RequestContext(call, principal, pathParams), endpoint)
+    }
+
+    /**
+     * アクセス区分を属性値の文字列に変換する
+     *
+     * @param access エンドポイントのアクセス制御設定
+     * @return "public" もしくは "authenticated"
+     */
+    private fun accessLabel(access: EndpointAccess): String = when (access) {
+        is EndpointAccess.Public -> "public"
+        is EndpointAccess.Authenticated -> "authenticated"
+    }
+
+    /**
+     * 認証済みPrincipalを呼び出し元種別の文字列に変換する
+     *
+     * @param principal 認証済みPrincipal（公開エンドポイントで未認証の場合null）
+     * @return "user" / "service" / "anonymous"
+     */
+    private fun callerTypeLabel(principal: Principal?): String = when (principal) {
+        is Principal.User -> "user"
+        is Principal.Service -> "service"
+        null -> "anonymous"
     }
 
     /**

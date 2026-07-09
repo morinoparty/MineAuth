@@ -11,6 +11,15 @@ MineAuth uses OpenTelemetry for distributed tracing and metrics. This page descr
 - `KtorServerTelemetry` automatically creates one HTTP server span per inbound request. Manual spans created inside request handlers become children of that server span.
 - Micrometer metrics are registered once on a `CompositeMeterRegistry` that fans out to the Prometheus registry (`/metrics`) and, when enabled, to the OpenTelemetry bridge (OTLP export).
 
+## HTTP Server Span Names (`http.route`)
+
+`KtorServerTelemetry` derives the server span name from the matched Ktor route. Because routes wrapped in `authenticate { ... }` carry an authentication selector in their string representation, the raw span name leaks that selector — for example `GET /(authenticate user-oauth-token, service-oauth-token)/api/v1/plugins/{namespace}`. Two mechanisms correct this:
+
+- **Route sanitizer** (`installAuthRouteSanitizer` in `HttpRouteSupport.kt`) subscribes to `RoutingRoot.RoutingCallStarted` and re-publishes `http.route` with the authentication selector stripped, using `HttpServerRouteSource.CONTROLLER`. Since `CONTROLLER` outranks the library's `SERVER` source, the cleaned route always wins regardless of subscription order. This applies to every authenticated route (`/hello`, `/api/v1/commons/**`, OAuth endpoints).
+- **Plugin route refinement** happens in `PluginEndpointDispatcher`. Addon endpoints are all served by a single catch-all Ktor route (`/api/v1/plugins/{namespace}/{path...}`), so the resolved route cannot distinguish one addon endpoint from another. Once the dispatcher matches a request to a registered endpoint it overrides `http.route` with the actual template (for example `/api/v1/plugins/vault/shops/{id}`) using `HttpServerRouteSource.NESTED_CONTROLLER`, which outranks the sanitizer. The template is built from `NamespaceTable.basePath` plus the endpoint path, so concrete IDs never appear in the span name.
+
+When observability is disabled there is no route state on the context, and both `HttpServerRoute.update` and `Span.setAttribute` become no-ops, so these calls are always safe.
+
 ## Span Catalog
 
 | Span name | Location | Attributes |
@@ -29,6 +38,20 @@ MineAuth uses OpenTelemetry for distributed tracing and metrics. This page descr
 | `mineauth.plugin.handler` | `RouteExecutor` (all addon routes) | `mineauth.handler.class`, `mineauth.endpoint.path`, `mineauth.endpoint.method` |
 
 In addition, `respondOAuthError` records `mineauth.oauth.error_code` and sets the span status to `ERROR` on the current span for every OAuth error response.
+
+### Addon request enrichment
+
+For addon endpoints, `PluginEndpointDispatcher` also enriches the surrounding **HTTP server span** (not a child span) so the top-level request is filterable by plugin and endpoint:
+
+| Attribute | Value |
+|-----------|-------|
+| `mineauth.plugin.namespace` | URL namespace of the addon (for example `vault`) |
+| `mineauth.plugin.owner` | Name of the plugin that registered the namespace |
+| `mineauth.route.template` | Matched route template (for example `/api/v1/plugins/vault/shops/{id}`) |
+| `mineauth.endpoint.access` | `public` or `authenticated` |
+| `mineauth.auth.caller_type` | `user`, `service`, or `anonymous` |
+
+These attributes are set on a request only after it matches a registered endpoint, so unmatched requests (404 / 405) do not carry them.
 
 All attribute keys are defined in `TelemetryAttributes` (`core/.../web/telemetry/TelemetryAttributes.kt`).
 

@@ -63,6 +63,22 @@ object TelemetryAttributes {
     // アドオンルートのHTTPメソッド
     val ENDPOINT_METHOD: AttributeKey<String> = AttributeKey.stringKey("mineauth.endpoint.method")
 
+    // アドオンエンドポイントのURL名前空間（例: vault）
+    val PLUGIN_NAMESPACE: AttributeKey<String> = AttributeKey.stringKey("mineauth.plugin.namespace")
+
+    // 名前空間を所有するプラグイン名（登録元アドオン）
+    val PLUGIN_OWNER: AttributeKey<String> = AttributeKey.stringKey("mineauth.plugin.owner")
+
+    // マッチしたエンドポイントのルートテンプレート（例: /api/v1/plugins/vault/shops/{id}）
+    // 具体的なID値ではなくテンプレートを記録するため、カーディナリティが低くPIIも含まない
+    val ROUTE_TEMPLATE: AttributeKey<String> = AttributeKey.stringKey("mineauth.route.template")
+
+    // エンドポイントのアクセス区分（public / authenticated）
+    val ENDPOINT_ACCESS: AttributeKey<String> = AttributeKey.stringKey("mineauth.endpoint.access")
+
+    // 呼び出し元の種別（user / service / anonymous）
+    val CALLER_TYPE: AttributeKey<String> = AttributeKey.stringKey("mineauth.auth.caller_type")
+
     // トークン種別ヒント（introspect / revokeのtoken_type_hint）
     val TOKEN_TYPE_HINT: AttributeKey<String> = AttributeKey.stringKey("mineauth.token.type_hint")
 
