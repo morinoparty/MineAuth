@@ -44,9 +44,10 @@ class TelemetryProviderTest {
     }
 
     @Test
-    @DisplayName("HTTP endpoint with signal path suffix is normalized")
-    fun httpEndpointWithSignalPathSuffixIsNormalized() {
-        // ユーザーが誤って/v1/metricsを含めた場合でも二重に付与されないことを確認
+    @DisplayName("HTTP endpoint with signal path is passed through unmodified")
+    fun httpEndpointWithSignalPathIsPassedThroughUnmodified() {
+        // OtlpHttpMetricExporterはパスを自動付与しないため、/v1/metricsを含むフルパスが
+        // そのままエンドポイントとして使われる（削られたり二重に付与されたりしない）ことを確認
         val config = OtlpExporterConfig(
             protocol = OtlpExporterProtocol.HTTP,
             endpoint = "http://localhost:4318/v1/metrics"
@@ -54,7 +55,7 @@ class TelemetryProviderTest {
 
         val exporter = TelemetryProvider.createMetricExporter(config)
 
-        // SDKが/v1/metricsを自動付与するため、二重付与になっていないことを確認
+        assertTrue(exporter.toString().contains("localhost:4318/v1/metrics"))
         assertFalse(exporter.toString().contains("/v1/metrics/v1/metrics"))
         exporter.shutdown()
     }
