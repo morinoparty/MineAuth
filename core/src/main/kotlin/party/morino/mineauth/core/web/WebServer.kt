@@ -47,6 +47,7 @@ import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 import party.morino.mineauth.core.web.telemetry.MinecraftMetrics
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.TelemetryProvider
+import party.morino.mineauth.core.web.telemetry.installAuthRouteSanitizer
 import party.morino.mineauth.core.web.telemetry.withSpan
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
@@ -102,6 +103,9 @@ internal fun Application.module() {
         install(KtorServerTelemetry) {
             setOpenTelemetry(openTelemetry)
         }
+        // KtorServerTelemetryが設定するhttp.routeから認証セレクタ由来のノイズ
+        // （例: "(authenticate user-oauth-token, service-oauth-token)"）を除去する
+        installAuthRouteSanitizer()
     }
 
     // Prometheusメトリクスレジストリ（/metricsエンドポイント用）
