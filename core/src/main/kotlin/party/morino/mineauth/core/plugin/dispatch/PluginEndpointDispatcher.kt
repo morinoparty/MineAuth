@@ -6,11 +6,12 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.opentelemetry.api.trace.Span
-import io.opentelemetry.context.Context
 import io.opentelemetry.instrumentation.api.semconv.http.HttpServerRoute
 import io.opentelemetry.instrumentation.api.semconv.http.HttpServerRouteSource
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.api.auth.Principal
+import party.morino.mineauth.core.web.telemetry.OTEL_ROUTE_TEMPLATE
+import party.morino.mineauth.core.web.telemetry.otelServerContext
 import party.morino.mineauth.core.plugin.annotation.EndpointAccess
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
@@ -141,15 +142,20 @@ class PluginEndpointDispatcher(
         // 上書きすることで、エンドポイント単位で識別・集計できるようにする。
         // NESTED_CONTROLLER(order=4)はサニタイザのCONTROLLER(order=3)より優先度が高いため、
         // ルート文字列の長短に関わらず必ずこの値が採用される。
+        // サーバースパンのContextはハンドラのコルーチンでは失われることがあるため、
+        // call.attributesに保存された確実なContextを使う（Context.current()に頼らない）
+        val otelContext = call.otelServerContext()
         val routeTemplate = table.basePath + endpoint.path
         HttpServerRoute.update(
-            Context.current(),
+            otelContext,
             HttpServerRouteSource.NESTED_CONTROLLER,
             routeTemplate
         )
+        // url.pathテンプレート化用に、より具体的なテンプレートで退避を上書きする
+        call.attributes.put(OTEL_ROUTE_TEMPLATE, routeTemplate)
         // サーバースパンにプラグイン・ルートの識別属性を付与する（トップレベルHTTPスパンを検索可能にする）
-        // トレーシング無効時はSpan.current()がNoOpとなり、setAttributeは安全に無視される
-        Span.current().apply {
+        // トレーシング無効時はSpanがNoOpとなり、setAttributeは安全に無視される
+        Span.fromContext(otelContext).apply {
             setAttribute(TelemetryAttributes.PLUGIN_NAMESPACE, namespace)
             setAttribute(TelemetryAttributes.PLUGIN_OWNER, table.pluginName)
             setAttribute(TelemetryAttributes.ROUTE_TEMPLATE, routeTemplate)
@@ -176,7 +182,7 @@ class PluginEndpointDispatcher(
         }
 
         // 認証結果が確定したので、呼び出し元の種別をサーバースパンに記録する
-        Span.current().setAttribute(TelemetryAttributes.CALLER_TYPE, callerTypeLabel(principal))
+        Span.fromContext(otelContext).setAttribute(TelemetryAttributes.CALLER_TYPE, callerTypeLabel(principal))
 
         // ハンドラーを実行
         executor.execute(RequestContext(call, principal, pathParams), endpoint)

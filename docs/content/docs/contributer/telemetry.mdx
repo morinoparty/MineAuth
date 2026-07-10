@@ -16,9 +16,17 @@ MineAuth uses OpenTelemetry for distributed tracing and metrics. This page descr
 `KtorServerTelemetry` derives the server span name from the matched Ktor route. Because routes wrapped in `authenticate { ... }` carry an authentication selector in their string representation, the raw span name leaks that selector — for example `GET /(authenticate user-oauth-token, service-oauth-token)/api/v1/plugins/{namespace}`. Two mechanisms correct this:
 
 - **Route sanitizer** (`installAuthRouteSanitizer` in `HttpRouteSupport.kt`) subscribes to `RoutingRoot.RoutingCallStarted` and re-publishes `http.route` with the authentication selector stripped, using `HttpServerRouteSource.CONTROLLER`. Since `CONTROLLER` outranks the library's `SERVER` source, the cleaned route always wins regardless of subscription order. This applies to every authenticated route (`/hello`, `/api/v1/commons/**`, OAuth endpoints).
-- **Plugin route refinement** happens in `PluginEndpointDispatcher`. Addon endpoints are all served by a single catch-all Ktor route (`/api/v1/plugins/{namespace}/{path...}`), so the resolved route cannot distinguish one addon endpoint from another. Once the dispatcher matches a request to a registered endpoint it overrides `http.route` with the actual template (for example `/api/v1/plugins/vault/shops/{id}`) using `HttpServerRouteSource.NESTED_CONTROLLER`, which outranks the sanitizer. The template is built from `NamespaceTable.basePath` plus the endpoint path, so concrete IDs never appear in the span name.
+- **Plugin route refinement** happens in `PluginEndpointDispatcher`. Addon endpoints are all served by a single catch-all Ktor route (`/api/v1/plugins/{namespace}/{path...}`), so the resolved route cannot distinguish one addon endpoint from another. Once the dispatcher matches a request to a registered endpoint it overrides `http.route` with the actual template (for example `/api/v1/plugins/vault/balance/{player}`) using `HttpServerRouteSource.NESTED_CONTROLLER`, which outranks the sanitizer. The template is built from `NamespaceTable.basePath` plus the endpoint path, so concrete IDs never appear in the span name.
 
-When observability is disabled there is no route state on the context, and both `HttpServerRoute.update` and `Span.setAttribute` become no-ops, so these calls are always safe.
+### Server-span context capture
+
+Updating `http.route` and setting span attributes both require the OpenTelemetry context that holds the server span. Inside the request handler coroutine `Context.current()` is **not** reliable — under the Jetty engine an authentication interceptor can switch threads and leave `Context.current()` without the server span, so `HttpServerRoute.update` would silently no-op. To avoid this, the sanitizer captures `Context.current()` at `RoutingRoot.RoutingCallStarted` (where it is guaranteed to hold the server span) and stashes it in `call.attributes`. `ApplicationCall.otelServerContext()` reads it back, so the dispatcher never depends on the handler-thread context. `RoutingCall.attributes` is the same bag across the routing pipeline, so the value survives into the handler.
+
+### `url.path` templating
+
+`KtorServerTelemetry` records `url.path` as the concrete request path (e.g. `/api/v1/plugins/vault/balance/_Steve`), which embeds player names — PII under the rules below. An `attributesExtractor { onEnd { … } }` on the telemetry plugin overwrites `url.path` with the resolved route template stashed in `call.attributes` (`OTEL_ROUTE_TEMPLATE`), so `url.path` becomes `/api/v1/plugins/vault/balance/{player}` and never carries the concrete identifier.
+
+When observability is disabled there is no route state on the context, and `HttpServerRoute.update`, `Span.setAttribute`, and the attribute extractor all become no-ops, so these calls are always safe.
 
 ## Span Catalog
 
