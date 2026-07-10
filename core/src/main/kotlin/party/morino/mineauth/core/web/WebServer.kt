@@ -45,10 +45,12 @@ import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
 import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 import party.morino.mineauth.core.web.telemetry.MinecraftMetrics
+import party.morino.mineauth.core.web.telemetry.OTEL_ROUTE_TEMPLATE
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.TelemetryProvider
 import party.morino.mineauth.core.web.telemetry.installAuthRouteSanitizer
 import party.morino.mineauth.core.web.telemetry.withSpan
+import io.opentelemetry.semconv.UrlAttributes
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 
@@ -102,6 +104,15 @@ internal fun Application.module() {
     if (observabilityConfig.enabled) {
         install(KtorServerTelemetry) {
             setOpenTelemetry(openTelemetry)
+            // url.pathには具体パス（例: /api/v1/plugins/vault/balance/_NIKOMARU）がそのまま入り、
+            // プレイヤー名などのPIIを含む。算出済みのルートテンプレートで置換してPIIを除去する。
+            attributesExtractor {
+                onEnd {
+                    request.call.attributes.getOrNull(OTEL_ROUTE_TEMPLATE)?.let { template ->
+                        attributes.put(UrlAttributes.URL_PATH, template)
+                    }
+                }
+            }
         }
         // KtorServerTelemetryが設定するhttp.routeから認証セレクタ由来のノイズ
         // （例: "(authenticate user-oauth-token, service-oauth-token)"）を除去する
