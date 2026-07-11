@@ -95,7 +95,8 @@ class PluginResponseSerializationJettyTest {
             isSuspending = false,
             responseType = isolatedDto.kotlin.starProjectedType, // 分離DTOのKType
             returnsEither = false,
-            responseResolvableByCore = false // shade済みのため本体では解決不能→利用側クラスローダ経路
+            responseResolvableByCore = false, // shade済みのため本体では解決不能→利用側クラスローダ経路
+            returnsResponse = false
         )
         val executor = RouteExecutor(
             ParameterResolver(Json),

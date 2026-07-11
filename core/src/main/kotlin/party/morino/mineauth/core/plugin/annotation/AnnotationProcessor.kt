@@ -14,6 +14,7 @@ import party.morino.mineauth.api.RegistrationError
 import party.morino.mineauth.api.annotations.Authenticated
 import party.morino.mineauth.api.annotations.Body
 import party.morino.mineauth.api.annotations.Caller
+import party.morino.mineauth.api.annotations.Conditional
 import party.morino.mineauth.api.annotations.Delete
 import party.morino.mineauth.api.annotations.Get
 import party.morino.mineauth.api.annotations.Patch
@@ -26,6 +27,7 @@ import party.morino.mineauth.api.annotations.Query
 import party.morino.mineauth.api.annotations.QueryMap
 import party.morino.mineauth.api.annotations.Route
 import party.morino.mineauth.api.auth.Principal
+import party.morino.mineauth.api.http.ConditionalRequest
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.serialization.PluginSerialization
 import java.util.UUID
@@ -57,6 +59,9 @@ class AnnotationProcessor : KoinComponent {
             Double::class, Float::class, Boolean::class, UUID::class
         )
         private val CONVERTIBLE_TYPE_NAMES = CONVERTIBLE_TYPES.map { it.simpleName ?: "?" }
+
+        // レスポンスラッパーの完全修飾名（本体提供のAPI型なので直接比較でよい）
+        private const val RESPONSE_QUALIFIED_NAME = "party.morino.mineauth.api.http.Response"
     }
 
     /**
@@ -139,7 +144,8 @@ class AnnotationProcessor : KoinComponent {
                         isSuspending = function.isSuspend,
                         responseType = returnInfo.responseType,
                         returnsEither = returnInfo.returnsEither,
-                        responseResolvableByCore = returnInfo.resolvableByCore
+                        responseResolvableByCore = returnInfo.resolvableByCore,
+                        returnsResponse = returnInfo.returnsResponse
                     )
                 )
             }
@@ -248,7 +254,8 @@ class AnnotationProcessor : KoinComponent {
             param.hasAnnotation<QueryMap>(),
             param.hasAnnotation<Body>(),
             param.hasAnnotation<Caller>(),
-            param.hasAnnotation<PlayerParam>()
+            param.hasAnnotation<PlayerParam>(),
+            param.hasAnnotation<Conditional>()
         ).count { it }
 
         if (annotationCount == 0) {
@@ -275,6 +282,9 @@ class AnnotationProcessor : KoinComponent {
 
             param.hasAnnotation<Caller>() ->
                 analyzeCaller(className, function, param, access, errors)
+
+            param.hasAnnotation<Conditional>() ->
+                analyzeConditional(className, function, param, errors)
 
             else ->
                 analyzePlayerParam(className, function, param, access, segments, path, errors)
@@ -484,6 +494,30 @@ class AnnotationProcessor : KoinComponent {
     }
 
     /**
+     * @Conditionalパラメータを解析する
+     * ConditionalRequest型のみ許可し、@Public・@Authenticatedどちらでも使用できる
+     */
+    private fun analyzeConditional(
+        className: String,
+        function: KFunction<*>,
+        param: KParameter,
+        errors: MutableList<RegistrationError>
+    ): ParameterInfo? {
+        val paramName = param.name ?: "unknown"
+
+        // バインド型はConditionalRequestのみ（non-nullable）
+        if (param.type.jvmErasure != ConditionalRequest::class || param.type.isMarkedNullable) {
+            errors += RegistrationError.UnsupportedParameterType(
+                className, function.name, paramName,
+                param.type.toString(), listOf("ConditionalRequest (non-nullable)")
+            )
+            return null
+        }
+
+        return ParameterInfo.Conditional
+    }
+
+    /**
      * @PlayerParamパラメータを解析する
      * OfflinePlayer型のみ、@Authenticatedエンドポイントのみで使用可能
      */
@@ -544,21 +578,24 @@ class AnnotationProcessor : KoinComponent {
     /**
      * 戻り値型の解析結果
      *
-     * @property responseType レスポンス型（Eitherの場合は右側の型）
+     * @property responseType 直列化対象のレスポンス型（Either・Responseを剥がした後の内側の型）
      * @property returnsEither 戻り値がArrowのEitherかどうか
+     * @property returnsResponse 戻り値が`Response<T>`ラッパーかどうか
      * @property resolvableByCore レスポンス型をMineAuth本体のランタイムで直列化できるか
      */
     private data class ReturnTypeInfo(
         val responseType: KType,
         val returnsEither: Boolean,
+        val returnsResponse: Boolean,
         val resolvableByCore: Boolean
     )
 
     /**
      * 戻り値型を解析する
-     * Either<HttpError, T>の場合はTをレスポンス型として抽出する。
-     * 抽出したレスポンス型がシリアライズ可能かを登録時に検証し、実行時の不透明な
-     * 500ではなく明快な登録エラーとして早期に検出する（[validateResponseSerializable]）。
+     *
+     * `Either<HttpError, T>`の場合はTを、さらにTが`Response<U>`ラッパーの場合はUを
+     * 直列化対象のレスポンス型として抽出する。抽出した型がシリアライズ可能かを登録時に検証し、
+     * 実行時の不透明な500ではなく明快な登録エラーとして早期に検出する（[validateResponseSerializable]）。
      */
     private fun analyzeReturnType(
         className: String,
@@ -569,11 +606,11 @@ class AnnotationProcessor : KoinComponent {
         val returnType = function.returnType
         val classifierName = (returnType.classifier as? KClass<*>)?.qualifiedName
 
-        // ArrowのEitherかどうかを判定
+        // まずEither<HttpError, T>を剥がす
         // shade/relocate対応のため接尾辞比較とするが、パッケージ境界を含めて誤判定を防ぐ
-        if (classifierName != null &&
+        val returnsEither = classifierName != null &&
             (classifierName == "arrow.core.Either" || classifierName.endsWith(".arrow.core.Either"))
-        ) {
+        val innerType = if (returnsEither) {
             // 左側の型はHttpErrorである必要がある
             val leftType = returnType.arguments.getOrNull(0)?.type
             if (leftType?.jvmErasure != HttpError::class) {
@@ -582,13 +619,22 @@ class AnnotationProcessor : KoinComponent {
                     "Either return type must be Either<HttpError, T> (got left type $leftType)"
                 )
             }
-            val rightType = returnType.arguments.getOrNull(1)?.type ?: typeOf<Any?>()
-            val resolvableByCore = validateResponseSerializable(className, function, rightType, consumerClassLoader, errors)
-            return ReturnTypeInfo(rightType, returnsEither = true, resolvableByCore = resolvableByCore)
+            returnType.arguments.getOrNull(1)?.type ?: typeOf<Any?>()
+        } else {
+            returnType
         }
 
-        val resolvableByCore = validateResponseSerializable(className, function, returnType, consumerClassLoader, errors)
-        return ReturnTypeInfo(returnType, returnsEither = false, resolvableByCore = resolvableByCore)
+        // 次にResponse<U>ラッパーを剥がす（Responseは本体が提供するAPI型なので直接FQN比較でよい）
+        val innerClassifierName = (innerType.classifier as? KClass<*>)?.qualifiedName
+        val returnsResponse = innerClassifierName == RESPONSE_QUALIFIED_NAME
+        val responseType = if (returnsResponse) {
+            innerType.arguments.getOrNull(0)?.type ?: typeOf<Any?>()
+        } else {
+            innerType
+        }
+
+        val resolvableByCore = validateResponseSerializable(className, function, responseType, consumerClassLoader, errors)
+        return ReturnTypeInfo(responseType, returnsEither, returnsResponse, resolvableByCore)
     }
 
     /**

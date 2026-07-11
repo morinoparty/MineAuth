@@ -126,6 +126,12 @@ sealed class ParameterInfo {
      * @property access アクセスポリシー
      */
     data class TargetPlayer(val segment: String, val access: PlayerAccess) : ParameterInfo()
+
+    /**
+     * 条件付きリクエスト情報（`ConditionalRequest`）の注入
+     * `If-None-Match`ヘッダーを参照して条件付き304を実現するために使う（payloadなし）
+     */
+    data object Conditional : ParameterInfo()
 }
 
 /**
@@ -145,6 +151,9 @@ sealed class ParameterInfo {
  * @property responseResolvableByCore レスポンス型をMineAuth本体のランタイムで直列化できるか。
  *   登録時に一度だけ判定し、リクエスト時の直列化経路（本体 or 利用側クラスローダ）を決める。
  *   falseの場合は利用側がserializationをshadeしていると判断し利用側クラスローダで直列化する。
+ * @property returnsResponse 戻り値が`Response<T>`ラッパー（Eitherの右側も含む）かどうか。
+ *   trueの場合、[responseType]はラップされた内側の型Tを指し、実行時にラッパーを展開して
+ *   ヘッダー・ETag・条件付き304を処理する。
  */
 data class EndpointMetadata(
     val method: KFunction<*>,
@@ -157,5 +166,6 @@ data class EndpointMetadata(
     val isSuspending: Boolean,
     val responseType: KType,
     val returnsEither: Boolean,
-    val responseResolvableByCore: Boolean
+    val responseResolvableByCore: Boolean,
+    val returnsResponse: Boolean
 )

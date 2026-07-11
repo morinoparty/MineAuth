@@ -2,6 +2,7 @@ package party.morino.mineauth.core.plugin.route
 
 import arrow.core.Either
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
@@ -10,8 +11,12 @@ import io.ktor.util.reflect.TypeInfo
 import io.opentelemetry.api.common.Attributes
 import org.koin.core.component.KoinComponent
 import org.slf4j.LoggerFactory
+import party.morino.mineauth.api.http.CacheControl
+import party.morino.mineauth.api.http.ConditionalRequest
 import party.morino.mineauth.api.http.HttpError
+import party.morino.mineauth.api.http.Response
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
+import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
 import party.morino.mineauth.core.plugin.serialization.PluginSerialization
@@ -123,12 +128,65 @@ class RouteExecutor(
         when (value) {
             null -> call.respond(HttpStatusCode.NoContent)
             is Unit -> call.respond(HttpStatusCode.OK)
+            // ハンドラーが明示的に返した304（Tier-B: ボディ生成前に短絡済み）
+            is Response.NotModified -> respondNotModified(call, value.etag, value.cacheControl, value.headers)
+            // Responseラッパー（ヘッダー・ETag・条件付き304の制御付き）
+            is Response.Ok<*> -> respondResponseOk(call, value, metadata)
             else -> respondSerialized(call, value, metadata)
         }
     }
 
     /**
-     * 戻り値をレスポンスとして返す
+     * [Response.Ok]をHTTPレスポンスにする
+     *
+     * 条件付きGET（`If-None-Match`がETagに一致）の場合はボディ直列化を省いて304を返す（Tier-A短絡）。
+     * それ以外はキャッシュ指示・ヘッダーを**成功パスにのみ**付与してボディを直列化する。
+     *
+     * @param call ApplicationCall
+     * @param ok レスポンスラッパー
+     * @param metadata エンドポイントメタデータ（responseTypeは内側のボディ型）
+     */
+    private suspend fun respondResponseOk(call: ApplicationCall, ok: Response.Ok<*>, metadata: EndpointMetadata) {
+        val etag = ok.etag
+        // Tier-A: 条件付きGETでETagが一致すれば直列化を省略して304を返す
+        if (etag != null && metadata.httpMethod == HttpMethodType.GET && matchesIfNoneMatch(call, etag)) {
+            respondNotModified(call, etag, ok.cacheControl, ok.headers)
+            return
+        }
+
+        val directives = CacheDirectives(etag, ok.cacheControl, ok.headers)
+        val status = HttpStatusCode.fromValue(ok.status.code)
+        when (val body = ok.body) {
+            null -> { directives.applyTo(call); call.respond(HttpStatusCode.NoContent) }
+            is Unit -> { directives.applyTo(call); call.respond(status) }
+            else -> respondSerialized(call, body, metadata, status, directives)
+        }
+    }
+
+    /**
+     * 304 Not Modifiedを返す（ボディなし、キャッシュ指示は付与する）
+     */
+    private suspend fun respondNotModified(
+        call: ApplicationCall,
+        etag: String?,
+        cacheControl: CacheControl?,
+        headers: Map<String, String>
+    ) {
+        CacheDirectives(etag, cacheControl, headers).applyTo(call)
+        call.respond(HttpStatusCode.NotModified)
+    }
+
+    /**
+     * リクエストの`If-None-Match`が指定ETagに一致するか判定する
+     * [ConditionalRequest]と同一のRFC 7232準拠ロジックを共有する
+     */
+    private fun matchesIfNoneMatch(call: ApplicationCall, etag: String): Boolean =
+        ConditionalRequest.fromHeaderValues(
+            call.request.headers.getAll("If-None-Match").orEmpty()
+        ).isNoneMatch(etag)
+
+    /**
+     * 戻り値をJSONへ直列化してレスポンスとして返す
      *
      * まずMineAuth本体のランタイムでシリアライザを解決できるかを確認し、可能なら
      * 既存どおり`call.respond(value, TypeInfo)`で返す（String等のKtor特殊型の扱いを含め
@@ -142,12 +200,24 @@ class RouteExecutor(
      * @param call ApplicationCall
      * @param value 直列化する戻り値（非null）
      * @param metadata エンドポイントメタデータ
+     * @param status レスポンスステータス（既定はOK）
+     * @param directives 付与するキャッシュ指示・ヘッダー（成功パスにのみ適用、nullなら付与しない）
      */
-    private suspend fun respondSerialized(call: ApplicationCall, value: Any, metadata: EndpointMetadata) {
+    private suspend fun respondSerialized(
+        call: ApplicationCall,
+        value: Any,
+        metadata: EndpointMetadata,
+        status: HttpStatusCode = HttpStatusCode.OK,
+        directives: CacheDirectives? = null
+    ) {
         // 標準パス：MineAuth自身のランタイムで解決できるなら既存挙動を完全に維持する
         // 解決可否は登録時に判定済み（[EndpointMetadata.responseResolvableByCore]）で、
         // リクエスト時に serializer(KType) を呼ばないため例外がパイプラインへ漏れることはない
         if (metadata.responseResolvableByCore) {
+            // このパスはresolvableByCore=trueなので直列化はまず失敗しない。
+            // ヘッダーはrespondの直前に付与する（万一の失敗時のヘッダー漏れは実質発生しない）
+            directives?.applyTo(call)
+            if (status != HttpStatusCode.OK) call.response.status(status)
             call.respond(value, resolveTypeInfo(metadata))
             return
         }
@@ -169,7 +239,30 @@ class RouteExecutor(
             respondInternalServerError(call)
             return
         }
-        call.respondText(jsonText, ContentType.Application.Json, HttpStatusCode.OK)
+        // 直列化に成功してからヘッダーを付与する（失敗時の500にキャッシュヘッダーが漏れない）
+        directives?.applyTo(call)
+        call.respondText(jsonText, ContentType.Application.Json, status)
+    }
+
+    /**
+     * レスポンスに付与するキャッシュ指示・追加ヘッダー
+     *
+     * [applyTo]を成功パスでのみ呼ぶことで、直列化失敗時の500へヘッダーが漏れないようにする。
+     */
+    private class CacheDirectives(
+        private val etag: String?,
+        private val cacheControl: CacheControl?,
+        private val headers: Map<String, String>
+    ) {
+        fun applyTo(call: ApplicationCall) {
+            etag?.let { call.response.headers.append(HttpHeaders.ETag, it, safeOnly = false) }
+            cacheControl?.let {
+                call.response.headers.append(HttpHeaders.CacheControl, it.toHeaderValue(), safeOnly = false)
+            }
+            headers.forEach { (name, headerValue) ->
+                call.response.headers.append(name, headerValue, safeOnly = false)
+            }
+        }
     }
 
     /** Eitherアンラップの結果を表すsealed class */
