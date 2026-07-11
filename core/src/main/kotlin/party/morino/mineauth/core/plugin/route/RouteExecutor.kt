@@ -260,8 +260,18 @@ class RouteExecutor(
                 call.response.headers.append(HttpHeaders.CacheControl, it.toHeaderValue(), safeOnly = false)
             }
             headers.forEach { (name, headerValue) ->
-                call.response.headers.append(name, headerValue, safeOnly = false)
+                // レスポンスのフレーミングを壊すヘッダーは利用側が上書きできないようにする
+                if (name.lowercase() !in FRAMING_HEADERS) {
+                    call.response.headers.append(name, headerValue, safeOnly = false)
+                }
             }
+        }
+
+        companion object {
+            // 直列化・転送のフレーミングを決めるヘッダー（利用側の任意ヘッダーからは除外する）
+            private val FRAMING_HEADERS = setOf(
+                "content-type", "content-length", "transfer-encoding", "connection"
+            )
         }
     }
 

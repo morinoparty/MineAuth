@@ -1,6 +1,7 @@
 package party.morino.mineauth.core.openapi.generator
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -57,5 +58,22 @@ class SchemaGeneratorClassLoaderTest {
         assertTrue(schema.properties!!.containsKey("count"))
         // non-nullableプロパティは必須
         assertEquals(setOf("name", "count"), schema.required?.toSet())
+    }
+
+    @Test
+    @DisplayName("Shaded @SerialName remaps the property name via reflective read")
+    fun shadedSerialNameRemapped() {
+        val serialNameDtoFq = "party.morino.mineauth.core.openapi.generator.SerialNameSampleDto"
+        val cl = IsolatingClassLoader(javaClass.classLoader, serialNameDtoFq)
+        val isolatedDto = cl.loadClass(serialNameDtoFq)
+
+        val schema = SchemaGenerator().generateSchema(isolatedDto.kotlin.starProjectedType)
+
+        // 別クラスローダの@SerialNameでもリフレクションで値を読み取り、名前がリマップされること
+        assertNotNull(schema.properties)
+        assertTrue(schema.properties!!.containsKey("display_name"), "must use @SerialName value")
+        assertFalse(schema.properties!!.containsKey("displayName"), "must not use the Kotlin property name")
+        assertTrue(schema.properties!!.containsKey("count"))
+        assertEquals(setOf("display_name", "count"), schema.required?.toSet())
     }
 }
