@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # プロンプトファイルを結合して複数の .clinerules ファイルを生成するスクリプト
 
-RULES_DIR=".cline/rules"
+RULES_DIR=".agent/rules"
 OUTPUT_FILES="AGENTS.md CLAUDE.md"
 
 END="それでは、指示に従ってタスクを遂行してください。

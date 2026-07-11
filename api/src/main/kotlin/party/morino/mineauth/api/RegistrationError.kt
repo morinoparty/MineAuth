@@ -171,6 +171,20 @@ sealed interface RegistrationError {
     }
 
     /**
+     * 戻り値（レスポンス）の型がシリアライズ不可能
+     * `Either<HttpError, T>`の場合はT、それ以外は戻り値そのものの型を指す
+     */
+    data class ReturnTypeNotSerializable(
+        val handlerClass: String,
+        val function: String,
+        val declaredType: String,
+        val reason: String
+    ) : RegistrationError {
+        override fun describe(): String =
+            "$handlerClass#$function: return type $declaredType is not serializable: $reason -> annotate the type with @Serializable or return Unit"
+    }
+
+    /**
      * 名前空間が不正、または他のプラグインが使用中
      */
     data class InvalidNamespace(

@@ -5,6 +5,7 @@
 		"index",
 		"register-handler",
 		"annotations",
+		"serialization",
 		"authentication",
 		"examples"
 	]

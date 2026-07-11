@@ -3,6 +3,7 @@ package party.morino.mineauth.core.plugin.annotation
 import kotlinx.serialization.KSerializer
 import party.morino.mineauth.api.CallerType
 import party.morino.mineauth.api.PlayerAccess
+import java.lang.reflect.Type
 import kotlin.reflect.KFunction
 import kotlin.reflect.KType
 
@@ -95,10 +96,22 @@ sealed class ParameterInfo {
 
     /**
      * リクエストボディ（JSONデシリアライズ）
+     *
+     * 利用側プラグインがserializationをshadeしている場合、MineAuth本体のランタイムでは
+     * シリアライザを解決できない。そのため[serializer]がnullのときは[consumerClassLoader]と
+     * [javaType]を用いて利用側クラスローダで解決・デコードする。
+     *
      * @property type ボディの型
-     * @property serializer 登録時に解決・検証済みのシリアライザ
+     * @property serializer MineAuth本体で解決済みのシリアライザ（nullなら利用側クラスローダで解決）
+     * @property javaType 利用側クラスローダで解決する際に使用する宣言上のJava型
+     * @property consumerClassLoader ハンドラー（利用側プラグイン）のクラスローダー
      */
-    data class Body(val type: KType, val serializer: KSerializer<Any?>) : ParameterInfo()
+    data class Body(
+        val type: KType,
+        val serializer: KSerializer<Any?>?,
+        val javaType: Type,
+        val consumerClassLoader: ClassLoader
+    ) : ParameterInfo()
 
     /**
      * 認証主体（Principal）の注入
@@ -129,6 +142,9 @@ sealed class ParameterInfo {
  * @property isSuspending suspending関数かどうか
  * @property responseType レスポンスの型（Either<HttpError, T>の場合はT）
  * @property returnsEither 戻り値がArrowのEitherかどうか
+ * @property responseResolvableByCore レスポンス型をMineAuth本体のランタイムで直列化できるか。
+ *   登録時に一度だけ判定し、リクエスト時の直列化経路（本体 or 利用側クラスローダ）を決める。
+ *   falseの場合は利用側がserializationをshadeしていると判断し利用側クラスローダで直列化する。
  */
 data class EndpointMetadata(
     val method: KFunction<*>,
@@ -140,5 +156,6 @@ data class EndpointMetadata(
     val parameters: List<ParameterInfo>,
     val isSuspending: Boolean,
     val responseType: KType,
-    val returnsEither: Boolean
+    val returnsEither: Boolean,
+    val responseResolvableByCore: Boolean
 )

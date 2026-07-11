@@ -92,7 +92,8 @@ class HttpRouteSpanNameTest {
             parameters = emptyList(),
             isSuspending = false,
             responseType = typeOf<String>(),
-            returnsEither = false
+            returnsEither = false,
+            responseResolvableByCore = true
         )
         val executor = RouteExecutor(
             ParameterResolver(Json),
