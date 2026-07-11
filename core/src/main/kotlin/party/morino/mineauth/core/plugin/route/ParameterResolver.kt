@@ -12,6 +12,7 @@ import org.bukkit.Bukkit
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.api.PlayerAccess
 import party.morino.mineauth.api.auth.Principal
+import party.morino.mineauth.api.http.ConditionalRequest
 import party.morino.mineauth.core.plugin.annotation.CallerKind
 import party.morino.mineauth.core.plugin.annotation.ParameterInfo
 import party.morino.mineauth.core.plugin.serialization.PluginSerialization
@@ -52,8 +53,18 @@ class ParameterResolver(
             is ParameterInfo.Body -> resolveBody(context, paramInfo).bind()
             is ParameterInfo.Caller -> resolveCaller(context, paramInfo).bind()
             is ParameterInfo.TargetPlayer -> resolveTargetPlayer(context, paramInfo).bind()
+            is ParameterInfo.Conditional -> resolveConditional(context)
         }
     }
+
+    /**
+     * 条件付きリクエスト情報を解決する
+     * `If-None-Match`ヘッダー（複数ヘッダー・カンマ区切りの両方）を解析して注入する
+     */
+    private fun resolveConditional(context: RequestContext): ConditionalRequest =
+        ConditionalRequest.fromHeaderValues(
+            context.call.request.headers.getAll("If-None-Match").orEmpty()
+        )
 
     /**
      * パスパラメータを解決する

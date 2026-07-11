@@ -87,7 +87,8 @@ class HttpRouteJettyTest {
             isSuspending = false,
             responseType = typeOf<String>(),
             returnsEither = false,
-            responseResolvableByCore = true
+            responseResolvableByCore = true,
+            returnsResponse = false
         )
         val executor = RouteExecutor(
             ParameterResolver(Json),

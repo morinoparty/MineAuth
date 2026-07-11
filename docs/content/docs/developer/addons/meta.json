@@ -5,7 +5,9 @@
 		"index",
 		"register-handler",
 		"annotations",
+		"caching",
 		"serialization",
+		"optional-dependency",
 		"authentication",
 		"examples"
 	]

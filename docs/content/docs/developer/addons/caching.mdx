@@ -1,0 +1,69 @@
+---
+title: Caching & Conditional Requests
+description: Set Cache-Control / ETag headers and answer conditional GETs with 304 Not Modified
+---
+
+Read-only endpoints often return data that changes rarely. MineAuth lets a handler attach cache headers and answer conditional requests so clients, reverse proxies, and CDNs can offload repeat traffic — and so the handler can skip recomputing an expensive body when nothing has changed.
+
+## 🧱 The `Response<T>` wrapper
+
+A handler may return its `@Serializable` DTO directly, or wrap it in `Response<T>` to attach an `ETag`, a `Cache-Control` directive, and extra headers. `Response` composes with `Either<HttpError, T>`.
+
+```kotlin
+@Get("/config")
+@Public
+suspend fun config(): Response<ConfigDto> =
+    Response.of(
+        loadConfig(),
+        etag = configEtag(),
+        cacheControl = CacheControl.maxAge(60)
+    )
+```
+
+`CacheControl` is a typed value object rather than a raw string:
+
+```kotlin
+CacheControl.maxAge(60)                                   // private, max-age=60
+CacheControl.maxAge(300, CacheControl.Visibility.PUBLIC)  // public, max-age=300
+CacheControl.NoStore                                       // no-store
+```
+
+Cache headers are applied only when the response is written successfully — a serialization failure or an `HttpError` never carries them.
+
+## ⚡ Conditional GET (304 Not Modified)
+
+To eliminate repeated work, inject a `ConditionalRequest` with `@Conditional`. The handler computes a **cheap** validator (a version number or timestamp) first, and returns `Response.notModified(...)` on a match — **before** loading or serializing the full body.
+
+```kotlin
+@Get("/shops/{id}")
+@Public
+suspend fun getShop(
+    @Path("id") id: String,
+    @Conditional cond: ConditionalRequest
+): Either<HttpError, Response<ShopDto>> = either {
+    // Cheap: fetch just a version/timestamp
+    val version = repo.versionOf(id) ?: raise(HttpError(HttpStatus.NOT_FOUND, "Shop not found"))
+    val etag = "\"shop-$id-$version\""
+
+    // If the client already has this version, skip the expensive load entirely
+    if (cond.isNoneMatch(etag)) return@either Response.notModified(etag, CacheControl.maxAge(60))
+
+    // Expensive: only reached on a cache miss
+    Response.of(repo.loadFull(id).toDto(), etag = etag, cacheControl = CacheControl.maxAge(60))
+}
+```
+
+Two levels of short-circuit apply:
+
+- **Body-computation skip** — the `@Conditional` check above lets the handler avoid loading and serializing the body at all. This is what removes the "re-read every file on every request" cost.
+- **Serialization skip** — even without `@Conditional`, if a `Response.of(...)` carries an `etag` and the GET request's `If-None-Match` matches, MineAuth returns `304` without serializing the already-built body.
+
+<Callout type="info">
+Keeping the ETag and the body consistent is the handler's responsibility. The simplest reliable pattern is to bump one monotonic version counter on every write that affects the response, and derive the ETag from it.
+</Callout>
+
+## 📋 Scope (v1)
+
+Supported now: `Cache-Control`, `ETag`, extra response headers, and conditional GET via `If-None-Match`.
+
+Not yet supported: `If-Modified-Since` / `Last-Modified`, `If-Match` / `412 Precondition Failed`, and a lazy body thunk (intentionally omitted — a lambda supplied by a shaded addon would cross the class-loader boundary the same way [issue #378](/docs/developer/addons/serialization) describes).
