@@ -17,7 +17,6 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -139,6 +138,48 @@ class ResponseCachingJettyTest {
             assertEquals("private, max-age=60", response.headers["Cache-Control"])
             assertEquals("""{"value":"hello"}""", body)
             assertEquals(1, computed.size) // ボディが生成された
+        }
+    }
+
+    @Test
+    @DisplayName("Response.of honors a custom status")
+    fun customStatus() {
+        val endpoint = EndpointMetadata(
+            method = Dummy::handle,
+            handlerInstance = Dummy(),
+            path = "/created",
+            pathSegments = listOf(PathSegment.Literal("created")),
+            httpMethod = HttpMethodType.GET,
+            access = EndpointAccess.Public(null),
+            parameters = emptyList(),
+            isSuspending = false,
+            responseType = typeOf<Payload>(),
+            returnsEither = false,
+            responseResolvableByCore = true,
+            returnsResponse = true
+        )
+        val executor = RouteExecutor(
+            ParameterResolver(Json),
+            object : MethodExecutionHandlerFactory {
+                override fun createHandler(metadata: EndpointMetadata): MethodExecutionHandler =
+                    object : MethodExecutionHandler {
+                        override suspend fun execute(
+                            metadata: EndpointMetadata,
+                            resolvedParams: List<Any?>
+                        ): Either<ExecutionError, Any?> = Either.Right(
+                            Response.of(Payload("new"), status = party.morino.mineauth.api.http.HttpStatus.CREATED)
+                        )
+                    }
+            }
+        )
+        val dispatcher = PluginEndpointDispatcher(executor, AuthenticationHandler()).apply {
+            install("sample", NamespaceTable("SamplePlugin", "/api/v1/plugins/sample", listOf(endpoint)))
+        }
+        withServer(dispatcher) { port ->
+            val client = HttpClient(Java)
+            val response = runBlocking { client.get("http://localhost:$port/api/v1/plugins/sample/created") }
+            client.close()
+            assertEquals(HttpStatusCode.Created, response.status)
         }
     }
 
