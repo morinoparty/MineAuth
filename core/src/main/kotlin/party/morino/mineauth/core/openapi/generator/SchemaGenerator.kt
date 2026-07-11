@@ -1,16 +1,13 @@
 package party.morino.mineauth.core.openapi.generator
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import org.bukkit.OfflinePlayer
 import org.bukkit.entity.Player
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.core.openapi.model.Schema
 import java.util.UUID
+import kotlin.reflect.KAnnotatedElement
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
-import kotlin.reflect.full.findAnnotation
-import kotlin.reflect.full.hasAnnotation
 import kotlin.reflect.full.memberProperties
 
 /**
@@ -18,6 +15,12 @@ import kotlin.reflect.full.memberProperties
  * Kotlinのリフレクションを使用して型情報からJSONスキーマを構築する
  */
 class SchemaGenerator : KoinComponent {
+
+    companion object {
+        // クラスローダ非依存にするため、シリアライズ用アノテーションは完全修飾名で判定する
+        private const val KOTLINX_SERIALIZABLE = "kotlinx.serialization.Serializable"
+        private const val KOTLINX_SERIAL_NAME = "kotlinx.serialization.SerialName"
+    }
 
     /**
      * KTypeからOpenAPIスキーマを生成する
@@ -95,7 +98,7 @@ class SchemaGenerator : KoinComponent {
             // 列挙型
             else -> if (classifier.java.isEnum) {
                 generateEnumSchema(classifier)
-            } else if (classifier.hasAnnotation<Serializable>()) {
+            } else if (classifier.hasSerializableAnnotation()) {
                 // @Serializable付きデータクラス
                 generateObjectSchema(classifier, processingTypes)
             } else {
@@ -148,7 +151,7 @@ class SchemaGenerator : KoinComponent {
             // データクラスのプロパティを反復処理
             for (prop in kClass.memberProperties) {
                 // @SerialNameがあればその名前を使用、なければプロパティ名
-                val serialName = prop.findAnnotation<SerialName>()?.value ?: prop.name
+                val serialName = prop.serialNameValue() ?: prop.name
                 val propSchema = generateSchemaInternal(prop.returnType, processingTypes)
                 properties[serialName] = propSchema
 
@@ -167,6 +170,32 @@ class SchemaGenerator : KoinComponent {
             processingTypes.remove(kClass)
         }
     }
+
+    /**
+     * `@Serializable`が付与されているかをFQNで判定する
+     *
+     * `hasAnnotation<Serializable>()`はMineAuth本体の`Serializable` Classに対する
+     * instanceof判定のため、利用側がserializationをshadeしたDTO（別クラスローダの
+     * `@Serializable`）を認識できずスキーマを空オブジェクトに縮退させてしまう（issue #378関連）。
+     * クラスローダ非依存にするため、完全修飾名で判定する。
+     */
+    private fun KAnnotatedElement.hasSerializableAnnotation(): Boolean =
+        annotations.any { it.annotationClass.qualifiedName == KOTLINX_SERIALIZABLE }
+
+    /**
+     * `@SerialName`の値をFQNで取得する（付与されていなければnull）
+     *
+     * [hasSerializableAnnotation]と同様にクラスローダ分裂に耐えるよう、完全修飾名で
+     * アノテーションを探し、値はリフレクションで読み取る（利用側クラスローダの
+     * `SerialName` Classへは直接キャストできないため）。
+     */
+    private fun KAnnotatedElement.serialNameValue(): String? =
+        annotations.firstOrNull { it.annotationClass.qualifiedName == KOTLINX_SERIAL_NAME }
+            ?.let { annotation ->
+                runCatching {
+                    annotation.annotationClass.java.getMethod("value").invoke(annotation) as? String
+                }.getOrNull()
+            }
 
     /**
      * 戻り値の型からレスポンススキーマを生成する
