@@ -1,0 +1,71 @@
+---
+title: Serialization & Class Loaders
+description: How MineAuth serializes your DTOs, and how to bundle kotlinx-serialization safely
+---
+
+MineAuth serializes handler return values to JSON and deserializes `@Body` parameters from JSON using [kotlinx-serialization](https://github.com/Kotlin/kotlinx.serialization). This page explains how that works across Paper's per-plugin class loaders, so your addon works whether or not it bundles its own serialization runtime.
+
+## 📦 Requirements
+
+- Every response DTO and every `@Body` type must be annotated with `@Serializable`.
+- The serialization compiler plugin (`org.jetbrains.kotlin.plugin.serialization`) must be applied in your build so the generated serializer is emitted.
+
+```kotlin
+@Serializable
+data class StatsResponse(
+    val online: Int,
+    val total: Long
+)
+
+@Get("/stats")
+@Public
+suspend fun stats(): StatsResponse = StatsResponse(online = 3, total = 128)
+```
+
+Return types are validated at registration time. If a return type (or `@Body` type) has no resolvable serializer, `register()` fails loudly with `ReturnTypeNotSerializable` / `BodyNotSerializable` instead of producing an opaque runtime `500`.
+
+## 🧩 Two ways to provide kotlinx-serialization
+
+Paper gives every plugin its own class loader. There are two supported ways for your addon to obtain the kotlinx-serialization runtime, and **both work**:
+
+### 1. Share MineAuth's runtime (recommended when possible)
+
+Declare serialization as `compileOnly` and rely on MineAuth's bundled runtime at execution time (hard depend on MineAuth). This keeps a single shared runtime and is the leanest option.
+
+```kotlin
+dependencies {
+    compileOnly("party.morino.mineauth:api:1.0.0")
+    compileOnly("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+}
+```
+
+```yaml
+# plugin.yml
+depend:
+  - MineAuth
+```
+
+### 2. Bundle your own runtime (shade)
+
+If your addon persists data to disk with kotlinx-serialization and must run **without** MineAuth present, or it needs a serializer format MineAuth does not ship (for example a CSV format), bundle your own copy:
+
+```kotlin
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+}
+```
+
+MineAuth serializes your DTOs using **your** plugin's class loader in this case, so the split between MineAuth's and your own kotlinx-serialization runtime is handled transparently. Relocating (`relocate`) your bundled runtime is fine too.
+
+<Callout type="info">
+Earlier versions of MineAuth could only serialize DTOs that shared MineAuth's runtime — a shaded addon produced a `500 Serializer for class 'Xxx' is not found`. This is resolved: MineAuth resolves the serializer from the DTO's own class loader.
+</Callout>
+
+## ⚠️ Behavior of the shaded path
+
+When your addon bundles its own runtime (option 2), MineAuth serializes/deserializes with your runtime's **default** `Json` configuration. This differs slightly from the shared-runtime path:
+
+- **Null fields are included.** A nullable property that is `null` is emitted as `"field": null` (the shared-runtime path omits it). Clients should treat an explicit `null` and an absent key equivalently.
+- **`@Body` decoding is strict.** Unknown JSON keys are **not** ignored and lenient parsing is off, so a request body containing extra keys is rejected with `400`. Send only the fields your `@Body` type declares.
+
+These differences do not apply to option 1 (shared runtime). If they matter for your addon, prefer sharing MineAuth's runtime.

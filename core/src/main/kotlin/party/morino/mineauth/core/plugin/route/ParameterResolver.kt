@@ -14,6 +14,7 @@ import party.morino.mineauth.api.PlayerAccess
 import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.core.plugin.annotation.CallerKind
 import party.morino.mineauth.core.plugin.annotation.ParameterInfo
+import party.morino.mineauth.core.plugin.serialization.PluginSerialization
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.jvm.jvmErasure
@@ -133,7 +134,18 @@ class ParameterResolver(
                 )
             }
 
-            json.decodeFromString(paramInfo.serializer, String(bodyBytes, Charsets.UTF_8))
+            val bodyText = String(bodyBytes, Charsets.UTF_8)
+            val serializer = paramInfo.serializer
+            if (serializer != null) {
+                // 標準パス：MineAuth本体で解決済みのシリアライザでデコードする
+                json.decodeFromString(serializer, bodyText)
+            } else {
+                // クラスローダ分裂：利用側がserializationをshadeしているため、
+                // 利用側クラスローダでデコードする
+                PluginSerialization.decodeFromString(
+                    paramInfo.consumerClassLoader, paramInfo.javaType, bodyText
+                )
+            }
         } catch (e: CancellationException) {
             // コルーチンのキャンセルは再送出して適切に伝播させる
             throw e

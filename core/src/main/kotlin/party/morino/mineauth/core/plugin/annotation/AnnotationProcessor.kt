@@ -27,6 +27,7 @@ import party.morino.mineauth.api.annotations.QueryMap
 import party.morino.mineauth.api.annotations.Route
 import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.api.http.HttpError
+import party.morino.mineauth.core.plugin.serialization.PluginSerialization
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
@@ -36,6 +37,7 @@ import kotlin.reflect.KVisibility
 import kotlin.reflect.full.declaredMemberFunctions
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.hasAnnotation
+import kotlin.reflect.jvm.javaType
 import kotlin.reflect.jvm.jvmErasure
 import kotlin.reflect.typeOf
 
@@ -69,6 +71,10 @@ class AnnotationProcessor : KoinComponent {
         val className = handlerClass.qualifiedName ?: handlerClass.toString()
         val errors = mutableListOf<RegistrationError>()
         val endpoints = mutableListOf<EndpointMetadata>()
+
+        // ハンドラー（＝利用側プラグイン）のクラスローダー
+        // serializationをshadeしている利用側のシリアライザ解決に使用する
+        val consumerClassLoader = handlerInstance.javaClass.classLoader
 
         // クラスレベルの@Routeプレフィックスを取得
         val routePrefix = handlerClass.findAnnotation<Route>()?.value ?: ""
@@ -108,7 +114,7 @@ class AnnotationProcessor : KoinComponent {
             val parameters = function.parameters
                 .filter { it.kind == KParameter.Kind.VALUE }
                 .mapNotNull { param ->
-                    analyzeParameter(className, function, param, access, segments, path, errors)
+                    analyzeParameter(className, function, param, access, segments, path, consumerClassLoader, errors)
                 }
 
             // リクエストボディは1エンドポイントにつき最大1つ
@@ -116,8 +122,8 @@ class AnnotationProcessor : KoinComponent {
                 errors += RegistrationError.MultipleBodyParameters(className, function.name)
             }
 
-            // 戻り値型を解析（Either<HttpError, T>のアンラップ）
-            val (responseType, returnsEither) = analyzeReturnType(className, function, errors)
+            // 戻り値型を解析（Either<HttpError, T>のアンラップ）とシリアライズ可能性の検証
+            val returnInfo = analyzeReturnType(className, function, consumerClassLoader, errors)
 
             // このメソッドでエラーが発生していなければエンドポイントとして追加
             if (errors.size == errorCountBefore && access != null) {
@@ -131,8 +137,9 @@ class AnnotationProcessor : KoinComponent {
                         access = access,
                         parameters = parameters,
                         isSuspending = function.isSuspend,
-                        responseType = responseType,
-                        returnsEither = returnsEither
+                        responseType = returnInfo.responseType,
+                        returnsEither = returnInfo.returnsEither,
+                        responseResolvableByCore = returnInfo.resolvableByCore
                     )
                 )
             }
@@ -229,6 +236,7 @@ class AnnotationProcessor : KoinComponent {
         access: EndpointAccess?,
         segments: List<PathSegment>,
         path: String,
+        consumerClassLoader: ClassLoader,
         errors: MutableList<RegistrationError>
     ): ParameterInfo? {
         val paramName = param.name ?: "unknown"
@@ -263,7 +271,7 @@ class AnnotationProcessor : KoinComponent {
                 analyzeQueryMap(className, function, param, errors)
 
             param.hasAnnotation<Body>() ->
-                analyzeBody(className, function, param, errors)
+                analyzeBody(className, function, param, consumerClassLoader, errors)
 
             param.hasAnnotation<Caller>() ->
                 analyzeCaller(className, function, param, access, errors)
@@ -366,28 +374,42 @@ class AnnotationProcessor : KoinComponent {
 
     /**
      * @Bodyパラメータを解析する
-     * シリアライザを登録時に解決・検証することで、リクエスト時の失敗を防ぐ
+     *
+     * シリアライザを登録時に解決・検証することで、リクエスト時の失敗を防ぐ。
+     * まずMineAuth本体のランタイムで解決を試み、成功時はそのシリアライザを保持する
+     * （共有ランタイム時は既存挙動を完全に維持）。利用側がserializationをshadeしていて
+     * MineAuth側で解決できない場合は、利用側クラスローダで解決可能かを検証し、可能なら
+     * リクエスト時に利用側クラスローダでデコードする（[PluginSerialization]）。
+     * どちらでも解決できない型のみ[RegistrationError.BodyNotSerializable]とする。
      */
     private fun analyzeBody(
         className: String,
         function: KFunction<*>,
         param: KParameter,
+        consumerClassLoader: ClassLoader,
         errors: MutableList<RegistrationError>
     ): ParameterInfo? {
         val paramName = param.name ?: "unknown"
+        val javaType = param.type.javaType
 
-        // シリアライザを登録時に解決する（@Serializableでない型はここで検出される）
-        val bodySerializer = try {
+        // 標準パス：MineAuth本体のランタイムでシリアライザを解決する
+        val bodySerializer: KSerializer<Any?>? = try {
             @Suppress("UNCHECKED_CAST")
             serializer(param.type) as KSerializer<Any?>
         } catch (e: Exception) {
-            errors += RegistrationError.BodyNotSerializable(
-                className, function.name, paramName, e.message ?: "serializer resolution failed"
-            )
-            return null
+            // クラスローダ分裂（または本体で解決できないその他の理由）：
+            // 利用側クラスローダで解決可能かを検証する
+            // （解決不能な場合のみ登録エラーとし、shadeした利用側DTOは許容する）
+            if (!PluginSerialization.isSerializable(consumerClassLoader, javaType)) {
+                errors += RegistrationError.BodyNotSerializable(
+                    className, function.name, paramName, e.message ?: "serializer resolution failed"
+                )
+                return null
+            }
+            null // 利用側クラスローダでの解決に委ねる
         }
 
-        return ParameterInfo.Body(param.type, bodySerializer)
+        return ParameterInfo.Body(param.type, bodySerializer, javaType, consumerClassLoader)
     }
 
     /**
@@ -520,16 +542,30 @@ class AnnotationProcessor : KoinComponent {
     }
 
     /**
-     * 戻り値型を解析する
-     * Either<HttpError, T>の場合はTをレスポンス型として抽出する
+     * 戻り値型の解析結果
      *
-     * @return レスポンス型とEitherかどうかのペア
+     * @property responseType レスポンス型（Eitherの場合は右側の型）
+     * @property returnsEither 戻り値がArrowのEitherかどうか
+     * @property resolvableByCore レスポンス型をMineAuth本体のランタイムで直列化できるか
+     */
+    private data class ReturnTypeInfo(
+        val responseType: KType,
+        val returnsEither: Boolean,
+        val resolvableByCore: Boolean
+    )
+
+    /**
+     * 戻り値型を解析する
+     * Either<HttpError, T>の場合はTをレスポンス型として抽出する。
+     * 抽出したレスポンス型がシリアライズ可能かを登録時に検証し、実行時の不透明な
+     * 500ではなく明快な登録エラーとして早期に検出する（[validateResponseSerializable]）。
      */
     private fun analyzeReturnType(
         className: String,
         function: KFunction<*>,
+        consumerClassLoader: ClassLoader,
         errors: MutableList<RegistrationError>
-    ): Pair<KType, Boolean> {
+    ): ReturnTypeInfo {
         val returnType = function.returnType
         val classifierName = (returnType.classifier as? KClass<*>)?.qualifiedName
 
@@ -547,10 +583,55 @@ class AnnotationProcessor : KoinComponent {
                 )
             }
             val rightType = returnType.arguments.getOrNull(1)?.type ?: typeOf<Any?>()
-            return rightType to true
+            val resolvableByCore = validateResponseSerializable(className, function, rightType, consumerClassLoader, errors)
+            return ReturnTypeInfo(rightType, returnsEither = true, resolvableByCore = resolvableByCore)
         }
 
-        return returnType to false
+        val resolvableByCore = validateResponseSerializable(className, function, returnType, consumerClassLoader, errors)
+        return ReturnTypeInfo(returnType, returnsEither = false, resolvableByCore = resolvableByCore)
+    }
+
+    /**
+     * レスポンス型がシリアライズ可能かを検証する
+     *
+     * MineAuth本体・利用側クラスローダのいずれかでシリアライザを解決できればOKとする。
+     * これにより利用側がserializationをshadeしたDTO（本体では解決不能だが利用側では可能）を
+     * 誤って拒否しない。`Unit`や本体JSONへ変換されない型（HttpError等）は検証対象外とする。
+     *
+     * @param responseType 検証対象のレスポンス型（Eitherの場合は右側の型）
+     * @param consumerClassLoader ハンドラー（利用側プラグイン）のクラスローダー
+     * @return MineAuth本体のランタイムで解決できる場合true（リクエスト時の直列化経路の決定に使う）
+     */
+    private fun validateResponseSerializable(
+        className: String,
+        function: KFunction<*>,
+        responseType: KType,
+        consumerClassLoader: ClassLoader,
+        errors: MutableList<RegistrationError>
+    ): Boolean {
+        val erasure = responseType.jvmErasure
+        // Unit/Nothingは直列化されずステータスのみ返すため検証対象外（本体経路扱いでよい）
+        if (erasure == Unit::class || erasure == Nothing::class) return true
+
+        // 標準パス：MineAuth本体のランタイムで解決を試みる
+        // 予期しない例外（不正なKType・リフレクション失敗等）も「本体では解決不能」として扱い、
+        // 利用側クラスローダ経路の判定に委ねる（実行時に例外が漏れないようにする）
+        val resolvableByCore = try {
+            serializer(responseType)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        if (resolvableByCore) return true
+
+        // クラスローダ分裂：利用側クラスローダで解決可能かを検証する
+        if (PluginSerialization.isSerializable(consumerClassLoader, responseType.javaType)) return false
+
+        errors += RegistrationError.ReturnTypeNotSerializable(
+            className, function.name, responseType.toString(),
+            "no serializer found in MineAuth or the plugin's own runtime"
+        )
+        return false
     }
 
     /**

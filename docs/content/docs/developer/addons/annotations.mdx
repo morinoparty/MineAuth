@@ -184,7 +184,7 @@ suspend fun search(@QueryMap params: Map<String, String>): SearchResult
 
 ### @Body
 
-Extracts and deserializes the JSON request body. The type must be `@Serializable`; the serializer is resolved and validated at registration time.
+Extracts and deserializes the JSON request body. The type must be `@Serializable`; the serializer is resolved and validated at registration time. See [Serialization & Class Loaders](/docs/developer/addons/serialization) for how this works when your addon bundles its own kotlinx-serialization runtime.
 
 ```kotlin
 @Post("/shops")

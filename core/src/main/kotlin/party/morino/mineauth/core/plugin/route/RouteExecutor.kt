@@ -1,9 +1,11 @@
 package party.morino.mineauth.core.plugin.route
 
 import arrow.core.Either
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.util.reflect.TypeInfo
 import io.opentelemetry.api.common.Attributes
 import org.koin.core.component.KoinComponent
@@ -12,6 +14,7 @@ import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
+import party.morino.mineauth.core.plugin.serialization.PluginSerialization
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
 import kotlin.reflect.KClass
@@ -90,9 +93,9 @@ class RouteExecutor(
      * 戻り値がEither<HttpError, T>の場合はアンラップし、
      * LeftならHttpErrorレスポンス、Rightなら値をシリアライズして返す。
      *
-     * リフレクション経由の呼び出しでは戻り値の静的型情報（ジェネリクス含む）が失われ、
-     * Ktorの`guessSerializer`によるリスト要素の型推測が外部プラグインのクラスに対して失敗するため、
-     * 登録時に解決した宣言上のレスポンス型（`KType`）から`TypeInfo`を構築して`respond`に明示的に渡す。
+     * 値のレスポンス化は[respondSerialized]に委譲する。利用側プラグインがserializationを
+     * shadeしていても直列化でき、直列化失敗もKtor既定のtext/plain 500ではなくMineAuthの
+     * サニタイズ済みJSONエラーに収まる。
      *
      * @param call ApplicationCall
      * @param result メソッドの戻り値
@@ -120,8 +123,53 @@ class RouteExecutor(
         when (value) {
             null -> call.respond(HttpStatusCode.NoContent)
             is Unit -> call.respond(HttpStatusCode.OK)
-            else -> call.respond(value, resolveTypeInfo(metadata))
+            else -> respondSerialized(call, value, metadata)
         }
+    }
+
+    /**
+     * 戻り値をレスポンスとして返す
+     *
+     * まずMineAuth本体のランタイムでシリアライザを解決できるかを確認し、可能なら
+     * 既存どおり`call.respond(value, TypeInfo)`で返す（String等のKtor特殊型の扱いを含め
+     * 共有ランタイム時の挙動を完全に維持する）。解決できない場合はクラスローダ分裂と判断し、
+     * 利用側プラグインのクラスローダで直列化する（[PluginSerialization]）。
+     *
+     * 分裂ケースの直列化は制御下の`try/catch`で捕捉し、失敗時は汎用JSONエラー（500）に
+     * 変換する。これにより例外がKtorのレスポンスパイプラインへ漏れてtext/plainの500になる
+     * ことを防ぐ。
+     *
+     * @param call ApplicationCall
+     * @param value 直列化する戻り値（非null）
+     * @param metadata エンドポイントメタデータ
+     */
+    private suspend fun respondSerialized(call: ApplicationCall, value: Any, metadata: EndpointMetadata) {
+        // 標準パス：MineAuth自身のランタイムで解決できるなら既存挙動を完全に維持する
+        // 解決可否は登録時に判定済み（[EndpointMetadata.responseResolvableByCore]）で、
+        // リクエスト時に serializer(KType) を呼ばないため例外がパイプラインへ漏れることはない
+        if (metadata.responseResolvableByCore) {
+            call.respond(value, resolveTypeInfo(metadata))
+            return
+        }
+
+        // クラスローダ分裂：利用側が自前のserializationランタイムを同梱している場合、
+        // MineAuth側のserializer(KType)は別Classの生成シリアライザをキャストできず解決に失敗する。
+        // 戻り値を提供したハンドラー（＝利用側プラグイン）のクラスローダで直列化する。
+        val jsonText = try {
+            val consumerClassLoader = metadata.handlerInstance.javaClass.classLoader
+            PluginSerialization.encodeToString(consumerClassLoader, metadata.responseType.javaType, value)
+        } catch (e: Exception) {
+            // 直列化失敗の詳細はログにのみ出力（サニタイズしてログ注入を防止）
+            logger.error(
+                "Response serialization failed for {} {}: {}",
+                metadata.httpMethod.name,
+                sanitizeForLog(metadata.path),
+                sanitizeForLog("${e.javaClass.name}: ${e.message}")
+            )
+            respondInternalServerError(call)
+            return
+        }
+        call.respondText(jsonText, ContentType.Application.Json, HttpStatusCode.OK)
     }
 
     /** Eitherアンラップの結果を表すsealed class */
@@ -164,6 +212,10 @@ class RouteExecutor(
 
     /**
      * 登録時に解決済みのレスポンス型から`TypeInfo`を構築する
+     *
+     * リフレクション経由の呼び出しでは戻り値の静的型情報（ジェネリクス含む）が失われ、
+     * Ktorの`guessSerializer`によるリスト要素の型推測が外部プラグインのクラスに対して失敗するため、
+     * 登録時に解決した宣言上のレスポンス型（`KType`）から`TypeInfo`を構築して`respond`に明示的に渡す。
      *
      * @param metadata エンドポイントメタデータ
      * @return レスポンス型に基づく`TypeInfo`
