@@ -53,8 +53,20 @@ interface MineAuthApi {
         /**
          * ServicesManagerからMineAuthApiのインスタンスを取得する
          *
+         * この`null`は「MineAuthはロード済みだがサービス登録がまだ」という
+         * ロード順の狭い窓のみを表す。**MineAuthが存在しない**場合には`null`は返らない：
+         * `get`を呼ぶ時点でJVMが`MineAuthApi`クラスの解決を試み、
+         * `softDepend`＋`compileOnly`構成でMineAuthが不在ならクラスが見つからず
+         * 呼び出し箇所で`NoClassDefFoundError`となる（bodyの`null`返却には到達しない）。
+         *
+         * したがって`get(server) ?: error(...)`のような例は、MineAuthの存在が保証される
+         * ハード`depend`前提でのみ安全である。オプション依存（softDepend）の場合は、
+         * まずBukkitレベルで`server.pluginManager.getPlugin("MineAuth") != null`を確認し、
+         * APIに触れるコードを別クラスへ隔離すること
+         * （developer/addons/optional-dependency を参照）。
+         *
          * @param server Bukkitサーバーインスタンス
-         * @return MineAuthApi、MineAuthが未ロードの場合はnull
+         * @return MineAuthApi、サービス未登録の場合はnull（不在時は例外、上記参照）
          */
         @JvmStatic
         fun get(server: Server): MineAuthApi? =

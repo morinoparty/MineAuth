@@ -1,0 +1,74 @@
+---
+title: Optional Dependency (softDepend)
+description: Integrate with MineAuth as an optional dependency so your plugin still runs standalone
+---
+
+Most addons declare a hard `depend` on MineAuth. But a plugin that has its own standalone features (its own commands, its own data persistence) may want to integrate with MineAuth **only when it is present** — a `softDepend`. This page shows the correct pattern, and one trap to avoid.
+
+## ⚠️ Why the null check is not enough
+
+The obvious approach looks safe but is not:
+
+```kotlin
+// DON'T: crashes on enable when MineAuth is absent
+override fun onEnable() {
+    val api = MineAuthApi.get(server) ?: return  // never reached
+    api.register(this, "myplugin", MyHandler())
+}
+```
+
+With `compileOnly` on the API and `softDepend`, the `party.morino.mineauth.api.*` classes are provided **only** by MineAuth at runtime. When MineAuth is absent, calling `MineAuthApi.get(server)` forces the JVM to resolve the `MineAuthApi` class — which is nowhere on your classpath — and throws `NoClassDefFoundError` at the call site, **before** `get()` can return `null`. The graceful `?: return` is dead code.
+
+## ✅ The correct pattern
+
+Guard with a Bukkit-only plugin check first (this touches no MineAuth API class), and isolate all API usage in a **separate class** so the JVM does not resolve the API classes until after the guard passes.
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    compileOnly("party.morino.mineauth:api:1.0.0")
+}
+```
+
+```yaml
+# plugin.yml — optional, not required
+softdepend:
+  - MineAuth
+```
+
+```kotlin
+class MyPlugin : JavaPlugin() {
+    override fun onEnable() {
+        // 1. Bukkit-only check — references no MineAuth API class
+        if (server.pluginManager.getPlugin("MineAuth") != null) {
+            // 2. Delegate to a separate class so the API classes are only
+            //    resolved once we know MineAuth is present
+            MineAuthIntegration(this).register()
+        } else {
+            logger.info("MineAuth not present — HTTP endpoints disabled")
+        }
+    }
+}
+
+// Separate class: loaded lazily, only when the guard above passes
+class MineAuthIntegration(private val plugin: MyPlugin) {
+    fun register() {
+        val api = MineAuthApi.get(plugin.server) ?: return  // safe here
+        api.register(plugin, "myplugin", MyHandler())
+    }
+}
+```
+
+Here `MineAuthApi.get(...)` returning `null` is still meaningful: it covers the narrow load-ordering window where MineAuth is present but its service has not been registered yet.
+
+## 🔁 Hard depend (the default)
+
+If your plugin does not need to run without MineAuth, a hard `depend` is simpler — MineAuth is guaranteed to be loaded first, so `MineAuthApi.get(server)` is always safe and the null branch only guards against the service-registration window.
+
+```yaml
+# plugin.yml
+depend:
+  - MineAuth
+```
+
+This is what the bundled addons use. See [Addon Development](/docs/developer/addons) for the full quick-start.
