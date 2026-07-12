@@ -30,6 +30,7 @@ import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.api.http.ConditionalRequest
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.serialization.PluginSerialization
+import party.morino.mineauth.core.plugin.serialization.toResolvableJavaType
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
@@ -671,7 +672,9 @@ class AnnotationProcessor : KoinComponent {
         if (resolvableByCore) return true
 
         // クラスローダ分裂：利用側クラスローダで解決可能かを検証する
-        if (PluginSerialization.isSerializable(consumerClassLoader, responseType.javaType)) return false
+        // javaType ではなく toResolvableJavaType を使う（suspend ハンドラーの戻り値型は
+        // CPS 変換により javaType が Object へ縮退し、解決が必ず失敗するため）。
+        if (PluginSerialization.isSerializable(consumerClassLoader, responseType.toResolvableJavaType())) return false
 
         errors += RegistrationError.ReturnTypeNotSerializable(
             className, function.name, responseType.toString(),
