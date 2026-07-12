@@ -20,11 +20,11 @@ import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
 import party.morino.mineauth.core.plugin.serialization.PluginSerialization
+import party.morino.mineauth.core.plugin.serialization.toResolvableJavaType
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
-import kotlin.reflect.jvm.javaType
 
 /**
  * ハンドラーメソッドを実行するクラス
@@ -227,7 +227,8 @@ class RouteExecutor(
         // 戻り値を提供したハンドラー（＝利用側プラグイン）のクラスローダで直列化する。
         val jsonText = try {
             val consumerClassLoader = metadata.handlerInstance.javaClass.classLoader
-            PluginSerialization.encodeToString(consumerClassLoader, metadata.responseType.javaType, value)
+            // javaType ではなく toResolvableJavaType を使う（suspend ハンドラーでは javaType が Object へ縮退する）
+            PluginSerialization.encodeToString(consumerClassLoader, metadata.responseType.toResolvableJavaType(), value)
         } catch (e: Exception) {
             // 直列化失敗の詳細はログにのみ出力（サニタイズしてログ注入を防止）
             logger.error(
@@ -326,7 +327,9 @@ class RouteExecutor(
     private fun resolveTypeInfo(metadata: EndpointMetadata): TypeInfo {
         val responseType = metadata.responseType
         val classifier = responseType.classifier as? KClass<*> ?: Any::class
-        return TypeInfo(classifier, responseType.javaType, responseType)
+        // reifiedType にも縮退補正済みの Type を渡す（KType があるため通常は KType 側が使われるが、
+        // suspend ハンドラーで javaType が Object となる縮退をここでも避けておく）
+        return TypeInfo(classifier, responseType.toResolvableJavaType(), responseType)
     }
 
     /**
