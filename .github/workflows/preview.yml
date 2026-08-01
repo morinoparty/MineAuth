@@ -11,8 +11,6 @@ permissions:
   attestations: write
 
 env:
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_EC2_METADATA_DISABLED: true
   AWS_REGION: auto
   AWS_CLI_FILE_ENCODING: UTF-8
@@ -235,6 +233,14 @@ jobs:
           cp -r ./artifacts/gradle-artifacts/allure ./upload/ || echo "No Allure reports"
           mkdir -p ./upload/docs
           mv ./artifacts/docs-artifacts/* ./upload/docs/
+
+      - name: Get secrets from Bitwarden
+        uses: bitwarden/sm-action@v2
+        with:
+          access_token: ${{ secrets.NIKOMARU_BITWARDEN_SECRET_MANAGER_ACCESS_TOKEN }}
+          secrets: |
+            37e4d53a-a898-4e9f-b067-b49900deaf4f > AWS_ACCESS_KEY_ID
+            4d92b739-40fc-467f-97fa-b49900deb52c > AWS_SECRET_ACCESS_KEY
 
       - name: Upload to S3 (parallel)
         run: |
