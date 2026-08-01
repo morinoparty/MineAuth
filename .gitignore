@@ -128,3 +128,4 @@ docs/.docusaurus/*
 docs/static/dokka/*
 
 docs/static/openapi/openapi-mineauth.yaml
+.env
