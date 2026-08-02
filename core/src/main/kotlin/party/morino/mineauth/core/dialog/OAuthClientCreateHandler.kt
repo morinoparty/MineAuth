@@ -105,12 +105,31 @@ object OAuthClientCreateHandler : KoinComponent {
 
     /**
      * リダイレクトURIの形式チェック
+     * 認可時の検証（OAuthValidation.validateRedirectUri）が正規表現パターンを
+     * サポートしているため、通常のURIに加えて正規表現パターンも受け付ける
      */
     private fun isValidRedirectUri(uri: String): Boolean {
-        return try {
+        // 通常のURIとしてパースできればOK（最も一般的なケース）
+        val isPlainUri = try {
             val parsed = URI(uri)
             // スキームとホストが存在することを確認
             parsed.scheme != null && parsed.host != null
+        } catch (e: Exception) {
+            false
+        }
+        if (isPlainUri) {
+            return true
+        }
+
+        // 正規表現パターンとして受け付ける場合は、オープンリダイレクトを防ぐため
+        // http(s)スキームで始まるパターンのみ許可する（先頭の^は任意）
+        if (!uri.removePrefix("^").startsWith("http")) {
+            return false
+        }
+        return try {
+            // 正規表現としてコンパイルできることを確認
+            Regex(uri)
+            true
         } catch (e: Exception) {
             false
         }
