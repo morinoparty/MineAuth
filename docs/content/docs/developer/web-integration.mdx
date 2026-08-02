@@ -201,6 +201,20 @@ After authentication, you can access user information including:
 
 See [Userinfo Endpoint](/docs/developer/oauth/userinfo) for more details.
 
+## Redirect URI Patterns
+
+The registered redirect URI is validated in two steps: an exact string match first, then as a regular expression. When used as a regular expression, `/.*` is appended to the registered value (or `.*` if it already ends with `/`), so sub-paths are allowed automatically.
+
+This is useful for platforms with per-deployment preview URLs, such as Cloudflare Workers:
+
+```
+https://(?:[0-9a-f]{8}-)?myapp\.example\.workers\.dev/api/auth/oauth2/callback/
+```
+
+- `(?:[0-9a-f]{8}-)?` matches the optional 8-character hex prefix of preview deployments, while still allowing the stable domain.
+- Ending the pattern with `/` means only `.*` is appended, so `.../callback/MineAuth` matches as a sub-path.
+- Regular expression patterns must start with `http` (an optional leading `^` is allowed); other schemes are rejected at registration time to prevent open redirects.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -208,6 +222,7 @@ See [Userinfo Endpoint](/docs/developer/oauth/userinfo) for more details.
 **"Invalid redirect URI"**
 - Ensure the redirect URI in your application matches exactly what was registered in MineAuth
 - Check for trailing slashes
+- If you registered a regular expression pattern, remember that `/.*` is appended unless the pattern ends with `/` (see [Redirect URI Patterns](#redirect-uri-patterns))
 
 **"PKCE verification failed"**
 - Make sure `pkce: true` is set for Public clients
