@@ -22,7 +22,7 @@ mockBukkit = "4.110.0"
 hikari = "7.1.0"
 mysql = "9.7.0"
 micrometer = "1.17.0"
-opentelemetry = "1.63.0"
+opentelemetry = "1.64.0"
 opentelemetry-instrumentation = "2.30.0-alpha-SNAPSHOT"
 allure = "2.35.3"
 
