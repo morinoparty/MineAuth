@@ -1,0 +1,72 @@
+---
+title: Refresh Token Rotation
+description: Refresh token rotation and reuse grace period based on RFC 9700
+---
+
+MineAuth rotates refresh tokens on every use. When a client exchanges a refresh token at the token endpoint, the old refresh token is revoked and a new access token / refresh token pair is issued. This limits the lifetime of a stolen refresh token to a single use.
+
+## Endpoint
+
+```
+POST /oauth2/token
+```
+
+### Example Request
+
+```http
+POST /oauth2/token HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token&
+refresh_token=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...&
+client_id=your-client-id&
+client_secret=your-client-secret
+```
+
+## Rotation Behavior
+
+Each successful refresh request performs the following steps:
+
+1. The refresh token's signature, expiration, and client binding are verified
+2. The old refresh token is added to the revocation list
+3. A new access token and a new refresh token are issued
+
+Clients must always store the refresh token returned in the latest response and discard the old one.
+
+## Reuse Grace Period
+
+Concurrent refresh requests with the same refresh token occur naturally in browser environments, for example when multiple tabs or parallel API calls detect an expired access token at the same time. Without mitigation, only one of these requests would succeed and the others would fail with `invalid_grant`, potentially leaving the client with a revoked refresh token.
+
+To handle this, MineAuth implements a reuse grace period as described in [RFC 9700 (OAuth 2.0 Security Best Current Practice) Section 4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2):
+
+- The response for each rotation is cached in memory for **60 seconds**, keyed by the old refresh token's JWT ID
+- Requests that reuse the same refresh token within the grace period receive **the same response** (the same new access token and refresh token) as the first request
+- Concurrent requests are collapsed into a single issuance, so rotation is performed exactly once per token
+
+This makes the refresh operation idempotent within the grace period. All concurrent callers receive an identical token pair, which also prevents cookie or storage conflicts on the client side.
+
+### After the Grace Period
+
+Reuse of a rotated refresh token after the grace period has elapsed is rejected with `invalid_grant`, preserving the theft-detection property of token rotation.
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "Invalid or expired refresh token"
+}
+```
+
+### Interaction with Explicit Revocation
+
+Tokens revoked through the [revocation endpoint](/docs/developer/oauth/revoke) are not eligible for the grace period. The cached response only exists for tokens that were revoked as part of a rotation.
+
+## Implementation Notes
+
+- The response cache is held in memory and entries are removed after the grace period expires
+- Failed rotations are not cached, so a subsequent request can retry the rotation
+- The grace period replay returns the same `Cache-Control: no-store` headers as a normal token response
+
+## References
+
+- [RFC 9700 - Best Current Practice for OAuth 2.0 Security, Section 4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2)
+- [RFC 6749 - The OAuth 2.0 Authorization Framework, Section 6](https://datatracker.ietf.org/doc/html/rfc6749#section-6)

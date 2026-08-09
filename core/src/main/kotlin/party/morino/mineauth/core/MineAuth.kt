@@ -30,6 +30,7 @@ import party.morino.mineauth.core.commands.parser.ServiceNameParser
 import party.morino.mineauth.core.file.load.FileUtils
 import party.morino.mineauth.core.integration.IntegrationInitializer
 import party.morino.mineauth.core.web.WebServer
+import party.morino.mineauth.core.web.router.auth.oauth.RefreshTokenResponseCache
 import party.morino.mineauth.core.web.router.common.server.PluginInfoService
 import party.morino.mineauth.core.web.router.common.server.PluginInfoServiceImpl
 
@@ -75,6 +76,8 @@ open class MineAuth: SuspendingJavaPlugin() {
             single<PluginDirectory> { PluginDirectoryImpl() }
             single { DatabaseConnector() }
             single<PluginInfoService> { PluginInfoServiceImpl() }
+            // リフレッシュトークンローテーションのreuse grace period用キャッシュ
+            single { RefreshTokenResponseCache() }
         }
 
         getOrNull() ?: GlobalContext.startKoin {

@@ -1,5 +1,12 @@
 {
 	"title": "OAuth / OIDC",
 	"icon": "KeyRound",
-	"pages": ["discovery", "scopes", "userinfo", "revoke", "error-responses"]
+	"pages": [
+		"discovery",
+		"scopes",
+		"userinfo",
+		"refresh-token-rotation",
+		"revoke",
+		"error-responses"
+	]
 }

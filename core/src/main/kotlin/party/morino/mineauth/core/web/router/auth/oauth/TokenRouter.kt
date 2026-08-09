@@ -1,6 +1,8 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import com.auth0.jwt.JWT
 import io.ktor.http.*
 import io.ktor.server.request.*
@@ -31,6 +33,8 @@ import java.util.*
 
 object TokenRouter: KoinComponent {
     val plugin: MineAuth by inject()
+    // RFC 9700 Section 4.14.2: reuse grace period用のレスポンスキャッシュ
+    private val refreshTokenResponseCache: RefreshTokenResponseCache by inject()
     private const val EXPIRES_IN = 300
     // RFC 6749 Section 4.1.2: 認可コードの最大有効期間（10分推奨）
     private const val AUTHORIZATION_CODE_LIFETIME_MS = 10 * 60 * 1000L
@@ -99,35 +103,61 @@ object TokenRouter: KoinComponent {
                         return@withSpan
                     }
 
-                    // RFC 6749 Section 10.4: リフレッシュトークンローテーション
-                    // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
-                    val rotated = withSpan("oauth.refresh_token.rotate") {
-                        revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)
-                    }
-                    if (!rotated) {
-                        call.respondOAuthError(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
-                        return@withSpan
-                    }
-                    val token = withSpan("jwt.issue", attributes = tokenTypeAttributes("access")) {
-                        issueToken(verified.authorizedData, clientId)
-                    }
-                    val newRefreshToken = withSpan("jwt.issue", attributes = tokenTypeAttributes("refresh")) {
-                        issueRefreshToken(verified.authorizedData, clientId)
+                    // RFC 9700 Section 4.14.2: reuse grace period 付きローテーション
+                    // 同一リフレッシュトークンでの並行・grace期間内のリクエストには
+                    // キャッシュ済みの同一レスポンスを返す（べき等化）
+                    // 実際のローテーションと発行はtokenIdごとに最初の1リクエストのみが実行する
+                    val result = refreshTokenResponseCache.getOrIssue(verified.tokenId) {
+                        // RFC 7009: 失効済みトークンの拒否
+                        // キャッシュ未ヒット（= grace期間外またはローテーション以外での失効）のみ到達するため、
+                        // /revokeで明示的に失効されたトークンやgrace期間経過後の再利用はここで拒否される
+                        if (RevokedTokenRepository.isRevoked(verified.tokenId)) {
+                            return@getOrIssue TokenRotationFailure(
+                                OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token"
+                            ).left()
+                        }
+
+                        // RFC 6749 Section 10.4: リフレッシュトークンローテーション
+                        // 旧トークンの失効を先に行い、失敗時はトークン発行を中止する
+                        val rotated = withSpan("oauth.refresh_token.rotate") {
+                            revokeOldRefreshToken(verified.tokenId, verified.expiresAt, clientId)
+                        }
+                        if (!rotated) {
+                            return@getOrIssue TokenRotationFailure(
+                                OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token"
+                            ).left()
+                        }
+                        val token = withSpan("jwt.issue", attributes = tokenTypeAttributes("access")) {
+                            issueToken(verified.authorizedData, clientId)
+                        }
+                        val newRefreshToken = withSpan("jwt.issue", attributes = tokenTypeAttributes("refresh")) {
+                            issueRefreshToken(verified.authorizedData, clientId)
+                        }
+
+                        // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
+                        // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
+                        TokenData(
+                            accessToken = token,
+                            tokenType = "Bearer",
+                            expiresIn = EXPIRES_IN,
+                            refreshToken = newRefreshToken,
+                            idToken = null,
+                            scope = verified.authorizedData.scope
+                        ).right()
                     }
 
-                    // refresh_token使用時はID Tokenを発行しない（OIDC一般慣行）
-                    // ID Tokenはユーザー認証を表し、refresh_tokenはセッション継続のみ
-                    // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
-                    call.response.header(HttpHeaders.CacheControl, "no-store")
-                    call.response.header(HttpHeaders.Pragma, "no-cache")
-                    call.respond(HttpStatusCode.OK, TokenData(
-                        accessToken = token,
-                        tokenType = "Bearer",
-                        expiresIn = EXPIRES_IN,
-                        refreshToken = newRefreshToken,
-                        idToken = null,
-                        scope = verified.authorizedData.scope
-                    ))
+                    when (result) {
+                        is Either.Left -> {
+                            call.respondOAuthError(result.value.errorCode, result.value.message)
+                        }
+                        is Either.Right -> {
+                            // RFC 6749 Section 5.1: トークンレスポンスにキャッシュ禁止ヘッダーを付与
+                            // （キャッシュヒット時のレスポンスにも同じヘッダーを付与する）
+                            call.response.header(HttpHeaders.CacheControl, "no-store")
+                            call.response.header(HttpHeaders.Pragma, "no-cache")
+                            call.respond(HttpStatusCode.OK, result.value)
+                        }
+                    }
                 }else if (grantType == "authorization_code") {
                     //authorization_codeの処理 https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
                     // 期限切れ認可コードの遅延クリーンアップ（リクエスト契機で実行）
@@ -288,10 +318,9 @@ object TokenRouter: KoinComponent {
             val tokenId = jwt.id ?: return null
             val expiresAt = jwt.expiresAt ?: return null
 
-            // RFC 7009: トークンが失効済みかチェック
-            if (RevokedTokenRepository.isRevokedBlocking(tokenId)) {
-                return null
-            }
+            // 注: 失効チェックはここでは行わない
+            // grace期間内の再利用（レスポンスキャッシュヒット）を許可するため、
+            // 失効チェックはRefreshTokenResponseCacheのキャッシュ未ヒット時のみ実行される
 
             // クレームを取得してAuthorizedDataを構築（必須クレームの欠如はinvalid_grant扱い）
             val clientId = jwt.getClaim("client_id").asString() ?: return null
