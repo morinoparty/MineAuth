@@ -52,6 +52,8 @@ dependencies {
     testImplementation(libs.paper.api)
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.bundles.coroutines)
+    // コルーチンのテスト用（runTest / TestScheduler）
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.bundles.exposed)
     testImplementation(libs.koin.core)
     testImplementation(libs.arrow.core)

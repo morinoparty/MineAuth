@@ -21,6 +21,7 @@ import party.morino.mineauth.core.file.data.ObservabilityConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.mocks.config.PluginDirectoryMock
 import party.morino.mineauth.core.plugin.pluginModule
+import party.morino.mineauth.core.web.router.auth.oauth.RefreshTokenResponseCache
 
 /**
  * MineAuthのテスト用拡張機能
@@ -74,6 +75,8 @@ class MineAuthTest :
                 )
             }
             single<ServerMock> { server }
+            // リフレッシュトークンローテーションのreuse grace period用キャッシュ
+            single { RefreshTokenResponseCache() }
         }
 
         // Koinを初期化（appModuleとpluginModuleを読み込む）
