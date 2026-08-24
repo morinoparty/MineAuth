@@ -8,9 +8,12 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.principal
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import party.morino.mineauth.api.CallerType
 import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.core.plugin.annotation.EndpointAccess
+import party.morino.mineauth.core.plugin.auth.PermissionCheckResult
+import party.morino.mineauth.core.plugin.auth.PermissionChecker
 import party.morino.mineauth.core.plugin.auth.ServicePrincipal
 import party.morino.mineauth.core.plugin.auth.UserPrincipal
 import java.util.UUID
@@ -23,9 +26,13 @@ import java.util.UUID
  * - サービストークンによる暗黙のパーミッションバイパスを廃止。
  *   サービストークンは`@Authenticated(callers = [..., CallerType.SERVICE])`で
  *   明示的に許可されたエンドポイントのみ呼び出せる
- * - オフラインプレイヤーのパーミッション評価不能はPermissionDeniedと区別して返す
+ * - オフラインプレイヤーもPermissionCheckerを通じてパーミッション評価する（LuckPerms導入時）
+ * - それでも評価できない場合はPermissionDeniedと区別して返す
  */
 class AuthenticationHandler : KoinComponent {
+
+    // パーミッション評価はオフラインプレイヤーにも対応するため専用のCheckerに委譲する
+    private val permissionChecker: PermissionChecker by inject()
 
     /**
      * 認証必須エンドポイントのPrincipalを取得する
@@ -35,7 +42,7 @@ class AuthenticationHandler : KoinComponent {
      * @param access エンドポイントのアクセス制御設定
      * @return 認証済みPrincipal、失敗時はAuthError
      */
-    fun requirePrincipal(
+    suspend fun requirePrincipal(
         call: ApplicationCall,
         access: EndpointAccess.Authenticated
     ): Either<AuthError, Principal> = either {
@@ -58,14 +65,19 @@ class AuthenticationHandler : KoinComponent {
         // パーミッションチェック（ユーザートークンのみ対象）
         // サービストークンは管理者発行の信頼された資格情報であり、
         // callers設定による明示的な許可がアクセス制御となる
-        if (access.permission != null && principal is Principal.User) {
-            // セキュリティ: オフラインプレイヤーはパーミッション評価ができないため拒否する
-            // （評価をスキップして許可すると認可バイパスの脆弱性となる）
-            ensure(principal.onlinePlayer != null) {
-                AuthError.PlayerOffline(access.permission)
-            }
-            ensure(principal.hasPermission(access.permission)) {
-                AuthError.PermissionDenied(access.permission)
+        val permission = access.permission
+        if (permission != null && principal is Principal.User) {
+            // オンラインならPaper標準API、オフラインならLuckPermsで評価される
+            when (permissionChecker.check(principal.uuid, permission)) {
+                PermissionCheckResult.GRANTED -> Unit
+
+                PermissionCheckResult.DENIED ->
+                    raise(AuthError.PermissionDenied(permission))
+
+                // セキュリティ: 評価不能な場合は拒否する
+                // （評価をスキップして許可すると認可バイパスの脆弱性となる）
+                PermissionCheckResult.UNRESOLVABLE ->
+                    raise(AuthError.PlayerOffline(permission))
             }
         }
 

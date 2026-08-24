@@ -7,6 +7,8 @@ import party.morino.mineauth.core.openapi.generator.PathItemGenerator
 import party.morino.mineauth.core.openapi.generator.SchemaGenerator
 import party.morino.mineauth.core.openapi.registry.EndpointMetadataRegistry
 import party.morino.mineauth.core.plugin.annotation.AnnotationProcessor
+import party.morino.mineauth.core.plugin.auth.DefaultPermissionChecker
+import party.morino.mineauth.core.plugin.auth.PermissionChecker
 import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 import party.morino.mineauth.core.plugin.execution.DefaultMethodExecutionHandlerFactory
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
@@ -35,6 +37,9 @@ val pluginModule = module {
 
     // パラメータ解決
     single { ParameterResolver(get()) }
+
+    // パーミッション評価（オンラインはPaper標準API、オフラインはLuckPerms）
+    single<PermissionChecker> { DefaultPermissionChecker() }
 
     // 認証・認可
     single { AuthenticationHandler() }

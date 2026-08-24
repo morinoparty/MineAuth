@@ -105,8 +105,24 @@ suspend fun createShop(
 Permission semantics:
 
 - The check is evaluated **only for user tokens**. Service tokens are trusted credentials issued by an administrator and bypass the permission check (they still must be allowed via `callers`).
-- Permission evaluation requires the player to be online. If the player is offline, the request fails with `403 Forbidden` and the error code `player_offline`.
+- Permission evaluation works for offline players as well. See [Offline Permission Evaluation](#offline-permission-evaluation) below.
 - An empty `permission` (the default) means authentication only, with no permission check.
+
+### Offline Permission Evaluation
+
+Web applications often call the API while the player is not connected to the server, so MineAuth evaluates permissions for offline players too.
+
+| Player state | How the permission is evaluated |
+|--------------|---------------------------------|
+| Online | Paper's standard `Player#hasPermission`, so the result of whichever permission plugin the server uses is reflected as is |
+| Offline, LuckPerms installed | The user is loaded from LuckPerms storage and evaluated through the LuckPerms API |
+| Offline, LuckPerms not installed | The permission cannot be evaluated, and the request fails with `403 Forbidden` and the error code `player_offline` |
+
+When LuckPerms reports the node as undefined for that user, MineAuth falls back to the permission default registered with Bukkit (`plugin.yml`), which matches how `Player#hasPermission` behaves for online players. Unregistered nodes default to operators only.
+
+<Callout type="info">
+Bukkit and Paper provide no standard API for evaluating the permissions of an offline player, so offline evaluation requires LuckPerms. MineAuth declares it as a soft dependency, and when it is absent the previous behaviour (rejecting the request with `player_offline`) is kept — a permission check is never silently skipped.
+</Callout>
 
 ## The Principal
 
@@ -121,7 +137,7 @@ sealed interface Principal {
         val uuid: UUID                        // Player's Minecraft UUID
         val offlinePlayer: OfflinePlayer      // Always available
         val onlinePlayer: Player?             // null when the player is offline
-        fun hasPermission(node: String): Boolean  // false when offline
+        fun hasPermission(node: String): Boolean  // offline players are resolved from the LuckPerms cache
     }
 
     interface Service : Principal {
@@ -238,7 +254,7 @@ Authentication and routing failures produce JSON error responses with a machine-
 | 401 | `invalid_token` | Token is expired, malformed, or revoked |
 | 403 | `wrong_token_type` | Token type is not listed in the endpoint's `callers` |
 | 403 | `access_denied` | Permission check failed, or `@PlayerParam` access policy denied the target |
-| 403 | `player_offline` | Permission check could not run because the player is offline |
+| 403 | `player_offline` | The player is offline and no permission plugin that supports offline evaluation (LuckPerms) is installed |
 | 404 | `not_found` | No endpoint matches the request path |
 | 405 | `method_not_allowed` | Path matches, but not with this HTTP method |
 

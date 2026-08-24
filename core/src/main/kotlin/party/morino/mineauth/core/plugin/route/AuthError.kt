@@ -31,7 +31,8 @@ sealed class AuthError {
     data class PermissionDenied(val permission: String) : AuthError()
 
     /**
-     * プレイヤーがオフラインのためパーミッション評価ができない
+     * プレイヤーがオフラインで、かつオフライン評価に対応した権限プラグイン
+     * （LuckPerms）が無いためパーミッション評価ができない
      * パーミッション不足とは区別してクライアントに通知する
      * @property permission 評価しようとしたパーミッション
      */
