@@ -63,6 +63,7 @@ dependencies {
     testImplementation(libs.bcpkix.jdk18on)
     testImplementation(libs.java.uuid.generator)
     testImplementation(libs.hikari)
+    testImplementation(libs.luckperms.api)
     testImplementation(kotlin("stdlib-jdk8"))
 }
 

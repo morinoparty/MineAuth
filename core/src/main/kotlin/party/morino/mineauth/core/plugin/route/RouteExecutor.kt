@@ -449,10 +449,14 @@ class RouteExecutor(
 
             is AuthError.PlayerOffline -> {
                 // パーミッション評価不能はパーミッション不足と区別してクライアントに返す
-                logger.warn("PlayerOffline: permission check skipped for {}", sanitizeForLog(error.permission))
+                // （LuckPerms導入時はオフラインでも評価されるため、ここには到達しない）
+                logger.warn("PlayerOffline: permission check unresolvable for {}", sanitizeForLog(error.permission))
                 call.respond(
                     HttpStatusCode.Forbidden,
-                    ErrorResponse("Player must be online for permission check", code = "player_offline")
+                    ErrorResponse(
+                        "Permission cannot be evaluated while the player is offline",
+                        code = "player_offline"
+                    )
                 )
             }
         }

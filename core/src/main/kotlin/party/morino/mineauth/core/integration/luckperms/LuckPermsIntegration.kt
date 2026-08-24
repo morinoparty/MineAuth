@@ -3,7 +3,9 @@ package party.morino.mineauth.core.integration.luckperms
 import kotlinx.coroutines.future.await
 import net.luckperms.api.LuckPerms
 import net.luckperms.api.LuckPermsProvider
+import net.luckperms.api.model.user.User
 import net.luckperms.api.query.QueryOptions
+import net.luckperms.api.util.Tristate
 import org.bukkit.Bukkit.getServer
 import party.morino.mineauth.core.integration.Integration
 import java.util.UUID
@@ -68,5 +70,61 @@ object LuckPermsIntegration : Integration() {
             // 明示的にロードしたユーザーはクリーンアップしてメモリを解放
             luckPerms.userManager.cleanupUser(loadedUser)
         }
+    }
+
+    /**
+     * プレイヤーのパーミッションをLuckPermsで評価する
+     * オフラインプレイヤーでも評価できるよう、キャッシュになければストレージからロードする
+     *
+     * @param playerUuid プレイヤーのUUID
+     * @param node パーミッションノード
+     * @return 評価結果のTristate（LuckPerms未使用時はnull）
+     */
+    suspend fun checkPermission(playerUuid: UUID, node: String): Tristate? {
+        if (!available) return null
+
+        // キャッシュにあればそのまま評価する（オンラインプレイヤーは常にキャッシュ済み）
+        val cachedUser = luckPerms.userManager.getUser(playerUuid)
+        if (cachedUser != null) {
+            return evaluate(cachedUser, node)
+        }
+
+        // キャッシュにない場合は非同期でストレージからロードする
+        val loadedUser = luckPerms.userManager.loadUser(playerUuid).await()
+
+        return try {
+            evaluate(loadedUser, node)
+        } finally {
+            // 明示的にロードしたユーザーはクリーンアップしてメモリを解放
+            luckPerms.userManager.cleanupUser(loadedUser)
+        }
+    }
+
+    /**
+     * キャッシュ済みのユーザーに限定してパーミッションを評価する
+     * ストレージI/Oを伴わないため、suspend関数を使えない同期APIから呼び出せる
+     *
+     * @param playerUuid プレイヤーのUUID
+     * @param node パーミッションノード
+     * @return 評価結果のTristate（LuckPerms未使用時・キャッシュに無い場合はnull）
+     */
+    fun checkCachedPermission(playerUuid: UUID, node: String): Tristate? {
+        if (!available) return null
+        val cachedUser = luckPerms.userManager.getUser(playerUuid) ?: return null
+        return evaluate(cachedUser, node)
+    }
+
+    /**
+     * ロード済みユーザーに対してパーミッションを評価する
+     * オンラインならプレイヤーのコンテキスト、オフラインなら静的コンテキストを使用する
+     *
+     * @param user LuckPermsのユーザー
+     * @param node パーミッションノード
+     * @return 評価結果のTristate
+     */
+    private fun evaluate(user: User, node: String): Tristate {
+        val queryOptions = luckPerms.contextManager.getQueryOptions(user)
+            .orElseGet { luckPerms.contextManager.staticQueryOptions }
+        return user.cachedData.getPermissionData(queryOptions).checkPermission(node)
     }
 }
