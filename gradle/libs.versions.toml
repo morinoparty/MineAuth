@@ -24,7 +24,7 @@ mysql = "9.7.0"
 micrometer = "1.17.0"
 opentelemetry = "1.65.0"
 opentelemetry-instrumentation = "2.30.0-alpha-SNAPSHOT"
-allure = "2.35.3"
+allure = "2.35.4"
 
 
 [libraries]
