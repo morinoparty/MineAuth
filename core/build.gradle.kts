@@ -119,6 +119,8 @@ tasks {
     runServer {
         minecraftVersion("1.21.11")
         val plugins = runPaper.downloadPluginsSpec {
+            // LuckPerms（ハード依存。無いとMineAuthが有効化されない）
+            modrinth("luckperms", "v5.5.17-bukkit")
             //Vault
             url("https://github.com/MilkBowl/Vault/releases/download/1.7.3/Vault.jar")
             //EssestialsX
@@ -154,7 +156,8 @@ sourceSets.main {
                 add(libs.hikari.asString())
                 add(libs.mysql.connector.asString())
             }
-            softDepend = listOf("LuckPerms")
+            // オフラインプレイヤーの権限評価に必須のため、ハード依存にする
+            depend = listOf("LuckPerms")
         }
     }
 }

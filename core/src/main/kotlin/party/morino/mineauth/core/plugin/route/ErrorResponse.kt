@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * @property error 人間が読めるエラーメッセージ
  * @property code 機械可読なエラーコード（クライアントの分岐処理用、任意）
  *   フレームワークが返すコード: "authentication_required", "invalid_token",
- *   "wrong_token_type", "access_denied", "player_offline", "not_found", "method_not_allowed"
+ *   "wrong_token_type", "insufficient_scope", "access_denied", "not_found", "method_not_allowed"
  * @property details エラーの詳細情報
  */
 @Serializable

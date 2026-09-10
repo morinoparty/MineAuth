@@ -120,7 +120,7 @@ class MineAuthApiImpl : MineAuthApi, KoinComponent {
             .forEach { (key, duplicates) ->
                 duplicates.drop(1).forEach { endpoint ->
                     errors += RegistrationError.DuplicateRoute(
-                        handlerClass = endpoint.handlerInstance::class.qualifiedName ?: "unknown",
+                        handlerClass = endpoint.handlerClassName,
                         function = endpoint.method.name,
                         httpMethod = key.first.toApi(),
                         path = endpoint.path
@@ -143,7 +143,7 @@ class MineAuthApiImpl : MineAuthApi, KoinComponent {
             RegisteredEndpoint(
                 httpMethod = endpoint.httpMethod.toApi(),
                 fullPath = basePath + endpoint.path,
-                handlerClass = endpoint.handlerInstance::class.qualifiedName ?: "unknown",
+                handlerClass = endpoint.handlerClassName,
                 functionName = endpoint.method.name,
                 access = endpoint.access.toApi()
             )

@@ -3,9 +3,13 @@ package party.morino.mineauth.core.plugin.annotation
 import kotlinx.serialization.KSerializer
 import party.morino.mineauth.api.CallerType
 import party.morino.mineauth.api.PlayerAccess
+import party.morino.mineauth.core.plugin.serialization.PluginSerialization
+import party.morino.mineauth.core.plugin.serialization.toResolvableJavaType
+import java.lang.reflect.Method
 import java.lang.reflect.Type
 import kotlin.reflect.KFunction
 import kotlin.reflect.KType
+import kotlin.reflect.jvm.javaMethod
 
 /**
  * HTTPメソッドの種類を表す列挙型
@@ -111,7 +115,18 @@ sealed class ParameterInfo {
         val serializer: KSerializer<Any?>?,
         val javaType: Type,
         val consumerClassLoader: ClassLoader
-    ) : ParameterInfo()
+    ) : ParameterInfo() {
+        /**
+         * 利用側クラスローダで解決したデコーダ（[serializer]がnullの場合にのみ使用する）
+         *
+         * シリアライザ解決（`serializer(Type)`）はリクエストごとに行うと重いため、初回利用時に
+         * 一度だけ解決して保持する。このオブジェクトはエンドポイントの登録解除と共に破棄されるため、
+         * 利用側クラスローダへの参照を新たにリークさせることはない（[EndpointMetadata]の注記を参照）。
+         */
+        val consumerCodec: PluginSerialization.Codec by lazy {
+            PluginSerialization.codec(consumerClassLoader, javaType)
+        }
+    }
 
     /**
      * 認証主体（Principal）の注入
@@ -154,6 +169,14 @@ sealed class ParameterInfo {
  * @property returnsResponse 戻り値が`Response<T>`ラッパー（Eitherの右側も含む）かどうか。
  *   trueの場合、[responseType]はラップされた内側の型Tを指し、実行時にラッパーを展開して
  *   ヘッダー・ETag・条件付き304を処理する。
+ *
+ * ## リクエスト時に使う派生値のキャッシュ
+ *
+ * 本体プロパティ（`by lazy`）は、リクエストごとに繰り返すと重いリフレクション・シリアライザ解決の
+ * 結果を登録単位で1回だけ計算して保持する。これらは利用側プラグインのクラス・クラスローダを
+ * 強参照するが、このメタデータ自体が既に[handlerInstance]を強参照しており、登録解除
+ * （`unregister()` / `PluginDisableEvent`）でテーブルごと破棄されるため、リークの種類を新たに
+ * 増やすことはない。クラスローダをキーにしたグローバルキャッシュとは異なり、寿命が登録と一致する。
  */
 data class EndpointMetadata(
     val method: KFunction<*>,
@@ -168,4 +191,59 @@ data class EndpointMetadata(
     val returnsEither: Boolean,
     val responseResolvableByCore: Boolean,
     val returnsResponse: Boolean
-)
+) {
+    /** ハンドラークラスの完全修飾名（ログ・テレメトリ用、`KClass.qualifiedName`はリフレクションを伴うため1回だけ解決する） */
+    val handlerClassName: String by lazy { handlerInstance::class.qualifiedName ?: "unknown" }
+
+    /**
+     * 呼び出し対象のJavaメソッド（Kotlinリフレクションからの変換は1回だけ行う）
+     *
+     * 非publicなハンドラークラス上のpublicメソッドにもアクセスできるよう、ここで一度だけ
+     * アクセス可能化を試みる。失敗しても例外にはせず、呼び出し時の`IllegalAccessException`として
+     * 実行ハンドラー側で500に変換される。
+     */
+    val javaMethod: Method? by lazy { method.javaMethod?.also { it.trySetAccessible() } }
+
+    /**
+     * ハンドラーが受け取る`Continuation`の実クラス（suspend関数のみ、通常関数ではnull）
+     *
+     * MineAuth本体の`kotlin.coroutines.Continuation`と同一クラスなら、クラスローダ間の橋渡し
+     * （動的プロキシ）を省略できる。
+     */
+    val continuationClass: Class<*>? by lazy {
+        if (isSuspending) javaMethod?.parameterTypes?.lastOrNull() else null
+    }
+
+    /**
+     * ハンドラー側クラスローダから見える`EmptyCoroutineContext`インスタンス（suspend関数のみ）
+     *
+     * クラスローダが分裂している場合、MineAuth側の`CoroutineContext`を渡すとクラス不一致になるため、
+     * ハンドラー側のインスタンスを登録単位で1回だけ解決しておく。
+     */
+    val handlerEmptyCoroutineContext: Any? by lazy {
+        continuationClass?.classLoader
+            ?.loadClass("kotlin.coroutines.EmptyCoroutineContext")
+            ?.getField("INSTANCE")
+            ?.get(null)
+    }
+
+    /** レスポンスの直列化に用いるJava型（suspend関数の`Object`縮退を補正済み、1回だけ解決する） */
+    val responseJavaType: Type by lazy { responseType.toResolvableJavaType() }
+
+    /**
+     * 利用側クラスローダで解決したレスポンスのエンコーダ
+     * [responseResolvableByCore]がfalseの場合にのみ使用し、初回利用時に一度だけ解決する
+     */
+    val consumerResponseCodec: PluginSerialization.Codec by lazy {
+        PluginSerialization.codec(handlerInstance.javaClass.classLoader, responseJavaType)
+    }
+
+    /**
+     * ルートの具体性を表すスコア
+     * リテラル=1、パラメータ=0の文字列とすることで、辞書順比較が
+     * 「左寄りのリテラルを優先」という直感的なルールになる（例: `/shops/mine` > `/shops/{id}`）
+     */
+    val specificity: String by lazy {
+        pathSegments.joinToString("") { if (it is PathSegment.Literal) "1" else "0" }
+    }
+}

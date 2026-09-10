@@ -15,7 +15,8 @@ import party.morino.mineauth.api.CallerType
  * ```
  *
  * @property permission 必要なパーミッションノード（空文字の場合は認証のみでパーミッションチェックなし）。
- *   ユーザートークンに対してのみ評価される。プレイヤーがオフラインの場合、チェックは失敗する（403 player_offline）。
+ *   ユーザートークンに対してのみ評価される。プレイヤーがオフラインの場合はLuckPermsで評価される。
+ *   なお、ユーザートークンは`plugin`スコープを持つ場合のみ`@Authenticated`エンドポイントを呼び出せる（403 insufficient_scope）。
  * @property callers このエンドポイントを呼び出せるトークン種別。
  *   デフォルトはユーザートークンのみ。サービストークンを許可する場合は明示的に
  *   `callers = [CallerType.USER, CallerType.SERVICE]` を指定する必要がある。

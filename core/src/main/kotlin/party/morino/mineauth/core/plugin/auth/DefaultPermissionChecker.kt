@@ -11,10 +11,9 @@ import java.util.UUID
  * 評価は次の優先順で行う:
  * 1. オンラインの場合はPaper標準の`Player#hasPermission`（サーバーの権限プラグインの結果がそのまま反映される）
  * 2. オフラインの場合はLuckPerms APIでストレージからユーザーをロードして評価する
- * 3. どちらも使えない場合は評価不能として返す（黙って許可しない）
  *
  * BukkitにはオフラインプレイヤーのPermissible相当が存在しないため、
- * オフライン評価はLuckPermsの導入が前提となる
+ * オフライン評価はLuckPerms（ハード依存）で行う
  */
 class DefaultPermissionChecker : PermissionChecker {
 
@@ -24,13 +23,12 @@ class DefaultPermissionChecker : PermissionChecker {
             return if (player.hasPermission(node)) PermissionCheckResult.GRANTED else PermissionCheckResult.DENIED
         }
 
-        // オフラインはLuckPermsにフォールバックする（未導入時はnull）
+        // オフラインはLuckPermsで評価する（ハード依存のため常に評価できる）
         return when (LuckPermsIntegration.checkPermission(uuid, node)) {
             Tristate.TRUE -> PermissionCheckResult.GRANTED
             Tristate.FALSE -> PermissionCheckResult.DENIED
             // 未設定ノードはオンライン時と同様にBukkitのデフォルト値で解決する
             Tristate.UNDEFINED -> resolveDefault(uuid, node)
-            null -> PermissionCheckResult.UNRESOLVABLE
         }
     }
 

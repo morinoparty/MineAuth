@@ -31,10 +31,9 @@ sealed class AuthError {
     data class PermissionDenied(val permission: String) : AuthError()
 
     /**
-     * プレイヤーがオフラインで、かつオフライン評価に対応した権限プラグイン
-     * （LuckPerms）が無いためパーミッション評価ができない
-     * パーミッション不足とは区別してクライアントに通知する
-     * @property permission 評価しようとしたパーミッション
+     * トークンに必要なOAuthスコープが付与されていない
+     * 例: `plugin`スコープを持たないユーザートークンでプラグインAPIを呼び出した場合
+     * @property required 必要なスコープ
      */
-    data class PlayerOffline(val permission: String) : AuthError()
+    data class InsufficientScope(val required: String) : AuthError()
 }

@@ -3,16 +3,18 @@ package party.morino.mineauth.core.plugin.execution
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import kotlinx.coroutines.CancellationException
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import kotlin.coroutines.Continuation
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.intrinsics.intercepted
 import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
-import kotlin.reflect.jvm.javaMethod
 
 /**
  * suspend関数を実行するハンドラー
@@ -21,6 +23,9 @@ import kotlin.reflect.jvm.javaMethod
  * 動的プロキシを使用して、異なるクラスローダー間のContinuation互換性問題を解決する
  * MineAuthのプラグイン環境では、アドオンが独自のクラスローダーでロードされるため、
  * 標準のcallSuspendは使用できない
+ *
+ * ただしアドオンがMineAuthと同じKotlinランタイム（同じ`Continuation`クラス）を参照している場合は
+ * 橋渡しが不要なので、プロキシもリフレクションも使わない高速パスで呼び出す
  */
 class SuspendMethodExecutionHandler : MethodExecutionHandler {
 
@@ -28,13 +33,16 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
         metadata: EndpointMetadata,
         resolvedParams: List<Any?>
     ): Either<ExecutionError, Any?> {
-        // Javaメソッドへのアクセスはnullになりえるのでチェックする
-        val javaMethod = metadata.method.javaMethod
+        // Javaメソッドは登録単位で解決・アクセス可能化済み（nullになりえるのでチェックする）
+        val javaMethod = metadata.javaMethod
             ?: return ExecutionError.MethodNotFound(metadata.method.name).left()
 
         return try {
-            val result = invokeSuspendMethod(javaMethod, metadata.handlerInstance, resolvedParams)
+            val result = invokeSuspendMethod(javaMethod, metadata, resolvedParams)
             result.right()
+        } catch (e: CancellationException) {
+            // コルーチンのキャンセル（クライアント切断等）は500に変換せず伝播させる
+            throw e
         } catch (e: HttpError) {
             // HttpErrorは専用のエラー型に変換する
             ExecutionError.HttpErrorThrown(
@@ -63,37 +71,45 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
 
     /**
      * Suspend関数を呼び出す
-     * 動的プロキシを使用して、異なるクラスローダー間のContinuation互換性問題を解決する
+     *
+     * ハンドラーの`Continuation`がMineAuth本体と同一クラスなら[DetachedContinuation]を直接渡し、
+     * 異なるクラスローダー由来なら動的プロキシで互換性問題を解決する。
+     * どちらの経路でもハンドラーから見えるコンテキストは`EmptyCoroutineContext`で統一する
+     * （実際の実行コンテキストはアドオン側で`withContext`等により指定される）。
      *
      * @param javaMethod 呼び出すJavaメソッド
-     * @param instance ハンドラーインスタンス
+     * @param metadata エンドポイントメタデータ（ハンドラーインスタンスと登録時解決済みの橋渡し情報）
      * @param params 解決済みパラメータ
      * @return メソッドの戻り値
      */
-    @Suppress("UNCHECKED_CAST")
     private suspend fun invokeSuspendMethod(
         javaMethod: Method,
-        instance: Any,
+        metadata: EndpointMetadata,
         params: List<Any?>
     ): Any? {
-        // アクセス可能に設定する
-        javaMethod.isAccessible = true
-
         // suspendCoroutineUninterceptedOrReturn を使って継続を明示的に制御する
         return suspendCoroutineUninterceptedOrReturn { cont ->
-            // アドオンのクラスローダーから見えるContinuationインターフェースを取得
-            val addonContinuationClass = javaMethod.parameterTypes.last()
-
-            // 動的プロキシで異なるクラスローダー間のContinuation互換性を吸収する
             // intercepted()でディスパッチャを経由させ、再開後のKtorレスポンス処理が
             // アドオンの再開スレッド（例: Minecraftメインスレッド）上で走らないようにする
-            val proxyContinuation = createContinuationProxy(addonContinuationClass, cont.intercepted())
+            val intercepted = cont.intercepted()
+
+            // ハンドラー側のContinuationクラスは登録単位で解決済み
+            val addonContinuationClass = metadata.continuationClass ?: javaMethod.parameterTypes.last()
+            val continuationArg: Any = if (addonContinuationClass == Continuation::class.java) {
+                // 高速パス: 同じKotlinランタイムなのでプロキシもリフレクションも不要
+                DetachedContinuation(intercepted)
+            } else {
+                // 低速パス: 動的プロキシで異なるクラスローダー間のContinuation互換性を吸収する
+                createContinuationProxy(addonContinuationClass, metadata.handlerEmptyCoroutineContext, intercepted)
+            }
 
             // suspend関数はContinuationを最後の引数として受け取る
             // InvocationTargetExceptionはここで剥がさずexecute()側に伝播させ、
             // ハンドラー由来の例外（HttpError等）とリフレクション自体の失敗を区別して分類する
-            val args = (params + proxyContinuation).toTypedArray()
-            val result = javaMethod.invoke(instance, *args)
+            val args = arrayOfNulls<Any?>(params.size + 1)
+            for (index in params.indices) args[index] = params[index]
+            args[params.size] = continuationArg
+            val result = javaMethod.invoke(metadata.handlerInstance, *args)
 
             // COROUTINE_SUSPENDED の場合はそのまま返す（コルーチンがサスペンド中）
             if (isCoroutineSuspended(result)) COROUTINE_SUSPENDED else result
@@ -101,21 +117,40 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
     }
 
     /**
+     * 同一クラスローダー用のContinuation
+     *
+     * プロキシ経路と同じく、ハンドラーには`EmptyCoroutineContext`を見せつつ、
+     * 再開はディスパッチャを経由した元のContinuationへ転送する。
+     *
+     * @property delegate 再開先のContinuation（`intercepted()`済み）
+     */
+    private class DetachedContinuation(
+        private val delegate: Continuation<Any?>
+    ) : Continuation<Any?> {
+        override val context: CoroutineContext
+            get() = EmptyCoroutineContext
+
+        override fun resumeWith(result: Result<Any?>) = delegate.resumeWith(result)
+    }
+
+    /**
      * アドオンクラスローダーから見えるContinuationを生成する
      * 動的プロキシを使用して、異なるクラスローダー間の互換性を確保する
      *
      * @param addonContinuationClass アドオン側のContinuationインターフェース
+     * @param emptyContext アドオン側の`EmptyCoroutineContext`（登録単位で解決済み、未解決ならここで解決する）
      * @param original 元のContinuation
      * @return 互換性調整済みのContinuation
      */
     private fun createContinuationProxy(
         addonContinuationClass: Class<*>,
+        emptyContext: Any?,
         original: Continuation<Any?>
     ): Any {
-        // アドオン側のクラスローダーからEmptyCoroutineContextを取得
+        // アドオン側のクラスローダーのEmptyCoroutineContextを使う
         // MineAuth側のCoroutineContextを返すとClassLoaderの互換性問題が発生するため
         val addonClassLoader = addonContinuationClass.classLoader
-        val emptyContext = getEmptyCoroutineContext(addonClassLoader)
+        val context = emptyContext ?: getEmptyCoroutineContext(addonClassLoader)
 
         return Proxy.newProxyInstance(
             addonClassLoader,
@@ -126,7 +161,7 @@ class SuspendMethodExecutionHandler : MethodExecutionHandler {
                 "resumeWith" -> handleResumeWith(original, args?.get(0))
                 // アドオン側のEmptyCoroutineContextを返す
                 // 実際の実行コンテキストはアドオン側でwithContext等で指定される
-                "getContext" -> emptyContext
+                "getContext" -> context
                 else -> null
             }
         }

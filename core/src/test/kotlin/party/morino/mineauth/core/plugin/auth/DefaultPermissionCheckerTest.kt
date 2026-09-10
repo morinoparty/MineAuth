@@ -47,11 +47,11 @@ class DefaultPermissionCheckerTest {
         offlinePlayer = mockk(relaxed = true)
         every { Bukkit.getPluginManager() } returns pluginManager
         every { Bukkit.getOfflinePlayer(uuid) } returns offlinePlayer
-        // 既定ではオフライン・非OP・LuckPerms未導入とする
+        // 既定ではオフライン・非OP・LuckPermsでは未設定ノードとする
         every { Bukkit.getPlayer(uuid) } returns null
         every { offlinePlayer.isOp } returns false
         every { pluginManager.getPermission(node) } returns null
-        coEvery { LuckPermsIntegration.checkPermission(any(), any()) } returns null
+        coEvery { LuckPermsIntegration.checkPermission(any(), any()) } returns Tristate.UNDEFINED
     }
 
     @AfterEach
@@ -67,13 +67,6 @@ class DefaultPermissionCheckerTest {
         every { player.hasPermission(node) } returns true
 
         assertEquals(PermissionCheckResult.GRANTED, checker.check(uuid, node))
-    }
-
-    @Test
-    @DisplayName("Offline player without LuckPerms is unresolvable")
-    fun offlineWithoutLuckPermsIsUnresolvable() = runTest {
-        // LuckPerms未導入時はnullが返り、評価不能として扱われる（黙って許可しない）
-        assertEquals(PermissionCheckResult.UNRESOLVABLE, checker.check(uuid, node))
     }
 
     @Test
@@ -106,8 +99,15 @@ class DefaultPermissionCheckerTest {
     @DisplayName("Undefined permission on unregistered node denies non-op")
     fun undefinedUnregisteredNodeDeniesNonOp() = runTest {
         // 未登録ノードのBukkit既定はOP限定のため、非OPは拒否される
-        coEvery { LuckPermsIntegration.checkPermission(uuid, node) } returns Tristate.UNDEFINED
-
         assertEquals(PermissionCheckResult.DENIED, checker.check(uuid, node))
+    }
+
+    @Test
+    @DisplayName("Undefined permission on unregistered node grants op")
+    fun undefinedUnregisteredNodeGrantsOp() = runTest {
+        // オフラインのOPは、未登録ノードのBukkit既定（OP限定）により許可される
+        every { offlinePlayer.isOp } returns true
+
+        assertEquals(PermissionCheckResult.GRANTED, checker.check(uuid, node))
     }
 }

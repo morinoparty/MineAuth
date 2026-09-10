@@ -32,20 +32,19 @@ class UserPrincipal(
      * プレイヤーのパーミッションを確認する
      *
      * オンライン時はPaper標準のAPIで評価する
-     * オフライン時はLuckPermsのキャッシュを参照する（同期APIのためストレージI/Oは行わない）
-     * どちらでも評価できない場合は安全側に倒してfalseを返す
+     * オフライン時はLuckPermsで評価する（キャッシュになければストレージからのロードを同期的に待つため、
+     * Minecraftのメインスレッドからは呼ばないこと）
      */
     override fun hasPermission(node: String): Boolean {
         // オンラインならサーバーの権限プラグインの結果がそのまま反映される
         onlinePlayer?.let { return it.hasPermission(node) }
 
-        // オフラインはLuckPermsのキャッシュのみを参照する（ブロッキングI/Oを避けるため）
-        return when (LuckPermsIntegration.checkCachedPermission(uuid, node)) {
+        // オフラインはLuckPermsで評価する（`@Authenticated(permission)`と同じ規則）
+        return when (LuckPermsIntegration.checkPermissionBlocking(uuid, node)) {
             Tristate.TRUE -> true
             Tristate.FALSE -> false
             // 未設定ノードはオンライン時と同様にBukkitのデフォルト値で解決する
             Tristate.UNDEFINED -> PermissionDefaults.resolve(uuid, node)
-            null -> false
         }
     }
 }
