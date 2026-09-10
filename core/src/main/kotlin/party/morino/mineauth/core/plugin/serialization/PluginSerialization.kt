@@ -33,12 +33,16 @@ import java.lang.reflect.Type
  */
 object PluginSerialization {
 
-    // 注意: リフレクションハンドルをクラスローダごとにキャッシュしたくなるが、
-    // キャッシュ値（[Handles]）は利用側クラスローダのメソッド・インスタンスを強参照するため、
+    // 注意（キャッシュの置き場所について）:
+    // リフレクションハンドル（[Handles]）や解決済みシリアライザは利用側クラスローダのメソッド・
+    // インスタンスを強参照する。これを **クラスローダをキーにしたグローバルキャッシュ** に置くと、
     // キーに WeakHashMap を使ってもクラスローダが GC されずリークする（＝プラグイン再読込ごとに
-    // クラスローダが1つ残留する）。ここが対象とする shade 済みプラグイン群でまさに発生するため、
-    // キャッシュは持たず毎回解決する。解決コストの大半を占める serializer(Type) はいずれにせよ
-    // 呼び出しごとに実行され、loadClass/getMethod はロード済みクラスへのキャッシュヒットで軽微。
+    // クラスローダが1つ残留する）。そのためこの object 自体はキャッシュを一切持たない。
+    //
+    // 代わりに、リクエスト時の解決コストを避けたい呼び出し側は [codec] で [Codec] を1回だけ作り、
+    // **エンドポイントの登録と寿命が一致するオブジェクト**（EndpointMetadata / ParameterInfo.Body）に
+    // 保持する。それらは登録解除・プラグイン無効化でテーブルごと破棄されるため、既に保持している
+    // handlerInstance 以上の参照を増やさず、リークの種類を新たに作らない。
 
     /**
      * 指定した型に対応するシリアライザを解決できるか判定する（検証用）
@@ -60,13 +64,8 @@ object PluginSerialization {
      * @param value エンコード対象の値
      * @return JSON 文字列
      */
-    fun encodeToString(consumerClassLoader: ClassLoader, type: Type, value: Any): String {
-        val handles = Handles.resolve(consumerClassLoader)
-        // 利用側のシリアライザを解決（Type ベースなのでクラスローダ非依存）
-        val serializer = handles.serializerMethod.invoke(null, type)
-        // 利用側の Json.Default で直列化する（Encoder も利用側に揃う）
-        return handles.encodeMethod.invoke(handles.jsonDefault, serializer, value) as String
-    }
+    fun encodeToString(consumerClassLoader: ClassLoader, type: Type, value: Any): String =
+        codec(consumerClassLoader, type).encode(value)
 
     /**
      * JSON 文字列を利用側クラスローダの直列化機構でデコードする
@@ -76,10 +75,44 @@ object PluginSerialization {
      * @param jsonText デコード対象の JSON 文字列
      * @return デコードされたオブジェクト
      */
-    fun decodeFromString(consumerClassLoader: ClassLoader, type: Type, jsonText: String): Any? {
+    fun decodeFromString(consumerClassLoader: ClassLoader, type: Type, jsonText: String): Any? =
+        codec(consumerClassLoader, type).decode(jsonText)
+
+    /**
+     * 指定した型の直列化・逆直列化を利用側クラスローダで行う [Codec] を構築する
+     *
+     * リフレクションハンドルとシリアライザの解決をここで1回だけ行い、以後の `encode` / `decode` は
+     * 解決済みのメソッドハンドルを呼ぶだけになる。返り値の保持先については object 冒頭の注記を参照。
+     *
+     * @param consumerClassLoader 利用側プラグインのクラスローダー
+     * @param type 対象の Java 型（利用側の `Class` を参照しうる、ジェネリクスを保持する）
+     * @return 解決済みの Codec
+     * @throws ReflectiveOperationException シリアライザを解決できない場合（登録時の検証で通常は除外済み）
+     */
+    fun codec(consumerClassLoader: ClassLoader, type: Type): Codec {
         val handles = Handles.resolve(consumerClassLoader)
+        // 利用側のシリアライザを解決（Type ベースなのでクラスローダ非依存）
         val serializer = handles.serializerMethod.invoke(null, type)
-        return handles.decodeMethod.invoke(handles.jsonDefault, serializer, jsonText)
+        return Codec(handles, serializer)
+    }
+
+    /**
+     * 利用側クラスローダで解決済みのシリアライザと `Json.Default` を束ねたエンコーダ／デコーダ
+     *
+     * @property handles 利用側クラスローダのリフレクションハンドル
+     * @property serializer 利用側の `KSerializer` インスタンス（型は利用側クラスローダ由来のため `Any`）
+     */
+    class Codec internal constructor(
+        private val handles: Handles,
+        private val serializer: Any
+    ) {
+        /** 値を利用側の `Json.Default` で JSON 文字列にエンコードする（Encoder も利用側に揃う） */
+        fun encode(value: Any): String =
+            handles.encodeMethod.invoke(handles.jsonDefault, serializer, value) as String
+
+        /** JSON 文字列を利用側の `Json.Default` でデコードする */
+        fun decode(jsonText: String): Any? =
+            handles.decodeMethod.invoke(handles.jsonDefault, serializer, jsonText)
     }
 
     /**
@@ -106,7 +139,7 @@ object PluginSerialization {
      * @property encodeMethod `Json#encodeToString(SerializationStrategy, Any): String`
      * @property decodeMethod `Json#decodeFromString(DeserializationStrategy, String): Any?`
      */
-    private class Handles(
+    internal class Handles(
         val serializerMethod: java.lang.reflect.Method,
         val serializerOrNullMethod: java.lang.reflect.Method,
         val jsonDefault: Any,

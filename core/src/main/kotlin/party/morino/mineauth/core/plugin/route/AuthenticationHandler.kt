@@ -16,6 +16,7 @@ import party.morino.mineauth.core.plugin.auth.PermissionCheckResult
 import party.morino.mineauth.core.plugin.auth.PermissionChecker
 import party.morino.mineauth.core.plugin.auth.ServicePrincipal
 import party.morino.mineauth.core.plugin.auth.UserPrincipal
+import party.morino.mineauth.core.web.router.auth.oauth.OAuthScope
 import java.util.UUID
 
 /**
@@ -26,8 +27,8 @@ import java.util.UUID
  * - サービストークンによる暗黙のパーミッションバイパスを廃止。
  *   サービストークンは`@Authenticated(callers = [..., CallerType.SERVICE])`で
  *   明示的に許可されたエンドポイントのみ呼び出せる
- * - オフラインプレイヤーもPermissionCheckerを通じてパーミッション評価する（LuckPerms導入時）
- * - それでも評価できない場合はPermissionDeniedと区別して返す
+ * - オフラインプレイヤーもPermissionCheckerを通じてパーミッション評価する（LuckPermsはハード依存）
+ * - ユーザートークンは`plugin`スコープを持つ場合のみプラグインAPIを呼び出せる
  */
 class AuthenticationHandler : KoinComponent {
 
@@ -62,6 +63,15 @@ class AuthenticationHandler : KoinComponent {
             AuthError.WrongTokenType(access.callers)
         }
 
+        // セキュリティ: ユーザートークンは`plugin`スコープが付与されている場合のみプラグインAPIを呼べる
+        // （ログイン専用クライアントの`openid`のみのトークンで、ユーザーになりすまして
+        //  プラグインAPIを操作できないようにする）
+        if (principal is Principal.User) {
+            ensure(OAuthScope.PLUGIN.value in principal.scopes) {
+                AuthError.InsufficientScope(OAuthScope.PLUGIN.value)
+            }
+        }
+
         // パーミッションチェック（ユーザートークンのみ対象）
         // サービストークンは管理者発行の信頼された資格情報であり、
         // callers設定による明示的な許可がアクセス制御となる
@@ -70,14 +80,7 @@ class AuthenticationHandler : KoinComponent {
             // オンラインならPaper標準API、オフラインならLuckPermsで評価される
             when (permissionChecker.check(principal.uuid, permission)) {
                 PermissionCheckResult.GRANTED -> Unit
-
-                PermissionCheckResult.DENIED ->
-                    raise(AuthError.PermissionDenied(permission))
-
-                // セキュリティ: 評価不能な場合は拒否する
-                // （評価をスキップして許可すると認可バイパスの脆弱性となる）
-                PermissionCheckResult.UNRESOLVABLE ->
-                    raise(AuthError.PlayerOffline(permission))
+                PermissionCheckResult.DENIED -> raise(AuthError.PermissionDenied(permission))
             }
         }
 

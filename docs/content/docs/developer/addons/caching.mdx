@@ -30,6 +30,8 @@ CacheControl.NoStore                                       // no-store
 
 Cache headers are applied only when the response is written successfully — a serialization failure or an `HttpError` never carries them.
 
+Header values are checked before they are written. A value that contains a carriage return, a line feed, or a NUL character is dropped and logged instead of being sent, so an `ETag` or a custom header built from user input cannot inject additional headers. Framing headers (`Content-Type`, `Content-Length`, `Transfer-Encoding`, `Connection`) are always managed by MineAuth and cannot be overridden from `headers`.
+
 ## ⚡ Conditional GET (304 Not Modified)
 
 To eliminate repeated work, inject a `ConditionalRequest` with `@Conditional`. The handler computes a **cheap** validator (a version number or timestamp) first, and returns `Response.notModified(...)` on a match — **before** loading or serializing the full body.

@@ -6,39 +6,38 @@ import net.luckperms.api.LuckPermsProvider
 import net.luckperms.api.model.user.User
 import net.luckperms.api.query.QueryOptions
 import net.luckperms.api.util.Tristate
-import org.bukkit.Bukkit.getServer
 import party.morino.mineauth.core.integration.Integration
 import java.util.UUID
 
 /**
  * LuckPerms統合クラス
- * プレイヤーのグループ情報をOIDC rolesクレームとして提供する
+ *
+ * LuckPermsはMineAuthのハード依存（plugin.ymlの`depend`）であり、常に利用可能な前提で動作する。
+ * オフラインプレイヤーの権限評価とOIDC rolesクレームの提供に使用する。
+ *
+ * APIインスタンスは初期化順に依存しないよう、利用のたびに[LuckPermsProvider]から取得する
+ * （静的フィールドの読み出しなので追加コストはない）。
  */
 object LuckPermsIntegration : Integration() {
-    override var available: Boolean = false
+    // ハード依存のため常に利用可能
+    override var available: Boolean = true
     override val name: String = "LuckPerms"
 
-    // LuckPerms APIインスタンス（初期化後にのみ使用可能）
-    private lateinit var luckPerms: LuckPerms
+    // LuckPerms APIインスタンス（LuckPermsが有効化済みでなければIllegalStateException）
+    private val luckPerms: LuckPerms
+        get() = LuckPermsProvider.get()
 
     override fun initialize() {
-        // LuckPermsプラグインの存在確認
-        val plugin = getServer().pluginManager.getPlugin(name)
-        if (plugin == null) {
-            mineAuth.logger.info("LuckPerms not found, roles scope will be disabled")
-            return
-        }
-
-        // LuckPerms APIの取得を試行
+        // ハード依存なので、ここで取得できない場合は設定ミス（依存宣言の欠落・読み込み順の異常）として
+        // 黙って無効化せず、プラグインの有効化を失敗させる
         try {
-            luckPerms = LuckPermsProvider.get()
-            available = true
-            mineAuth.logger.info("LuckPerms found, roles scope enabled")
+            LuckPermsProvider.get()
         } catch (e: IllegalStateException) {
-            // LuckPermsがまだ初期化されていない場合
-            mineAuth.logger.warning("LuckPerms API not available: ${e.message}")
-            available = false
+            throw IllegalStateException(
+                "LuckPerms API is not available. MineAuth requires LuckPerms to be installed and enabled.", e
+            )
         }
+        mineAuth.logger.info("LuckPerms found, offline permission evaluation and roles scope enabled")
     }
 
     /**
@@ -46,11 +45,9 @@ object LuckPermsIntegration : Integration() {
      * オフラインプレイヤーにも対応するため、キャッシュになければストレージから非同期でロードする
      *
      * @param playerUuid プレイヤーのUUID
-     * @return グループ名のリスト（LuckPerms未使用時は空リスト）
+     * @return グループ名のリスト
      */
     suspend fun getPlayerGroups(playerUuid: UUID): List<String> {
-        if (!available) return emptyList()
-
         // まずキャッシュからユーザー情報を取得試行（オンラインプレイヤーの場合は高速）
         val cachedUser = luckPerms.userManager.getUser(playerUuid)
         if (cachedUser != null) {
@@ -74,15 +71,13 @@ object LuckPermsIntegration : Integration() {
 
     /**
      * プレイヤーのパーミッションをLuckPermsで評価する
-     * オフラインプレイヤーでも評価できるよう、キャッシュになければストレージからロードする
+     * オフラインプレイヤーでも評価できるよう、キャッシュになければストレージから非同期でロードする
      *
      * @param playerUuid プレイヤーのUUID
      * @param node パーミッションノード
-     * @return 評価結果のTristate（LuckPerms未使用時はnull）
+     * @return 評価結果のTristate
      */
-    suspend fun checkPermission(playerUuid: UUID, node: String): Tristate? {
-        if (!available) return null
-
+    suspend fun checkPermission(playerUuid: UUID, node: String): Tristate {
         // キャッシュにあればそのまま評価する（オンラインプレイヤーは常にキャッシュ済み）
         val cachedUser = luckPerms.userManager.getUser(playerUuid)
         if (cachedUser != null) {
@@ -101,17 +96,28 @@ object LuckPermsIntegration : Integration() {
     }
 
     /**
-     * キャッシュ済みのユーザーに限定してパーミッションを評価する
-     * ストレージI/Oを伴わないため、suspend関数を使えない同期APIから呼び出せる
+     * プレイヤーのパーミッションを同期的に評価する（suspend関数を使えない同期APIから呼び出す用）
+     *
+     * キャッシュにあればI/Oなしで評価し、なければストレージからのロード完了を待つ。
+     * 待機中は呼び出しスレッドをブロックするため、Minecraftのメインスレッドからは呼ばないこと。
      *
      * @param playerUuid プレイヤーのUUID
      * @param node パーミッションノード
-     * @return 評価結果のTristate（LuckPerms未使用時・キャッシュに無い場合はnull）
+     * @return 評価結果のTristate
      */
-    fun checkCachedPermission(playerUuid: UUID, node: String): Tristate? {
-        if (!available) return null
-        val cachedUser = luckPerms.userManager.getUser(playerUuid) ?: return null
-        return evaluate(cachedUser, node)
+    fun checkPermissionBlocking(playerUuid: UUID, node: String): Tristate {
+        val cachedUser = luckPerms.userManager.getUser(playerUuid)
+        if (cachedUser != null) {
+            return evaluate(cachedUser, node)
+        }
+
+        // ストレージからのロードを同期的に待つ
+        val loadedUser = luckPerms.userManager.loadUser(playerUuid).join()
+        return try {
+            evaluate(loadedUser, node)
+        } finally {
+            luckPerms.userManager.cleanupUser(loadedUser)
+        }
     }
 
     /**

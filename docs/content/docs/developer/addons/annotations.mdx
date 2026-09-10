@@ -120,7 +120,7 @@ suspend fun getBalance(@PlayerParam("player") player: OfflinePlayer): BalanceRes
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `permission` | String | Required permission node (empty string = authentication only, no permission check). Evaluated only for user tokens; offline players are evaluated through LuckPerms, and the check fails with `403 player_offline` when that is unavailable |
+| `permission` | String | Required permission node (empty string = authentication only, no permission check). Evaluated only for user tokens; offline players are evaluated through LuckPerms (a hard dependency of MineAuth). User tokens must also carry the `plugin` scope, otherwise the request fails with `403 insufficient_scope` |
 | `callers` | Array&lt;CallerType&gt; | Token types allowed to call the endpoint. Defaults to `[CallerType.USER]`; service tokens must be opted in explicitly with `[CallerType.USER, CallerType.SERVICE]` |
 
 See the [Authentication Guide](/docs/developer/addons/authentication) for details.

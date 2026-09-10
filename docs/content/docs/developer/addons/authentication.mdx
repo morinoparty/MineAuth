@@ -108,6 +108,10 @@ Permission semantics:
 - Permission evaluation works for offline players as well. See [Offline Permission Evaluation](#offline-permission-evaluation) below.
 - An empty `permission` (the default) means authentication only, with no permission check.
 
+### Required OAuth Scope
+
+Every `@Authenticated` endpoint requires the user token to carry the `plugin` scope. A token that was issued for login only (for example `openid profile`) is rejected with `403 Forbidden` and the error code `insufficient_scope`, even if the player would otherwise pass the permission check. Clients that call plugin APIs must therefore request `plugin` during authorization. Service tokens are not subject to this check, and `@Public` endpoints never require it.
+
 ### Offline Permission Evaluation
 
 Web applications often call the API while the player is not connected to the server, so MineAuth evaluates permissions for offline players too.
@@ -115,13 +119,12 @@ Web applications often call the API while the player is not connected to the ser
 | Player state | How the permission is evaluated |
 |--------------|---------------------------------|
 | Online | Paper's standard `Player#hasPermission`, so the result of whichever permission plugin the server uses is reflected as is |
-| Offline, LuckPerms installed | The user is loaded from LuckPerms storage and evaluated through the LuckPerms API |
-| Offline, LuckPerms not installed | The permission cannot be evaluated, and the request fails with `403 Forbidden` and the error code `player_offline` |
+| Offline | The user is loaded from LuckPerms storage and evaluated through the LuckPerms API |
 
 When LuckPerms reports the node as undefined for that user, MineAuth falls back to the permission default registered with Bukkit (`plugin.yml`), which matches how `Player#hasPermission` behaves for online players. Unregistered nodes default to operators only.
 
 <Callout type="info">
-Bukkit and Paper provide no standard API for evaluating the permissions of an offline player, so offline evaluation requires LuckPerms. MineAuth declares it as a soft dependency, and when it is absent the previous behaviour (rejecting the request with `player_offline`) is kept — a permission check is never silently skipped.
+Bukkit and Paper provide no standard API for evaluating the permissions of an offline player, so offline evaluation requires LuckPerms. MineAuth declares LuckPerms as a hard dependency (`depend` in `plugin.yml`): the server will not enable MineAuth without it, and a permission check is never silently skipped.
 </Callout>
 
 ## The Principal
@@ -137,7 +140,7 @@ sealed interface Principal {
         val uuid: UUID                        // Player's Minecraft UUID
         val offlinePlayer: OfflinePlayer      // Always available
         val onlinePlayer: Player?             // null when the player is offline
-        fun hasPermission(node: String): Boolean  // offline players are resolved from the LuckPerms cache
+        fun hasPermission(node: String): Boolean  // offline players are evaluated through LuckPerms (blocking load; avoid on the main thread)
     }
 
     interface Service : Principal {
@@ -254,7 +257,7 @@ Authentication and routing failures produce JSON error responses with a machine-
 | 401 | `invalid_token` | Token is expired, malformed, or revoked |
 | 403 | `wrong_token_type` | Token type is not listed in the endpoint's `callers` |
 | 403 | `access_denied` | Permission check failed, or `@PlayerParam` access policy denied the target |
-| 403 | `player_offline` | The player is offline and no permission plugin that supports offline evaluation (LuckPerms) is installed |
+| 403 | `insufficient_scope` | The user token does not carry the `plugin` scope (`details.required_scope` names the missing scope) |
 | 404 | `not_found` | No endpoint matches the request path |
 | 405 | `method_not_allowed` | Path matches, but not with this HTTP method |
 

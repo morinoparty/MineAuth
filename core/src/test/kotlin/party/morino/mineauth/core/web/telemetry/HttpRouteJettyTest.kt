@@ -108,7 +108,13 @@ class HttpRouteJettyTest {
     }
 
     private fun serverSpan(): SpanData {
-        tracerProvider.forceFlush().join(5, TimeUnit.SECONDS)
+        // クライアントがボディを受け取った直後はサーバースパンがまだ終了していないことがあるため、
+        // 短時間ポーリングしてからエクスポート済みスパンを取得する（タイミング競合による不安定化を防ぐ）
+        repeat(50) {
+            tracerProvider.forceFlush().join(5, TimeUnit.SECONDS)
+            exporter.finishedSpanItems.firstOrNull { it.kind == SpanKind.SERVER }?.let { return it }
+            Thread.sleep(20)
+        }
         return exporter.finishedSpanItems.first { it.kind == SpanKind.SERVER }
     }
 

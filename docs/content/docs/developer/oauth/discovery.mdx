@@ -50,7 +50,7 @@ GET /.well-known/openid-configuration
 
 :::tip[Conditional Scopes and Claims]
 The `email` scope and its claims (`email`, `email_verified`) are only included when `emailFormat` is configured in `config.json`.
-The `roles` scope and its claim are only included when [LuckPerms](https://luckperms.net/) is installed on the server.
+The `roles` scope and its claim are backed by [LuckPerms](https://luckperms.net/), which MineAuth requires as a hard dependency, so they are always advertised.
 :::
 
 ## Metadata Description

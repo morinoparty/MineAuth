@@ -15,7 +15,7 @@ MineAuth validates requested scopes according to RFC 6749 Section 3.3. Only scop
 | `profile` | Returns `name`, `preferred_username`, `picture`. |
 | `email` | Returns `email`, `email_verified`. Requires `emailFormat` configuration. |
 | `plugin` | Grants access to plugin data APIs. |
-| `roles` | Returns `roles` (LuckPerms group names). Requires LuckPerms. |
+| `roles` | Returns `roles` (LuckPerms group names). |
 
 ## Scope Validation
 
@@ -52,7 +52,7 @@ Granted scopes control what data is returned from the UserInfo endpoint and what
 See the [UserInfo Endpoint](./userinfo) page for details on scope-based claims.
 
 <Callout type="info">
-  The `plugin` scope controls access to plugin data APIs provided by addon plugins. It does not affect the UserInfo endpoint response.
+  The `plugin` scope is required for every authenticated plugin data API provided by addon plugins. A user token without it is rejected with `403 Forbidden` and the error code `insufficient_scope`. It does not affect the UserInfo endpoint response.
 </Callout>
 
 ## References

@@ -9,6 +9,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.util.reflect.TypeInfo
 import io.opentelemetry.api.common.Attributes
+import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.component.KoinComponent
 import org.slf4j.LoggerFactory
 import party.morino.mineauth.api.http.CacheControl
@@ -19,8 +20,6 @@ import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
-import party.morino.mineauth.core.plugin.serialization.PluginSerialization
-import party.morino.mineauth.core.plugin.serialization.toResolvableJavaType
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
 import kotlin.reflect.KClass
@@ -49,7 +48,7 @@ class RouteExecutor(
 
         // アドオンルート全体の処理を1つのスパンで計測する（全アドオンルートの単一チョークポイント）
         val attributes = Attributes.builder()
-            .put(TelemetryAttributes.HANDLER_CLASS, metadata.handlerInstance::class.qualifiedName ?: "unknown")
+            .put(TelemetryAttributes.HANDLER_CLASS, metadata.handlerClassName)
             .put(TelemetryAttributes.ENDPOINT_PATH, metadata.path)
             .put(TelemetryAttributes.ENDPOINT_METHOD, metadata.httpMethod.name)
             .build()
@@ -226,9 +225,8 @@ class RouteExecutor(
         // MineAuth側のserializer(KType)は別Classの生成シリアライザをキャストできず解決に失敗する。
         // 戻り値を提供したハンドラー（＝利用側プラグイン）のクラスローダで直列化する。
         val jsonText = try {
-            val consumerClassLoader = metadata.handlerInstance.javaClass.classLoader
-            // javaType ではなく toResolvableJavaType を使う（suspend ハンドラーでは javaType が Object へ縮退する）
-            PluginSerialization.encodeToString(consumerClassLoader, metadata.responseType.toResolvableJavaType(), value)
+            // 登録単位で解決済みのCodecを使う（シリアライザ解決とリフレクションハンドル取得を毎回繰り返さない）
+            metadata.consumerResponseCodec.encode(value)
         } catch (e: Exception) {
             // 直列化失敗の詳細はログにのみ出力（サニタイズしてログ注入を防止）
             logger.error(
@@ -256,16 +254,29 @@ class RouteExecutor(
         private val headers: Map<String, String>
     ) {
         fun applyTo(call: ApplicationCall) {
-            etag?.let { call.response.headers.append(HttpHeaders.ETag, it, safeOnly = false) }
-            cacheControl?.let {
-                call.response.headers.append(HttpHeaders.CacheControl, it.toHeaderValue(), safeOnly = false)
-            }
+            etag?.let { appendChecked(call, HttpHeaders.ETag, it) }
+            cacheControl?.let { appendChecked(call, HttpHeaders.CacheControl, it.toHeaderValue()) }
             headers.forEach { (name, headerValue) ->
                 // レスポンスのフレーミングを壊すヘッダーは利用側が上書きできないようにする
                 if (name.lowercase() !in FRAMING_HEADERS) {
-                    call.response.headers.append(name, headerValue, safeOnly = false)
+                    appendChecked(call, name, headerValue)
                 }
             }
+        }
+
+        /**
+         * ヘッダー値に改行・NULが含まれていないことを確認してから付与する
+         *
+         * セキュリティ: ETagや追加ヘッダーは利用側がユーザー入力から組み立てることがあり、
+         * CR/LFが混入するとヘッダーインジェクションになりうる。エンジン側の無害化に依存せず、
+         * 危険な値はログに記録して付与しない（多層防御）。
+         */
+        private fun appendChecked(call: ApplicationCall, name: String, value: String) {
+            if (value.any { it == '\r' || it == '\n' || it == '\u0000' }) {
+                logger.warn("Dropped response header {} containing control characters", sanitizeForLog(name))
+                return
+            }
+            call.response.headers.append(name, value, safeOnly = false)
         }
 
         companion object {
@@ -329,7 +340,8 @@ class RouteExecutor(
         val classifier = responseType.classifier as? KClass<*> ?: Any::class
         // reifiedType にも縮退補正済みの Type を渡す（KType があるため通常は KType 側が使われるが、
         // suspend ハンドラーで javaType が Object となる縮退をここでも避けておく）
-        return TypeInfo(classifier, responseType.toResolvableJavaType(), responseType)
+        // Java型の解決はリフレクションを伴うため、登録単位でキャッシュした値を使う
+        return TypeInfo(classifier, metadata.responseJavaType, responseType)
     }
 
     /**
@@ -447,15 +459,15 @@ class RouteExecutor(
                 )
             }
 
-            is AuthError.PlayerOffline -> {
-                // パーミッション評価不能はパーミッション不足と区別してクライアントに返す
-                // （LuckPerms導入時はオフラインでも評価されるため、ここには到達しない）
-                logger.warn("PlayerOffline: permission check unresolvable for {}", sanitizeForLog(error.permission))
+            is AuthError.InsufficientScope -> {
+                // RFC 6750 3.1: スコープ不足は403 insufficient_scope（必要なスコープ名は公開情報なので返してよい）
+                logger.warn("InsufficientScope: required={}", error.required)
                 call.respond(
                     HttpStatusCode.Forbidden,
                     ErrorResponse(
-                        "Permission cannot be evaluated while the player is offline",
-                        code = "player_offline"
+                        "This endpoint requires the '${error.required}' scope",
+                        code = "insufficient_scope",
+                        details = mapOf("required_scope" to JsonPrimitive(error.required))
                     )
                 )
             }

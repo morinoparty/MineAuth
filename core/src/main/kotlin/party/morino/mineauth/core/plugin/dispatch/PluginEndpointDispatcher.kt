@@ -99,42 +99,49 @@ class PluginEndpointDispatcher(
         // tailcardのセグメントリストを取得（ルート直下アクセス時はnullになる）
         val segments = call.parameters.getAll("path") ?: emptyList()
 
-        // パスがマッチするエンドポイントを全メソッドから収集（404/405の判別のため）
-        val pathMatches = table.endpoints.mapNotNull { endpoint ->
-            matchPath(endpoint.pathSegments, segments)?.let { endpoint to it }
-        }
-        if (pathMatches.isEmpty()) {
+        // 末尾スラッシュのリクエストはKtorが空セグメントとして渡してくるため、
+        // 空文字をパラメータにバインドせず404にする（エンドポイントごとではなく1回だけ判定する）
+        if (segments.any { it.isEmpty() }) {
             respondNotFound(call)
             return
         }
 
-        val allowed = pathMatches.map { it.first.httpMethod.name }.distinct().sorted()
-        val rawMethod = call.request.local.method.value
+        // セグメント数が一致する候補だけを走査する（具体性の高い順に並んでいる）
+        val candidates = table.candidates(segments.size)
 
-        // OPTIONSはAllowヘッダー付きの204で応答する（RFC 9110）
-        if (rawMethod == "OPTIONS") {
-            call.response.headers.append(HttpHeaders.Allow, allowed.joinToString(", "))
-            call.respond(HttpStatusCode.NoContent)
-            return
-        }
-
-        // リクエストメソッドで絞り込み（パスは合っているがメソッド違いは405 + Allowヘッダー）
         // HEADはGETエンドポイントで処理する（レスポンスボディはエンジン側で破棄される）
-        val requestMethod = HttpMethodType.entries.find { it.name == rawMethod }
-            ?: if (rawMethod == "HEAD") HttpMethodType.GET else null
-        val methodMatches = pathMatches.filter { it.first.httpMethod == requestMethod }
-        if (requestMethod == null || methodMatches.isEmpty()) {
+        val rawMethod = call.request.local.method.value
+        val requestMethod = HTTP_METHODS[rawMethod] ?: if (rawMethod == "HEAD") HttpMethodType.GET else null
+
+        // ホットパス: パスとメソッドの両方が一致する最初の候補を採用する
+        // 候補は具体性の降順なので、最初の一致が最も具体的なルートになる
+        // 例: /shops/mine と /shops/{id} が両方マッチしたら /shops/mine を選ぶ
+        val hit = findEndpoint(candidates, segments, requestMethod)
+        if (hit == null) {
+            // コールドパス: 404 / 405 / OPTIONS の判別のためにパス一致のみのメソッド一覧を集める
+            val allowed = candidates
+                .filter { matchPath(it.pathSegments, segments) != null }
+                .map { it.httpMethod.name }
+                .distinct()
+                .sorted()
+            if (allowed.isEmpty()) {
+                respondNotFound(call)
+                return
+            }
             call.response.headers.append(HttpHeaders.Allow, allowed.joinToString(", "))
-            call.respond(
-                HttpStatusCode.MethodNotAllowed,
-                ErrorResponse("Method not allowed", code = "method_not_allowed")
-            )
+            if (rawMethod == "OPTIONS") {
+                // OPTIONSはAllowヘッダー付きの204で応答する（RFC 9110）
+                call.respond(HttpStatusCode.NoContent)
+            } else {
+                // パスは合っているがメソッド違いは405 + Allowヘッダー
+                call.respond(
+                    HttpStatusCode.MethodNotAllowed,
+                    ErrorResponse("Method not allowed", code = "method_not_allowed")
+                )
+            }
             return
         }
-
-        // 複数マッチ時はリテラルセグメントが多い（より具体的な）ルートを優先する
-        // 例: /shops/mine と /shops/{id} が両方マッチしたら /shops/mine を選ぶ
-        val (endpoint, pathParams) = methodMatches.maxByOrNull { specificity(it.first.pathSegments) }!!
+        val (endpoint, pathParams) = hit
 
         // OpenTelemetryのhttp.route（サーバースパン名）を実エンドポイントのテンプレートに補正する。
         // Ktorのルートは単一のキャッチオール（/api/v1/plugins/{namespace}/{path...}）のため、
@@ -212,49 +219,64 @@ class PluginEndpointDispatcher(
     }
 
     /**
+     * パスとHTTPメソッドの両方が一致する最初のエンドポイントを探す
+     *
+     * @param candidates 具体性の降順に並んだ候補（セグメント数は一致済み）
+     * @param segments リクエストのパスセグメント
+     * @param requestMethod リクエストのHTTPメソッド（未対応メソッドはnull）
+     * @return 一致したエンドポイントと抽出済みパスパラメータ、なければnull
+     */
+    private fun findEndpoint(
+        candidates: List<EndpointMetadata>,
+        segments: List<String>,
+        requestMethod: HttpMethodType?
+    ): Pair<EndpointMetadata, Map<String, String>>? {
+        if (requestMethod == null) return null
+        for (endpoint in candidates) {
+            // メソッド比較は安価なので先に行い、パス照合の回数を減らす
+            if (endpoint.httpMethod != requestMethod) continue
+            val params = matchPath(endpoint.pathSegments, segments) ?: continue
+            return endpoint to params
+        }
+        return null
+    }
+
+    /**
      * パスセグメントのマッチングを行う
      * リテラルは完全一致、パラメータは任意のセグメントにマッチする
      *
-     * @param pattern コンパイル済みのパスパターン
-     * @param segments リクエストのパスセグメント
+     * @param pattern コンパイル済みのパスパターン（セグメント数はリクエストと一致している前提）
+     * @param segments リクエストのパスセグメント（空セグメントは含まれない前提）
      * @return 抽出されたパスパラメータのMap、マッチしない場合null
      */
     private fun matchPath(pattern: List<PathSegment>, segments: List<String>): Map<String, String>? {
         if (pattern.size != segments.size) return null
 
-        // 末尾スラッシュのリクエストはKtorが空セグメントとして渡してくるため、
-        // 空文字をパラメータにバインドせず404にフォールスルーさせる
-        if (segments.any { it.isEmpty() }) return null
-
-        val params = mutableMapOf<String, String>()
+        // パラメータを含まないルートではMapを割り当てない
+        var params: MutableMap<String, String>? = null
         for (index in pattern.indices) {
             when (val segment = pattern[index]) {
                 is PathSegment.Literal -> {
                     if (segment.value != segments[index]) return null
                 }
                 is PathSegment.Param -> {
-                    params[segment.name] = segments[index]
+                    val map = params ?: HashMap<String, String>(4).also { params = it }
+                    map[segment.name] = segments[index]
                 }
             }
         }
-        return params
+        return params ?: emptyMap()
     }
-
-    /**
-     * ルートの具体性を表すスコアを生成する
-     * リテラル=1、パラメータ=0の文字列とすることで、
-     * 辞書順比較が「左寄りのリテラルを優先」という直感的なルールになる
-     *
-     * @param pattern コンパイル済みのパスパターン
-     * @return 比較可能な具体性スコア
-     */
-    private fun specificity(pattern: List<PathSegment>): String =
-        pattern.joinToString("") { if (it is PathSegment.Literal) "1" else "0" }
 
     /**
      * 404レスポンスを返す
      */
     private suspend fun respondNotFound(call: ApplicationCall) {
         call.respond(HttpStatusCode.NotFound, ErrorResponse("Not found", code = "not_found"))
+    }
+
+    companion object {
+        // HTTPメソッド名 -> 内部列挙値（リクエストごとの線形探索を避ける）
+        private val HTTP_METHODS: Map<String, HttpMethodType> = HttpMethodType.entries.associateBy { it.name }
     }
 }

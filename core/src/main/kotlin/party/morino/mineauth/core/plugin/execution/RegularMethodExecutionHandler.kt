@@ -4,9 +4,9 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import party.morino.mineauth.api.http.HttpError
+import kotlinx.coroutines.CancellationException
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import java.lang.reflect.InvocationTargetException
-import kotlin.reflect.jvm.javaMethod
 
 /**
  * 通常の（non-suspend）関数を実行するハンドラー
@@ -21,17 +21,17 @@ class RegularMethodExecutionHandler : MethodExecutionHandler {
         metadata: EndpointMetadata,
         resolvedParams: List<Any?>
     ): Either<ExecutionError, Any?> {
-        // Javaメソッドへのアクセスはnullになりえるのでチェックする
-        val javaMethod = metadata.method.javaMethod
+        // Javaメソッドは登録単位で解決・アクセス可能化済み（nullになりえるのでチェックする）
+        val javaMethod = metadata.javaMethod
             ?: return ExecutionError.MethodNotFound(metadata.method.name).left()
 
         return try {
-            // 非publicなハンドラークラス上のpublicメソッドにもアクセスできるようにする
-            javaMethod.isAccessible = true
-
             // 通常のメソッド呼び出し
             val result = javaMethod.invoke(metadata.handlerInstance, *resolvedParams.toTypedArray())
             result.right()
+        } catch (e: CancellationException) {
+            // コルーチンのキャンセル（クライアント切断等）は500に変換せず伝播させる
+            throw e
         } catch (e: HttpError) {
             // HttpErrorは専用のエラー型に変換する
             ExecutionError.HttpErrorThrown(
