@@ -117,6 +117,59 @@ They will appear in the OpenAPI spec as:
 }
 ```
 
+### Runtime Discovery via availableIntegrations
+
+The OpenAPI document describes the full shape of every endpoint, but a client that only needs to know *which* addons are mounted on a server can call the lighter-weight discovery endpoint instead:
+
+```
+GET /api/v1/plugins/availableIntegrations
+```
+
+It requires no authentication and returns two lists: `integrations`, the built-in integrations that MineAuth core detected on startup (for example `LuckPerms`), and `plugins`, one entry per namespace that an addon has registered through `MineAuthApi.register()`. Each plugin entry carries the owning plugin name, the mounted base path, and every endpoint under it together with its access requirements. Namespaces are sorted alphabetically and endpoints keep their registration order.
+
+```json
+{
+  "integrations": ["LuckPerms"],
+  "plugins": [
+    {
+      "namespace": "tickets",
+      "plugin": "MineAuth-addon-pure-tickets",
+      "basePath": "/api/v1/plugins/tickets",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/plugins/tickets/tickets",
+          "access": "AUTHENTICATED",
+          "permission": "tickets.staff.list",
+          "callers": ["USER", "SERVICE"]
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/plugins/tickets/tickets/{player}",
+          "access": "AUTHENTICATED",
+          "callers": ["USER", "SERVICE"]
+        }
+      ]
+    },
+    {
+      "namespace": "vault",
+      "plugin": "MineAuth-addon-vault",
+      "basePath": "/api/v1/plugins/vault",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/plugins/vault/balance/{player}",
+          "access": "AUTHENTICATED",
+          "callers": ["USER", "SERVICE"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`access` is either `PUBLIC` or `AUTHENTICATED`. For authenticated endpoints, `callers` lists the token types that may call the endpoint, and `permission` is present only when the endpoint declares a permission node. Because registrations are live, an addon that is disabled disappears from this list immediately, which makes the endpoint a convenient health check for dashboards that depend on a particular addon.
+
 ## Schema Generation
 
 MineAuth automatically generates JSON schemas from Kotlin data classes:
