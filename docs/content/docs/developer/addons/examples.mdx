@@ -208,14 +208,58 @@ Provides HTTP endpoints for PureTickets support ticket data (namespace: `tickets
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| GET | `/api/v1/plugins/tickets/tickets` | `@Authenticated(permission = "tickets.staff.list")` | List all tickets on the server (staff / service accounts) |
 | GET | `/api/v1/plugins/tickets/tickets/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's tickets |
 | GET | `/api/v1/plugins/tickets/tickets/{player}/{id}` | `@Authenticated` + `@PlayerParam` | Get ticket detail with interaction history |
 
-Both endpoints are declared with `@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])` and `@PlayerParam("player")`:
+The per-player endpoints are declared with `@Authenticated(callers = [CallerType.USER, CallerType.SERVICE])` and `@PlayerParam("player")`:
 - Users: `GET /tickets/me` to check own tickets
 - Service accounts: `GET /tickets/Notch` or `GET /tickets/<uuid>` to check any player's tickets
 
+### Listing All Tickets
+
+`GET /tickets` returns every ticket stored by PureTickets on this server, including tickets created by players who are currently offline. It is intended for staff triage, so it is guarded by PureTickets' own staff permission node `tickets.staff.list`: a user token is accepted only when the player holds that permission (evaluated through LuckPerms when the player is offline), while service tokens bypass the permission check as usual.
+
+The following query parameters are supported. All of them are optional.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Comma-separated list of `OPEN`, `CLAIMED`, `CLOSED` (case-insensitive). Defaults to all statuses. An unknown value returns `400 Bad Request`. |
+| `player` | string | Restrict the list to one player, given as a UUID or a player name. Names are resolved from the server's local player cache only, so a name that has never joined this server returns `404 Not Found`; use the UUID in that case. |
+| `cursor` | int | Exclusive cursor: only tickets whose ID is greater than this value are returned. Pass the `nextCursor` of the previous page. |
+| `limit` | int | Page size. Defaults to `50` and is clamped to `200`. Values of `0` or less return `400 Bad Request`. |
+
+Tickets are ordered by ID in ascending order. The response carries `total`, which is the number of tickets matching the filter regardless of paging, so a dashboard can show "12 open tickets" without walking every page.
+
+Because MineAuth runs inside a single Minecraft server, there is no server filter: query each server's MineAuth instance separately when running a network.
+
 ### Response Examples
+
+`GET /tickets?status=open,claimed&limit=2`:
+
+```json
+{
+  "tickets": [
+    {
+      "id": 1,
+      "player": "660e8400-e29b-41d4-a716-446655440000",
+      "status": "OPEN",
+      "message": "The door at spawn is broken",
+      "claimer": null
+    },
+    {
+      "id": 3,
+      "player": "770e8400-e29b-41d4-a716-446655440000",
+      "status": "CLAIMED",
+      "message": "Lost my items after a crash",
+      "claimer": "550e8400-e29b-41d4-a716-446655440000"
+    }
+  ],
+  "total": 5,
+  "nextCursor": "3",
+  "hasMore": true
+}
+```
 
 `GET /tickets/me`:
 
@@ -224,6 +268,7 @@ Both endpoints are declared with `@Authenticated(callers = [CallerType.USER, Cal
   "tickets": [
     {
       "id": 1,
+      "player": "660e8400-e29b-41d4-a716-446655440000",
       "status": "OPEN",
       "message": "The door at spawn is broken",
       "claimer": null

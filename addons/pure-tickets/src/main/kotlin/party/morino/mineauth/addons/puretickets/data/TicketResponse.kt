@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
  * チケット概要のレスポンス
  *
  * @property id チケットID
+ * @property player チケット作成者のUUID
  * @property status チケットの状態（OPEN / CLAIMED / CLOSED）
  * @property message チケットのメッセージ
  * @property claimer 対応者のUUID（未対応の場合はnull）
@@ -13,6 +14,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class TicketResponse(
     val id: Int,
+    val player: String,
     val status: String,
     val message: String?,
     val claimer: String?,
