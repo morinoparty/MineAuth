@@ -117,6 +117,30 @@ They will appear in the OpenAPI spec as:
 }
 ```
 
+### Built-in Endpoints under the `mineauth` Namespace
+
+Some player information does not depend on any third-party plugin, so MineAuth core registers it itself through the same handler machinery that addons use. These endpoints live under the reserved namespace `mineauth` (`/api/v1/plugins/mineauth`), appear in the OpenAPI document and in `availableIntegrations` like any addon, and follow the usual `@PlayerParam` rules: users may query themselves with `me`, while service tokens may query any player by UUID or name.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/plugins/mineauth/players/{player}` | `@Authenticated` + `@PlayerParam` | Last login, last seen, first join and total playtime of a player |
+
+`GET /api/v1/plugins/mineauth/players/me`:
+
+```json
+{
+  "uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Notch",
+  "online": false,
+  "firstPlayed": "2024-03-01T09:12:44.120Z",
+  "lastLogin": "2026-09-10T20:01:03.551Z",
+  "lastPlayed": "2026-09-10T22:15:48.907Z",
+  "playtimeSeconds": 184320
+}
+```
+
+All timestamps are ISO-8601 strings in UTC. `firstPlayed`, `lastLogin` and `lastPlayed` are `null` when the server has no record of them. `lastPlayed` is the moment the player was last seen on the server (it reflects the current time while the player is online) and is read from Paper's `OfflinePlayer#getLastSeen()`, because the legacy `getLastPlayed()` is deprecated with ambiguous semantics. `playtimeSeconds` is derived from the `PLAY_ONE_MINUTE` statistic, which Minecraft records in ticks. A player who has never joined the server returns `404 Not Found`.
+
 ### Runtime Discovery via availableIntegrations
 
 The OpenAPI document describes the full shape of every endpoint, but a client that only needs to know *which* addons are mounted on a server can call the lighter-weight discovery endpoint instead:
@@ -131,6 +155,19 @@ It requires no authentication and returns two lists: `integrations`, the built-i
 {
   "integrations": ["LuckPerms"],
   "plugins": [
+    {
+      "namespace": "mineauth",
+      "plugin": "MineAuth",
+      "basePath": "/api/v1/plugins/mineauth",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/plugins/mineauth/players/{player}",
+          "access": "AUTHENTICATED",
+          "callers": ["USER", "SERVICE"]
+        }
+      ]
+    },
     {
       "namespace": "tickets",
       "plugin": "MineAuth-addon-pure-tickets",
