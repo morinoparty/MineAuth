@@ -182,6 +182,15 @@ class MineAuthApiImpl : MineAuthApi, KoinComponent {
     }
 
     /**
+     * 現在有効な登録の一覧を名前空間順で取得する
+     * availableIntegrationsエンドポイントなど、登録状態の表示に使用する
+     *
+     * @return 名前空間 -> 有効なRegistration のスナップショット（名前空間の昇順）
+     */
+    fun activeRegistrations(): Map<String, MineAuthRegistrationImpl> =
+        activeByNamespace.toSortedMap()
+
+    /**
      * プラグインが所有する全Registrationを解除する
      * PluginDisableEventから呼び出される（クラスローダーリーク防止）
      *

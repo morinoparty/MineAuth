@@ -168,24 +168,77 @@ class CorePathsGenerator {
             "/api/v1/plugins/availableIntegrations" to PathItem(
                 get = Operation(
                     summary = "Get available integrations",
-                    description = "Returns a list of available addon integrations registered with MineAuth.",
+                    description = "Returns the built-in integrations available on this server " +
+                        "and the endpoints dynamically registered by addons via MineAuthApi.register().",
                     operationId = "get_available_integrations",
                     tags = listOf(TAG_PLUGINS),
                     responses = mapOf(
                         "200" to Response(
-                            description = "List of integration names",
+                            description = "Built-in integrations and registered addon endpoints",
                             content = mapOf(
-                                "application/json" to MediaType(
-                                    schema = Schema(
-                                        type = "array",
-                                        items = Schema(type = "string"),
-                                    )
-                                )
+                                "application/json" to MediaType(schema = availableIntegrationsSchema())
                             ),
                         ),
                     ),
                 ),
             ),
+        )
+    }
+
+    /**
+     * availableIntegrationsレスポンスのスキーマを生成する
+     * （AvailableIntegrationsResponse / RegisteredPluginData / RegisteredEndpointData に対応）
+     */
+    private fun availableIntegrationsSchema(): Schema {
+        val endpointSchema = Schema(
+            type = "object",
+            properties = mapOf(
+                "method" to Schema(type = "string", description = "HTTP method"),
+                "path" to Schema(type = "string", description = "Full path including the base path"),
+                "access" to Schema(
+                    type = "string",
+                    enum = listOf("PUBLIC", "AUTHENTICATED"),
+                    description = "Whether the endpoint requires authentication",
+                ),
+                "permission" to Schema(
+                    type = "string",
+                    nullable = true,
+                    description = "Required permission node (authenticated endpoints only; omitted when none)",
+                ),
+                "callers" to Schema(
+                    type = "array",
+                    nullable = true,
+                    items = Schema(type = "string", enum = listOf("USER", "SERVICE")),
+                    description = "Token types allowed to call the endpoint (authenticated endpoints only)",
+                ),
+            ),
+            required = listOf("method", "path", "access"),
+        )
+        val pluginSchema = Schema(
+            type = "object",
+            properties = mapOf(
+                "namespace" to Schema(type = "string", description = "URL namespace (e.g. tickets)"),
+                "plugin" to Schema(type = "string", description = "Name of the plugin that owns the namespace"),
+                "basePath" to Schema(type = "string", description = "Mounted base path (e.g. /api/v1/plugins/tickets)"),
+                "endpoints" to Schema(type = "array", items = endpointSchema),
+            ),
+            required = listOf("namespace", "plugin", "basePath", "endpoints"),
+        )
+        return Schema(
+            type = "object",
+            properties = mapOf(
+                "integrations" to Schema(
+                    type = "array",
+                    items = Schema(type = "string"),
+                    description = "Names of built-in integrations that are available (e.g. LuckPerms)",
+                ),
+                "plugins" to Schema(
+                    type = "array",
+                    items = pluginSchema,
+                    description = "Addon namespaces currently mounted, sorted by namespace",
+                ),
+            ),
+            required = listOf("integrations", "plugins"),
         )
     }
 
