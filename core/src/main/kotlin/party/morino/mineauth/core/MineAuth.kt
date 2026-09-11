@@ -18,6 +18,7 @@ import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.config.PluginDirectoryImpl
 import party.morino.mineauth.core.plugin.MineAuthApiImpl
 import party.morino.mineauth.core.plugin.PluginDisableListener
+import party.morino.mineauth.core.plugin.handler.PlayerActivityHandler
 import party.morino.mineauth.core.plugin.pluginModule
 import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.commands.OAuthClientCommand
@@ -35,6 +36,11 @@ import party.morino.mineauth.core.web.router.common.server.PluginInfoService
 import party.morino.mineauth.core.web.router.common.server.PluginInfoServiceImpl
 
 open class MineAuth: SuspendingJavaPlugin() {
+    companion object {
+        // MineAuth本体のエンドポイントを公開する名前空間（/api/v1/plugins/mineauth）
+        const val CORE_NAMESPACE = "mineauth"
+    }
+
     private lateinit var plugin: MineAuth
     override suspend fun onEnableAsync() {
         println("MineAuth is enabling...")
@@ -62,6 +68,16 @@ open class MineAuth: SuspendingJavaPlugin() {
         server.servicesManager.register(MineAuthApi::class.java, apiImpl, this, ServicePriority.Normal)
         // プラグイン無効化時の自動登録解除（クラスローダーリーク防止）
         server.pluginManager.registerEvents(PluginDisableListener(apiImpl), this)
+        registerCoreHandlers(apiImpl)
+    }
+
+    /**
+     * MineAuth本体が提供するエンドポイントを "mineauth" 名前空間に登録する
+     * アドオンと同じ登録機構を使うことで、認証・@PlayerParam解決・OpenAPI生成を共通化する
+     */
+    private fun registerCoreHandlers(apiImpl: MineAuthApiImpl) {
+        val registration = apiImpl.register(this, CORE_NAMESPACE, PlayerActivityHandler())
+        logger.info("Mounted ${registration.endpoints.size} core endpoint(s) under ${registration.basePath}")
     }
 
 

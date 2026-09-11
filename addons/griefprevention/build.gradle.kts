@@ -27,6 +27,9 @@ dependencies {
 
     compileOnly(libs.griefprevention)
     compileOnly(libs.vault.api)
+
+    testImplementation(libs.bundles.junit.jupiter)
+    testImplementation(kotlin("test"))
 }
 
 tasks {

@@ -152,7 +152,24 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/v1/plugins/griefprevention/claims/{player}` | `@Authenticated` + `@PlayerParam` | Get own or target player's claims |
+| GET | `/api/v1/plugins/griefprevention/claims/nearby` | `@Authenticated` | Search claims around a coordinate |
 | POST | `/api/v1/plugins/griefprevention/claims/purchase` | `@Authenticated` + `@Caller` | Purchase claim blocks (user tokens only) |
+
+### Searching Claims Around a Coordinate
+
+`GET /claims/nearby` returns every top-level claim that touches a sphere of the given radius around a point, ordered by distance. The distance is measured from the point to the nearest face of the claim's bounding box, so a point that lies inside a claim reports a distance of `0`. Subdivisions (child claims) are not indexed by GriefPrevention's chunk map and are therefore not returned. The endpoint accepts both user tokens and service tokens.
+
+All query parameters are required.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `world` | string | World name. An unknown world returns `404 Not Found`. |
+| `x` | number | X coordinate of the search center. Decimals are accepted. |
+| `y` | number | Y coordinate of the search center. The Y range of a claim usually spans from its lowest block to the world height, so `y` rarely affects the result but is honoured for cuboid claims. |
+| `z` | number | Z coordinate of the search center. Decimals are accepted. |
+| `radius` | int | Search radius in blocks. Must be between `1` and `maxNearbyRadius` (default `256`) from the addon's `config.json`; other values return `400 Bad Request`. |
+
+The candidate set is collected from the chunks overlapping the bounding cube of the radius and then filtered by the exact distance, so the cost grows with the square of the radius. Lower `maxNearbyRadius` on busy servers if the endpoint is exposed to many clients.
 
 ### Response Example
 
@@ -174,6 +191,42 @@ Provides HTTP endpoints for GriefPrevention claim data and claim block purchasin
   "accruedClaimBlocks": 5000,
   "bonusClaimBlocks": 1000,
   "remainingClaimBlocks": -4000
+}
+```
+
+`GET /claims/nearby?world=world&x=150&y=64&z=250&radius=100`:
+
+```json
+{
+  "world": "world",
+  "x": 150.0,
+  "y": 64.0,
+  "z": 250.0,
+  "radius": 100,
+  "claims": [
+    {
+      "claim": {
+        "claimId": 1,
+        "owner": "550e8400-e29b-41d4-a716-446655440000",
+        "world": "world",
+        "lesserCorner": { "world": "world", "x": 100, "y": -64, "z": 200 },
+        "greaterCorner": { "world": "world", "x": 200, "y": 320, "z": 300 },
+        "area": 10000
+      },
+      "distance": 0.0
+    },
+    {
+      "claim": {
+        "claimId": 7,
+        "owner": null,
+        "world": "world",
+        "lesserCorner": { "world": "world", "x": 220, "y": -64, "z": 250 },
+        "greaterCorner": { "world": "world", "x": 260, "y": 320, "z": 290 },
+        "area": 1600
+      },
+      "distance": 70.0
+    }
+  ]
 }
 ```
 
