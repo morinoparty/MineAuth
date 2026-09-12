@@ -12,6 +12,9 @@ out/
 public/dokka/
 public/openapi/
 
+# Generated mpm delegated repository index (built from docs/mpm/plugins/)
+public/mpm/
+
 # IDE
 .idea/
 .vscode/
