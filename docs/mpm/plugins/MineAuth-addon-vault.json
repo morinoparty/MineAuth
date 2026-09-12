@@ -1,0 +1,27 @@
+{
+  "$schema": "https://repo.mpm.nikomaru.dev/schema/plugin-info/v1.json",
+  "id": "MineAuth-addon-vault",
+  "source": "https://github.com/morinoparty/MineAuth",
+  "repositories": [
+    {
+      "type": "github",
+      "id": "morinoparty/MineAuth",
+      "fileNameRegex": "MineAuth-addon-vault-.*\\.jar$",
+      "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)",
+      "latest": {
+        "useUpstreamLabel": true,
+        "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
+      },
+      "beta": {
+        "useUpstreamLabel": true
+      }
+    }
+  ],
+  "dependencies": [
+    "MineAuth"
+  ],
+  "softDependencies": [
+    "Vault"
+  ],
+  "defaultVersion": "sync:MineAuth"
+}
