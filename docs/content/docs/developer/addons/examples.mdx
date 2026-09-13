@@ -360,6 +360,8 @@ Because MineAuth runs inside a single Minecraft server, there is no server filte
 
 PureTickets does not expose a public API for external plugins. This addon uses reflection to access internal services via Guice Injector. Compatible with PureTickets v5.x.
 
+This addon targets PureTickets v5.3.0 or later, which ships as `tickets-paper.jar` and registers on the server under the plugin name `Tickets` (older releases shipped `tickets-bukkit.jar` under the name `PureTickets` and are not supported). The addon therefore hard-depends on `Tickets`, and the mpm index (`docs/mpm/plugins/MineAuth-addon-pure-tickets.json`) lists `Tickets` as its soft dependency.
+
 ## VotingPlugin Addon
 
 Provides HTTP endpoints for VotingPlugin vote data (namespace: `voting`):
