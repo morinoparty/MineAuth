@@ -21,7 +21,7 @@
     "MineAuth"
   ],
   "softDependencies": [
-    "PureTickets"
+    "Tickets"
   ],
   "defaultVersion": "sync:MineAuth"
 }
