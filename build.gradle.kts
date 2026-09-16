@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
     alias(libs.plugins.ktlint)
-    id("dev.detekt") version "2.0.0-alpha.5"
+    id("dev.detekt") version "2.0.0-alpha.6"
 }
 
 val version: String by project
