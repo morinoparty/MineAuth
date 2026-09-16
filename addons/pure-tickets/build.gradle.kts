@@ -27,6 +27,9 @@ dependencies {
 
     // PureTicketsはMaven/JitPack非公開のため、ローカルjarを参照
     compileOnly(files("libs/tickets-paper.jar"))
+    // PureTicketsが実行時に(relocateせずに)ロードするGuiceのInjector型を参照するためcompileOnlyで追加
+    // バージョンはtickets-paper.jar内のdependencies.txtに合わせる
+    compileOnly(libs.guice)
 }
 
 tasks {
