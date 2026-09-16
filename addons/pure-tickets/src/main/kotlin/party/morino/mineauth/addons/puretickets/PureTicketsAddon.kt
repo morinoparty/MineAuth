@@ -3,6 +3,7 @@ package party.morino.mineauth.addons.puretickets
 import broccolai.tickets.api.service.storage.StorageService
 import broccolai.tickets.api.service.ticket.TicketService
 import broccolai.tickets.api.service.user.UserService
+import com.google.inject.Injector
 import org.bukkit.plugin.java.JavaPlugin
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -55,7 +56,7 @@ class PureTicketsAddon : JavaPlugin() {
      *
      * PureTicketsはAPIを外部公開していないため、リフレクションで
      * PaperPlatform.pureTickets → PureTickets.injector の順にアクセスし
-     * Guice InjectorのgetInstanceメソッドをリフレクションで呼び出して各サービスを取得する
+     * 取得したGuice Injectorから各サービスを取得する
      *
      * @return 初期化に成功した場合はtrue
      */
@@ -66,10 +67,10 @@ class PureTicketsAddon : JavaPlugin() {
             return false
         }
 
-        // リフレクションでGuice Injectorオブジェクトを取得（型はAny）
+        // リフレクションでGuice Injectorを取得
         val injector = extractInjector(pureTicketsPlugin) ?: return false
 
-        // Guice Injector.getInstance(Class)をリフレクションで呼び出す
+        // Injectorから各サービスを取得
         val ticketService = getServiceFromInjector<TicketService>(injector, TicketService::class.java) ?: return false
         val storageService = getServiceFromInjector<StorageService>(injector, StorageService::class.java) ?: return false
         val userService = getServiceFromInjector<UserService>(injector, UserService::class.java) ?: return false
@@ -90,20 +91,18 @@ class PureTicketsAddon : JavaPlugin() {
     }
 
     /**
-     * Guice Injectorからサービスインスタンスをリフレクションで取得する
+     * Guice Injectorからサービスインスタンスを取得する
      *
-     * Guiceクラスがclasspathに存在しないため、getInstance(Class)をリフレクションで呼び出す
+     * Guice は PureTickets が実行時にロードするものを compileOnly で参照しているため、
+     * 型付きで Injector.getInstance を直接呼び出せる
      *
-     * @param injector Guice Injectorオブジェクト
+     * @param injector Guice Injector
      * @param serviceClass 取得するサービスのクラス
-     * @return サービスインスタンス、取得失敗時はnull
+     * @return サービスインスタンス、取得失敗時（バインディング未定義など）はnull
      */
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> getServiceFromInjector(injector: Any, serviceClass: Class<T>): T? {
+    private fun <T> getServiceFromInjector(injector: Injector, serviceClass: Class<T>): T? {
         return runCatching {
-            // Injector.getInstance(Class<T>)をリフレクションで呼び出し
-            val getInstanceMethod = injector.javaClass.getMethod("getInstance", Class::class.java)
-            getInstanceMethod.invoke(injector, serviceClass) as T
+            injector.getInstance(serviceClass)
         }.getOrElse { e ->
             logger.severe("Failed to get ${serviceClass.simpleName} from PureTickets: ${e.message}")
             null
@@ -116,9 +115,9 @@ class PureTicketsAddon : JavaPlugin() {
      * アクセスパス: PaperPlatform → pureTickets(PureTickets) → injector(Guice Injector)
      *
      * @param plugin PureTicketsのプラグインインスタンス
-     * @return Guice Injectorオブジェクト（型はAny）、取得失敗時はnull
+     * @return Guice Injector、取得失敗時はnull
      */
-    private fun extractInjector(plugin: org.bukkit.plugin.Plugin): Any? {
+    private fun extractInjector(plugin: org.bukkit.plugin.Plugin): Injector? {
         return runCatching {
             // PaperPlatformからpureTicketsフィールドを取得
             val pureTicketsField = plugin.javaClass.getDeclaredField("pureTickets")
@@ -129,8 +128,8 @@ class PureTicketsAddon : JavaPlugin() {
             // PureTicketsからinjectorフィールドを取得
             val injectorField = pureTickets.javaClass.getDeclaredField("injector")
             injectorField.isAccessible = true
-            injectorField.get(pureTickets)
-                ?: throw IllegalStateException("injector field is null")
+            injectorField.get(pureTickets) as? Injector
+                ?: throw IllegalStateException("injector field is null or not a Guice Injector")
         }.getOrElse { e ->
             logger.severe("Failed to extract Guice Injector from PureTickets via reflection: ${e.message}")
             logger.severe("This addon requires PureTickets v5.x. Check compatibility if you see this error.")

@@ -88,6 +88,7 @@ exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version
 exposed-java-time = { group = "org.jetbrains.exposed", name = "exposed-java-time", version.ref = "exposed" }
 
 koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinVersion" }
+guice = { group = "com.google.inject", name = "guice", version = "7.0.0" }
 hikari = { group = "com.zaxxer", name = "HikariCP", version.ref = "hikari" }
 mysql-connector = { group = "com.mysql", name = "mysql-connector-j", version.ref = "mysql" }
 
