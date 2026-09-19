@@ -13,6 +13,10 @@ A complete example addon implementation is available in the MineAuth repository:
 
 This addon provides HTTP endpoints for QuickShop-Hikari shop data (namespace: `quickshop`):
 
+<Callout type="warn">
+The addon is compiled against the QuickShop-Hikari **6.3.0.0** API, which made `Shop` generic and replaced the `ShopType` enum with `IShopType`. Run it with QuickShop-Hikari 6.3.0.0 or later; older 6.2.x servers will fail at runtime with `NoSuchMethodError`.
+</Callout>
+
 | File | Description |
 |------|-------------|
 | `QuickShopHikariAddon.kt` | Main plugin class |

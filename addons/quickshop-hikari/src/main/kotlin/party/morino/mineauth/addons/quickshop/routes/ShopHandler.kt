@@ -2,7 +2,6 @@ package party.morino.mineauth.addons.quickshop.routes
 
 import com.ghostchu.quickshop.api.QuickShopAPI
 import com.ghostchu.quickshop.api.shop.Shop
-import com.ghostchu.quickshop.api.shop.ShopType
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,6 +38,14 @@ import party.morino.mineauth.api.model.bukkit.LocationData
 class ShopHandler : KoinComponent {
     private val quickShopAPI: QuickShopAPI by inject()
     private val config: QuickShopConfig by inject()
+
+    companion object {
+        /** QuickShop-Hikari 6.3.0.0 で ShopManager に登録される買取ショップ種別の識別子（BuyingType#identifier） */
+        private const val SHOP_TYPE_BUYING = "BUYING"
+
+        /** QuickShop-Hikari 6.3.0.0 で ShopManager に登録される販売ショップ種別の識別子（SellingType#identifier） */
+        private const val SHOP_TYPE_SELLING = "SELLING"
+    }
 
     /**
      * サーバー全体のショップ一覧をカーソルベースページネーションで取得する
@@ -132,8 +139,11 @@ class ShopHandler : KoinComponent {
         validateShopSetting(shop, setting)
 
         // 設定を適用
+        // price()/price(U) はスター投影下で型情報が失われるため、Double で扱える getPrice/setPrice を意図的に使う
         shop.price = setting.price
-        shop.shopType = if (setting.mode == ShopMode.BUY) ShopType.BUYING else ShopType.SELLING
+        // 6.3.0.0でShopType(enum)は廃止され、ShopManagerに登録済みのIShopTypeを識別子で解決する方式になった
+        val shopTypeId = if (setting.mode == ShopMode.BUY) SHOP_TYPE_BUYING else SHOP_TYPE_SELLING
+        shop.shopType(quickShopAPI.shopManager.shopTypeOrDefault(shopTypeId))
 
         // アイテムの個数を更新
         val pendingItemStack = shop.item.clone()
@@ -148,18 +158,18 @@ class ShopHandler : KoinComponent {
     /**
      * ShopをShopDataに変換する
      */
-    private suspend fun Shop.toShopData(): ShopData {
+    private suspend fun Shop<*, *>.toShopData(): ShopData {
         return ShopData(shopId = this.shopId, owner = if (this.isUnlimited) null else this.owner.uniqueId, mode = if (this.isSelling) ShopMode.SELL else ShopMode.BUY, stackingAmount = withContext(Dispatchers.minecraft) {
             this@toShopData.shopStackingAmount
         }, remaining = withContext(Dispatchers.minecraft) {
             getRemaining(this@toShopData)
-        }, location = LocationData.fromLocation(this.location), price = this.price, item = ItemStackData.fromItemStack(this.item))
+        }, location = LocationData.fromLocation(this.bukkitLocation()), price = this.price, item = ItemStackData.fromItemStack(this.item))
     }
 
     /**
      * ショップの残り在庫/空き容量を取得する
      */
-    private fun getRemaining(shop: Shop): Int {
+    private fun getRemaining(shop: Shop<*, *>): Int {
         return if (shop.isBuying) {
             shop.remainingSpace
         } else {
@@ -199,14 +209,14 @@ class ShopHandler : KoinComponent {
     /**
      * Shopを取得する（存在しない場合は404）
      */
-    private fun findShopOrThrow(shopId: Long): Shop {
+    private fun findShopOrThrow(shopId: Long): Shop<*, *> {
         return quickShopAPI.shopManager.getShop(shopId) ?: throw HttpError(HttpStatus.NOT_FOUND, "Shop not found")
     }
 
     /**
      * ショップのオーナーかどうかを検証する
      */
-    private fun ensureOwner(player: OfflinePlayer, shop: Shop) {
+    private fun ensureOwner(player: OfflinePlayer, shop: Shop<*, *>) {
         if (shop.owner.uniqueId != player.uniqueId) {
             throw HttpError(HttpStatus.FORBIDDEN, "You are not the owner of this shop")
         }
@@ -215,14 +225,14 @@ class ShopHandler : KoinComponent {
     /**
      * ShopからShopSettingを生成する
      */
-    private fun Shop.toShopSetting(): ShopSetting {
+    private fun Shop<*, *>.toShopSetting(): ShopSetting {
         return ShopSetting(price = this.price, mode = if (this.isBuying) ShopMode.BUY else ShopMode.SELL, perBulkAmount = this.shopStackingAmount)
     }
 
     /**
      * ショップ設定のバリデーション
      */
-    private fun validateShopSetting(shop: Shop, setting: ShopSetting) {
+    private fun validateShopSetting(shop: Shop<*, *>, setting: ShopSetting) {
         if (setting.price <= 0) {
             throw HttpError(HttpStatus.BAD_REQUEST, "Price must be greater than 0")
         }
