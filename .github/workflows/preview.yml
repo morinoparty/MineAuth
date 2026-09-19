@@ -213,8 +213,12 @@ jobs:
           retention-days: 1
 
   # S3 アップロードジョブ（JAR・Docs・レポート）
+  # Dependabot が起動した pull_request ではリポジトリの Actions secrets が渡されず
+  # Bitwarden のアクセストークンが空になって失敗するため、Dependabot の PR ではスキップする
+  # （後続の comment ジョブも needs 経由で自動的にスキップされる）
   upload-s3:
     needs: [setup, build-gradle, build-docs]
+    if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
