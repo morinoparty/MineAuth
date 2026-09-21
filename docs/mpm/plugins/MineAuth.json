@@ -1,0 +1,26 @@
+{
+  "$schema": "https://repo.mpm.nikomaru.dev/schema/plugin-info/v1.json",
+  "id": "MineAuth",
+  "license": "GPL-3.0-or-later",
+  "website": "https://modrinth.com/plugin/mineauth",
+  "source": "https://github.com/morinoparty/MineAuth",
+  "repositories": [
+    {
+      "type": "modrinth",
+      "id": "9LoU3yUC"
+    },
+    {
+      "type": "github",
+      "id": "morinoparty/MineAuth",
+      "fileNameRegex": "MineAuth-core_.*\\.jar$",
+      "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)",
+      "latest": {
+        "useUpstreamLabel": true,
+        "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
+      },
+      "beta": {
+        "useUpstreamLabel": true
+      }
+    }
+  ]
+}
