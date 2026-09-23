@@ -102,6 +102,10 @@ open class MineAuth: SuspendingJavaPlugin() {
     }
 
     override suspend fun onDisableAsync() {
+        // onEnable がKoin起動前に失敗した場合、後始末処理がKoinを参照して二次エラーになるためスキップする
+        if (getOrNull() == null) {
+            return
+        }
         WebServer.stopServer()
         FileUtils.closeDatabase()
     }
