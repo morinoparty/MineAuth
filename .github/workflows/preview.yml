@@ -298,6 +298,20 @@ jobs:
           ATTESTATION_URL: "${{ needs.build-gradle.outputs.attestation_url }}"
           LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
+          # バイト数を読みやすい単位に変換する (1 MiB 以上は MB、それ未満は KB)
+          human_size() {
+            local bytes
+            bytes=$(stat -c %s "$1")
+            if [ "$bytes" -ge 1048576 ]; then
+              awk -v b="$bytes" 'BEGIN { printf "%.1f MB", b / 1048576 }'
+            else
+              awk -v b="$bytes" 'BEGIN { printf "%.1f KB", b / 1024 }'
+            fi
+          }
+          JARS=./artifacts/gradle-artifacts/jars
+          CORE_SIZE=$(human_size "$JARS/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar")
+          API_SIZE=$(human_size "$JARS/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar")
+
           # 動的にaddonの行を生成
           ADDON_ROWS=""
           for jar in ./artifacts/gradle-artifacts/jars/${{ env.PROJECT_NAME }}-addon-*.jar; do
@@ -307,7 +321,7 @@ jobs:
               addon_name=$(echo "$jar_name" | sed "s/${{ env.PROJECT_NAME }}-addon-//" | sed "s/-${{ env.COMMIT_SHORT_SHA }}.jar//")
               # 表示名を整形 (quickshop-hikari -> QuickShop Hikari)
               display_name=$(echo "$addon_name" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
-              ADDON_ROWS="${ADDON_ROWS}| Addon: ${display_name} | [${jar_name}]($JAR_BASE_URL/${jar_name}) |
+              ADDON_ROWS="${ADDON_ROWS}| Addon: ${display_name} | [${jar_name}]($JAR_BASE_URL/${jar_name}) | $(human_size "$jar") |
           "
             fi
           done
@@ -317,10 +331,10 @@ jobs:
 
           ### 📦 Preview JARs
           Available for 7 days (until $LIMIT_TIME)
-          | Artifact | Download |
-          |----------|----------|
-          | Core | [${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar]($JAR_BASE_URL/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar) |
-          | API | [${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar]($JAR_BASE_URL/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar) |
+          | Artifact | Download | Size |
+          |----------|----------|------|
+          | Core | [${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar]($JAR_BASE_URL/${{ env.PROJECT_NAME }}-core-${{ env.COMMIT_SHORT_SHA }}.jar) | $CORE_SIZE |
+          | API | [${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar]($JAR_BASE_URL/${{ env.PROJECT_NAME }}-api-${{ env.COMMIT_SHORT_SHA }}.jar) | $API_SIZE |
           ${ADDON_ROWS}
           > 📜 **Attestation** (SLSA provenance): [Verify on GitHub]($ATTESTATION_URL) or run \`gh attestation verify <jar-file> --owner morinoparty\`
 
