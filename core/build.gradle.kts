@@ -79,28 +79,43 @@ publishing {
     }
 }
 
+// JARに同梱する依存。これ以外のruntimeClasspathの外部依存はplugin.ymlのlibrariesでPaperに取得させる
+fun isBundled(
+    group: String,
+    name: String,
+    version: String,
+): Boolean =
+    // apiモジュール
+    group == "party.morino" ||
+        // クラスローダー競合（ClassCastException）を防ぐためrelocateするもの
+        group == "io.ktor" ||
+        (group == "org.jetbrains.kotlinx" && name == "kotlinx-coroutines-slf4j") ||
+        // password4jはpsw4j.propertiesを読み込むためJARにバンドル
+        group == "com.password4j" ||
+        // cloudはMaven Centralにないスナップショット版を使う
+        group == "org.incendo" ||
+        group == "io.leangen.geantyref" ||
+        // スナップショット版（OpenTelemetry instrumentationなど）はMaven Centralにない
+        version.endsWith("-SNAPSHOT")
+
+// runtimeClasspathのうち同梱しない外部依存（KMPは解決済みの -jvm アーティファクトになる）
+val runtimeLibraries =
+    configurations.runtimeClasspath.map { configuration ->
+        configuration.incoming.artifacts.artifacts
+            .mapNotNull { it.id.componentIdentifier as? ModuleComponentIdentifier }
+            .filterNot { isBundled(it.group, it.module, it.version) }
+            .map { "${it.group}:${it.module}:${it.version}" }
+            .distinct()
+    }
+
 tasks {
     build {
         dependsOn("shadowJar")
     }
     shadowJar {
-        // Paperのlibrariesでダウンロードするので除外
+        // Paperのlibrariesでダウンロードするので同梱しない
         dependencies {
-            exclude(dependency("org.jetbrains.kotlin:.*:.*"))
-            // kotlinx-coroutines: coreとjdk8は除外、slf4jはrelocateするため含める
-            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:.*"))
-            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:.*"))
-            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:.*"))
-            exclude(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-bom:.*"))
-            // kotlinx-coroutines-slf4jは除外しない（relocateするため）
-            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*:.*"))
-            exclude(dependency("org.jetbrains.exposed:.*:.*"))
-            exclude(dependency("io.arrow-kt:.*:.*"))
-            // Ktor、Koinは除外しない（Paperのlibrariesで動かない）
-            // password4jはpsw4j.propertiesを読み込むためJARにバンドル
-            exclude(dependency("com.nimbusds:.*:.*"))
-            exclude(dependency("org.bouncycastle:.*:.*"))
-            exclude(dependency("com.fasterxml.uuid:.*:.*"))
+            exclude { !isBundled(it.moduleGroup, it.moduleName, it.moduleVersion) }
         }
 
         // クラスローダー競合を防ぐためにrelocate
@@ -133,6 +148,24 @@ tasks {
 }
 
 
+// Paperのlibrariesで取得させる依存のうち、compileOnlyで宣言しているもの
+val manualLibraries =
+    buildList {
+        // Paperが起動時にダウンロードするライブラリ
+        // Kotlin標準ライブラリ（shadowJarで除外しているため必須）
+        add("org.jetbrains.kotlin:kotlin-stdlib:${libs.plugins.kotlin.jvm.get().version}")
+        addAll(libs.bundles.coroutines.asString())
+        addAll(libs.bundles.exposed.asString())
+        // password4jはpsw4j.propertiesを読み込むためJARにバンドル（librariesに含めない）
+        add(libs.nimbus.jose.jwt.asString())
+        add(libs.bcpkix.jdk18on.asString())
+        add(libs.arrow.core.asString())
+        add(libs.kotlinx.serialization.json.asString())
+        add(libs.java.uuid.generator.asString())
+        add(libs.hikari.asString())
+        add(libs.mysql.connector.asString())
+    }
+
 sourceSets.main {
     resourceFactory {
         bukkitPluginYaml {
@@ -141,21 +174,12 @@ sourceSets.main {
             website = "https://github.com/morinoparty/MineAuth"
             main = "$group.mineauth.core.MineAuth"
             apiVersion = "1.20"
-            libraries = buildList {
-                // Paperが起動時にダウンロードするライブラリ
-                // Kotlin標準ライブラリ（shadowJarで除外しているため必須）
-                add("org.jetbrains.kotlin:kotlin-stdlib:${libs.plugins.kotlin.jvm.get().version}")
-                addAll(libs.bundles.coroutines.asString())
-                addAll(libs.bundles.exposed.asString())
-                // password4jはpsw4j.propertiesを読み込むためJARにバンドル（librariesに含めない）
-                add(libs.nimbus.jose.jwt.asString())
-                add(libs.bcpkix.jdk18on.asString())
-                add(libs.arrow.core.asString())
-                add(libs.kotlinx.serialization.json.asString())
-                add(libs.java.uuid.generator.asString())
-                add(libs.hikari.asString())
-                add(libs.mysql.connector.asString())
-            }
+            libraries.set(
+                runtimeLibraries.map { runtime ->
+                    // 手動で指定したもの（compileOnlyの依存やMySQLドライバ）を優先し、同じモジュールは重複させない
+                    (manualLibraries + runtime).distinctBy { it.substringBeforeLast(':') }
+                },
+            )
             // オフラインプレイヤーの権限評価に必須のため、ハード依存にする
             depend = listOf("LuckPerms")
         }
