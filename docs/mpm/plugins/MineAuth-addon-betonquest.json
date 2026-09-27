@@ -4,6 +4,19 @@
   "source": "https://github.com/morinoparty/MineAuth",
   "repositories": [
     {
+      "type": "modrinth",
+      "id": "9LoU3yUC",
+      "fileNameRegex": "MineAuth-addon-betonquest-.*\\.jar$",
+      "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)",
+      "latest": {
+        "useUpstreamLabel": true,
+        "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
+      },
+      "beta": {
+        "useUpstreamLabel": true
+      }
+    },
+    {
       "type": "github",
       "id": "morinoparty/MineAuth",
       "fileNameRegex": "MineAuth-addon-betonquest-.*\\.jar$",

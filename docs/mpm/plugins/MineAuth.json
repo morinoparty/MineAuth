@@ -7,7 +7,16 @@
   "repositories": [
     {
       "type": "modrinth",
-      "id": "9LoU3yUC"
+      "id": "9LoU3yUC",
+      "fileNameRegex": "MineAuth-core_.*\\.jar$",
+      "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)",
+      "latest": {
+        "useUpstreamLabel": true,
+        "versionModifier": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
+      },
+      "beta": {
+        "useUpstreamLabel": true
+      }
     },
     {
       "type": "github",
