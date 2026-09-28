@@ -1,7 +1,7 @@
 [versions]
 arrow = "2.2.3"
-paper = "26.2.build.119-stable"
-mccoroutine = "2.22.0"
+paper = "26.2.build.129-stable"
+mccoroutine = "2.23.0"
 cloud = "2.2.0-SNAPSHOT"
 cloudPaper = "2.0.1"
 koinVersion = "4.2.2"
@@ -12,7 +12,7 @@ exposed = "1.5.0"
 password4j = "1.8.4"
 javaUuidGenerator = "5.2.0"
 nimbus = "10.10"
-logback = "1.6.3"
+logback = "1.6.4"
 bouncycastle = "1.86"
 ktlint = "14.2.0"
 mavenPublish = "0.37.0"
@@ -109,7 +109,7 @@ ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", ver
 
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "3.1.0" }
-resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.3.0" }
+resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.4.0" }
 shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.4.20" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.4.20" }
