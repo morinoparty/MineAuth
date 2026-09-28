@@ -37,6 +37,24 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew build -x test
 
+      # plugin.yml の libraries は Paper がサーバー起動時に Maven Central のミラー (Google) から取得する。
+      # ミラーへの反映は Maven Central より遅れるため、未反映のバージョンが入ると起動できなくなる
+      - name: Check plugin libraries are available on Paper's Maven Central mirror
+        run: |
+          MIRROR=https://maven-central.storage-download.googleapis.com/maven2
+          missing=0
+          for coordinate in $(sed -n '/^libraries:/,/^[^- ]/p' core/build/resources/main/plugin.yml | sed -n 's/^- //p'); do
+            IFS=: read -r group artifact version <<< "$coordinate"
+            url="$MIRROR/${group//.//}/$artifact/$version/$artifact-$version.pom"
+            if curl -sfI "$url" > /dev/null; then
+              echo "OK      $coordinate"
+            else
+              echo "::error::$coordinate is not available on $MIRROR yet"
+              missing=1
+            fi
+          done
+          exit $missing
+
       - name: Set final commit status
         uses: myrotvorets/set-commit-status-action@master
         if: always()
