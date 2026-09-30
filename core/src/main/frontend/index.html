@@ -6,6 +6,12 @@
     <meta name="color-scheme" content="light" />
     <meta name="robots" content="noindex" />
     <title>Authorization</title>
+    <!-- Chlorophyll の fonts.sans（'Satoshi', 'GenJyuuGothicLP'）はフォントファイルを同梱しないため、docs と同じ配信元から読み込む -->
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@1&display=swap" />
+    <link rel="stylesheet" href="https://shogo82148.github.io/genjyuugothic-subsets/GenJyuuGothicL-P-Medium/GenJyuuGothicL-P-Medium.css" />
+    <link rel="stylesheet" href="https://shogo82148.github.io/genjyuugothic-subsets/GenJyuuGothicL-P-Bold/GenJyuuGothicL-P-Bold.css" />
     <!-- GET /authorize がビューモデルの JSON で置き換える。開発時（vite dev）は src/model.ts のサンプル値を使う -->
     <script id="mineauth-model" type="application/json">__MINEAUTH_MODEL__</script>
   </head>

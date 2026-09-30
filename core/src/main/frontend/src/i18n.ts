@@ -8,6 +8,8 @@ interface Messages {
   issuerLabel: string;
   permissionsLabel: string;
   signIn: string;
+  signInDescription: string;
+  passwordHint: string;
   usernameLabel: string;
   passwordLabel: string;
   showPassword: string;
@@ -22,9 +24,11 @@ const messages: Record<Locale, Messages> = {
     authorizeApp: "Authorize Application",
     requestingAccess: "is requesting access to your account.",
     issuerLabel: "Issuer",
-    permissionsLabel: "This application is requesting the following permissions:",
-    signIn: "Sign in to your account",
-    usernameLabel: "Your username",
+    permissionsLabel: "Requested permissions",
+    signIn: "Sign in",
+    signInDescription: "Enter your Minecraft username and MineAuth password.",
+    passwordHint: "No password yet? Run in game:",
+    usernameLabel: "Username",
     passwordLabel: "Password",
     showPassword: "Show password",
     hidePassword: "Hide password",
@@ -41,13 +45,15 @@ const messages: Record<Locale, Messages> = {
     authorizeApp: "アプリケーションの認可",
     requestingAccess: "があなたのアカウントへのアクセスを要求しています。",
     issuerLabel: "発行者",
-    permissionsLabel: "このアプリケーションは以下の権限を要求しています:",
-    signIn: "アカウントでサインイン",
+    permissionsLabel: "要求されている権限",
+    signIn: "サインイン",
+    signInDescription: "Minecraft のユーザー名と MineAuth のパスワードを入力してください。",
+    passwordHint: "パスワードはゲーム内で発行できます:",
     usernameLabel: "ユーザー名",
     passwordLabel: "パスワード",
     showPassword: "パスワードを表示",
     hidePassword: "パスワードを隠す",
-    authorize: "認証",
+    authorize: "認可する",
     loadError: "認可リクエストを読み込めませんでした。アプリケーションからやり直してください。",
     scopes: {
       openid: "基本的な識別情報へのアクセス",

@@ -14,7 +14,7 @@
     "typecheck": "panda codegen --clean && tsc --noEmit"
   },
   "dependencies": {
-    "@morinoparty/chlorophyll-react": "0.4.8",
+    "@morinoparty/chlorophyll-react": "0.4.9",
     "lucide-react": "0.562.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

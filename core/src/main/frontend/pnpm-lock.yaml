@@ -167,8 +167,8 @@ importers:
   .:
     dependencies:
       '@morinoparty/chlorophyll-react':
-        specifier: 0.4.8
-        version: 0.4.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: 0.4.9
+        version: 0.4.9(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       lucide-react:
         specifier: 0.562.0
         version: 0.562.0(react@19.3.0)
@@ -427,8 +427,8 @@ packages:
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
 
-  '@morinoparty/chlorophyll-react@0.4.8':
-    resolution: {integrity: sha512-ZY5++UUtlKLZ3v1KzIHXXJ72npCx6RqgY/2Pxnl1Si5RgUM+6NomEb5Lxa85aPmAu7qbzGIRblYnYO8ga66YqQ==, tarball: https://npm.pkg.github.com/download/@morinoparty/chlorophyll-react/0.4.8/d64e779be4bb25d0e1a5eacc639a80a954c506b4}
+  '@morinoparty/chlorophyll-react@0.4.9':
+    resolution: {integrity: sha512-Z4W8CtaaXZCDtPRyzCRGabsuoMZmtFbKbXU59x6PUjwOuOxgszFPWBtNtzfONaXVuwWaebTtRkPyFuUlbMHeBA==, tarball: https://npm.pkg.github.com/download/@morinoparty/chlorophyll-react/0.4.9/c17a8b8606af344c13cdf0cadc011fc71ec04919}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -2013,7 +2013,7 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
-  '@morinoparty/chlorophyll-react@0.4.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@morinoparty/chlorophyll-react@0.4.9(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@ark-ui/react': 5.39.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@react-three/fiber': 9.8.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(three@0.185.1)

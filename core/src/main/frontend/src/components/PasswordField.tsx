@@ -1,35 +1,28 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { css, cx } from "styled-system/css";
+import { Field } from "../chlorophyll";
 import type { Messages } from "../i18n";
-import { inputStyle, labelStyle } from "./fieldStyles";
+import { largeInput, largeLabel } from "./fieldSize";
 
 interface PasswordFieldProps {
   messages: Messages;
 }
 
-/**
- * 表示・非表示を切り替えられるパスワード入力欄
- *
- * TODO: Chlorophyll に Input / Field が追加されたら置き換える（https://github.com/morinoparty/Chlorophyll/issues/43）
- */
+/** 表示・非表示を切り替えられるパスワード入力欄 */
 export const PasswordField = ({ messages }: PasswordFieldProps) => {
   const [visible, setVisible] = useState(false);
 
   return (
-    <div>
-      <label htmlFor="password" className={labelStyle}>
-        {messages.passwordLabel}
-      </label>
+    <Field.Root required>
+      <Field.Label className={largeLabel}>{messages.passwordLabel}</Field.Label>
       <div className={css({ position: "relative" })}>
-        <input
-          id="password"
+        <Field.Input
           name="password"
           type={visible ? "text" : "password"}
           autoComplete="current-password"
           placeholder="••••••••"
-          required
-          className={cx(inputStyle, css({ pr: "10" }))}
+          className={cx(largeInput, css({ pr: "14" }))}
         />
         <button
           type="button"
@@ -38,7 +31,7 @@ export const PasswordField = ({ messages }: PasswordFieldProps) => {
           aria-pressed={visible}
           className={css({
             position: "absolute",
-            insetEnd: "2",
+            insetEnd: "3",
             top: "50%",
             transform: "translateY(-50%)",
             display: "flex",
@@ -53,9 +46,9 @@ export const PasswordField = ({ messages }: PasswordFieldProps) => {
             },
           })}
         >
-          {visible ? <EyeOff aria-hidden size={18} /> : <Eye aria-hidden size={18} />}
+          {visible ? <EyeOff aria-hidden size={22} /> : <Eye aria-hidden size={22} />}
         </button>
       </div>
-    </div>
+    </Field.Root>
   );
 };
