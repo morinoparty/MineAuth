@@ -45,34 +45,23 @@ class PlayerPasswordHasher(private val config: PasswordConfig) {
      * パスワードが保存済みハッシュと一致するかを検証する
      *
      * Argon2のパラメータはハッシュ文字列から復元するため、生成時のパラメータに関係なく検証できる。
-     * 現在のpepperで一致しない場合は、旧バージョンのpepperでも検証する。
      *
      * @param password 検証する平文のパスワード
      * @param hashedPassword 保存されているArgon2idハッシュ文字列
-     * @return 検証結果（旧pepperや旧パラメータで一致した場合は再ハッシュが必要）
+     * @return 検証結果（現在と異なるパラメータで一致した場合は再ハッシュが必要）
      */
     fun verify(password: String, hashedPassword: String): PasswordVerification {
         // 検証にはハッシュ生成時と同じパラメータが必要なので、ハッシュ文字列から復元する
         val function = Argon2Function.getInstanceFromHash(hashedPassword)
-        // 現在のpepperで一致した場合、パラメータが現在の設定と異なれば再ハッシュ対象にする
-        if (Password.check(password, hashedPassword).addPepper(pepper).with(function)) {
-            return if (function == argon2Function) {
-                PasswordVerification.MATCHED
-            } else {
-                PasswordVerification.MATCHED_NEEDS_REHASH
-            }
+        // pepperが異なる場合は一致しない
+        if (!Password.check(password, hashedPassword).addPepper(pepper).with(function)) {
+            return PasswordVerification.NOT_MATCHED
         }
-        // 旧バージョンのpepperで生成されたハッシュへのフォールバック
-        val matchedLegacy = LEGACY_PEPPERS.any { legacyPepper ->
-            Password.check(password, hashedPassword).addPepper(legacyPepper).with(function)
+        // パラメータが現在の設定と異なれば、現在の設定で再ハッシュさせる
+        return if (function == argon2Function) {
+            PasswordVerification.MATCHED
+        } else {
+            PasswordVerification.MATCHED_NEEDS_REHASH
         }
-        return if (matchedLegacy) PasswordVerification.MATCHED_NEEDS_REHASH else PasswordVerification.NOT_MATCHED
-    }
-
-    private companion object {
-        // 旧バージョンで使われていたpepper
-        // "MineAuth": psw4j.propertiesに記載していた固定値
-        // "": psw4j.propertiesが読み込まれずpepperなしで生成された場合
-        val LEGACY_PEPPERS = listOf("MineAuth", "")
     }
 }
