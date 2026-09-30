@@ -5,6 +5,9 @@ on:
     branches:
       - master
       - main
+  # PRタイトル・ブランチ名からラベルを付ける（autolabeler）
+  pull_request:
+    types: [ opened, reopened, synchronize, edited ]
 
 permissions:
   contents: write
@@ -17,5 +20,8 @@ jobs:
       - uses: release-drafter/release-drafter@b1476f6e6eb133afa41ed8589daba6dc69b4d3f5 # v6.1.0
         with:
           publish: false
+          # PRではラベル付けだけを行い、masterへのpushではドラフトの更新だけを行う
+          disable-releaser: ${{ github.event_name == 'pull_request' }}
+          disable-autolabeler: ${{ github.event_name == 'push' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

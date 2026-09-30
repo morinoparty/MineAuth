@@ -1,18 +1,23 @@
 [
     {
-      "name": "bug",
-      "color": "#FC2C2B",
-      "description": "種別: 不具合の修正"
+        "name": "breaking",
+        "color": "#B60205",
+        "description": "種別: 破壊的変更（メジャーバージョンを上げる）"
     },
     {
-      "name": "requirement",
-      "color": "#EF2816",
-      "description": "種別: 実装の必要"
+        "name": "bug",
+        "color": "#FC2C2B",
+        "description": "種別: 不具合の修正"
     },
     {
-      "name": "test",
-      "color": "#23E523",
-      "description": "種別: テスト"
+        "name": "requirement",
+        "color": "#EF2816",
+        "description": "種別: 実装の必要"
+    },
+    {
+        "name": "test",
+        "color": "#23E523",
+        "description": "種別: テスト"
     },
     {
         "name": "enhancement",
@@ -20,64 +25,63 @@
         "description": "種別: 機能の改善"
     },
     {
-      "name": "document",
-      "color": "#3B62BD",
-      "description": "種別: ドキュメントの変更"
+        "name": "document",
+        "color": "#3B62BD",
+        "description": "種別: ドキュメントの変更"
     },
     {
-      "name": "chore",
-      "color": "#E2601E",
-      "description": "種別: ツールやライブラリの変更"
+        "name": "chore",
+        "color": "#E2601E",
+        "description": "種別: ツールやライブラリの変更"
     },
     {
-      "name": "refactor",
-      "color": "#AFD38D",
-      "description": "種別: リファクタリング"
+        "name": "refactor",
+        "color": "#AFD38D",
+        "description": "種別: リファクタリング"
     },
     {
-      "name": "duplicate",
-      "color": "#CCCCCC",
-      "description": "種別: 重複"
+        "name": "duplicate",
+        "color": "#CCCCCC",
+        "description": "種別: 重複"
     },
     {
-      "name": "wontfix",
-      "color": "#CCCCCC",
-      "description": "種別: 対応しない"
+        "name": "wontfix",
+        "color": "#CCCCCC",
+        "description": "種別: 対応しない"
     },
     {
-      "name": "dependencies",
-      "color": "#5319E7",
-      "description": "種別: セキュリティアップデート"
+        "name": "dependencies",
+        "color": "#5319E7",
+        "description": "種別: セキュリティアップデート"
     },
     {
-      "name": "not-reviewed",
-      "color": "#F9C1CF",
-      "description": "未レビュー"
+        "name": "not-reviewed",
+        "color": "#F9C1CF",
+        "description": "未レビュー"
     },
     {
-      "name": "priority: critical",
-      "color": "#B60205",
-      "description": "重要度: 緊急（セキュリティ問題など）"
+        "name": "priority: critical",
+        "color": "#B60205",
+        "description": "重要度: 緊急（セキュリティ問題など）"
     },
     {
-      "name": "priority: high",
-      "color": "#D93F0B",
-      "description": "重要度: 高"
+        "name": "priority: high",
+        "color": "#D93F0B",
+        "description": "重要度: 高"
     },
     {
-      "name": "priority: medium",
-      "color": "#FBCA04",
-      "description": "重要度: 中"
+        "name": "priority: medium",
+        "color": "#FBCA04",
+        "description": "重要度: 中"
     },
     {
-      "name": "priority: low",
-      "color": "#0E8A16",
-      "description": "重要度: 低"
+        "name": "priority: low",
+        "color": "#0E8A16",
+        "description": "重要度: 低"
     },
     {
-      "name": "security",
-      "color": "#EE0701",
-      "description": "種別: セキュリティ関連"
+        "name": "security",
+        "color": "#EE0701",
+        "description": "種別: セキュリティ関連"
     }
 ]
-  
