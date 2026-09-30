@@ -1,51 +1,83 @@
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 categories:
+  - title: '💥 Breaking Changes'
+    labels:
+      - 'breaking'
+  - title: '🚀 Features'
+    labels:
+      - 'enhancement'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'bug'
+  - title: '🔒 Security'
+    labels:
+      - 'security'
+  - title: '📝 Documentation'
+    labels:
+      - 'document'
+  - title: '🧰 Maintenance'
+    labels:
+      - 'chore'
+      - 'refactor'
+      - 'test'
   - title: '⬆️ Dependencies'
     collapse-after: 3
     labels:
       - 'dependencies'
-  - title: '🚀 Features'
-    labels:
-      - 'feature'
-      - 'enhancement'
-  - title: '🐛 Bug Fixes'
-    labels:
-      - 'fix'
-      - 'bugfix'
-      - 'bug'
-  - title: '🧰 Maintenance'
-    label: 'chore'
 exclude-labels:
   - 'skip-changelog'
+# PRタイトル先頭のgitmojiとブランチ名からラベルを付ける
 autolabeler:
-  - label: 'documentation'
-    files:
-      - '*.md'
+  - label: 'breaking'
+    title:
+      - '/^💥/'
+  - label: 'enhancement'
     branch:
-      - '/docs{0,1}\/.+/'
+      - '/feature\/.+/'
+    title:
+      - '/^(✨|💄|⚡️)/'
   - label: 'bug'
     branch:
       - '/fix\/.+/'
     title:
-      - '/fix/i'
-  - label: 'enhancement'
+      - '/^(🐛|🚑️?)/'
+  - label: 'security'
+    title:
+      - '/^🔒️?/'
+  - label: 'document'
+    files:
+      - '*.md'
+      - 'docs/**'
     branch:
-      - '/feature\/.+/'
-    body:
-      - '/JIRA-[0-9]{1,4}/'
+      - '/docs{0,1}\/.+/'
+    title:
+      - '/^📝/'
+  - label: 'refactor'
+    title:
+      - '/^♻️/'
+  - label: 'chore'
+    title:
+      - '/^(🔧|🔨|👷|💚|🙈|🔥)/'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
+# ラベルごとのバージョンの上げ方（複数付いている場合は大きいほうが優先される）
 version-resolver:
   major:
     labels:
-      - 'major'
+      - 'breaking'
   minor:
     labels:
-      - 'minor'
+      - 'enhancement'
   patch:
     labels:
-      - 'patch'
+      - 'bug'
+      - 'security'
+      - 'document'
+      - 'chore'
+      - 'refactor'
+      - 'test'
+      - 'dependencies'
   default: patch
 template: |
   ## Changes

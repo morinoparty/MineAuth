@@ -3,8 +3,8 @@ import { defineConfig } from "@pandacss/dev";
 
 // この画面で使う Chlorophyll のレシピ。Chlorophyll のレシピはすべて staticCss: ["*"] なので、
 // 使わないものを取り除かないと全コンポーネントの全バリアントの CSS が HTML に埋め込まれてしまう
-const USED_RECIPES = ["button", "separator"];
-const USED_SLOT_RECIPES: string[] = [];
+const USED_RECIPES = ["button"];
+const USED_SLOT_RECIPES = ["field"];
 
 export default defineConfig({
   preflight: true,
@@ -14,7 +14,7 @@ export default defineConfig({
   include: [
     "./src/**/*.{ts,tsx}",
     // Chlorophyll のコンポーネントは css() / recipe をソースのまま持つので、使うものだけ静的解析の対象にする
-    "./node_modules/@morinoparty/chlorophyll-react/src/components/{separator,styled}/**/*.tsx",
+    "./node_modules/@morinoparty/chlorophyll-react/src/components/{field,styled}/**/*.tsx",
     "./node_modules/@morinoparty/chlorophyll-react/src/components/button.tsx",
   ],
   exclude: [],
@@ -38,6 +38,8 @@ export default defineConfig({
   },
   globalCss: {
     html: {
+      // プリセットの globalCss.html はここの html で丸ごと上書きされるため、フォントスタックを明示する
+      fontFamily: "sans",
       colorPalette: "mori",
       // Chlorophyll はライトテーマのみなので、OS がダークでもライトで表示する
       colorScheme: "light",
@@ -45,7 +47,7 @@ export default defineConfig({
     body: {
       bg: "colorPalette.bg",
       color: "fg",
-      textStyle: "sm",
+      textStyle: "md",
       WebkitFontSmoothing: "antialiased",
     },
   },

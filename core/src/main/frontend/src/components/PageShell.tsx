@@ -1,29 +1,28 @@
 import type { ReactNode } from "react";
 import { css } from "styled-system/css";
-import { Separator } from "../chlorophyll";
 
 interface PageShellProps {
-  logoUrl: string;
-  applicationName: string;
   children: ReactNode;
 }
 
-/** 画面中央のカードと、ロゴ・アプリケーション名のヘッダー */
-export const PageShell = ({ logoUrl, applicationName, children }: PageShellProps) => (
+/** 画面中央に大きなカードを置く外枠。背景には上部からブランドカラーを淡く敷く */
+export const PageShell = ({ children }: PageShellProps) => (
   <main
     className={css({
       minHeight: "100vh",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      px: "4",
-      py: "8",
+      px: { base: "4", md: "8" },
+      py: { base: "6", md: "12" },
+      backgroundImage:
+        "radial-gradient(ellipse 80% 60% at 50% -10%, var(--ma-colors-color-palette-4), transparent 70%)",
     })}
   >
     <div
       className={css({
         width: "full",
-        maxWidth: "4xl",
+        maxWidth: "6xl",
         bg: "bg.panel",
         borderWidth: "1px",
         borderColor: "border.subtle",
@@ -32,11 +31,6 @@ export const PageShell = ({ logoUrl, applicationName, children }: PageShellProps
         overflow: "hidden",
       })}
     >
-      <header className={css({ display: "flex", alignItems: "center", gap: "2", p: "4" })}>
-        <img src={logoUrl} alt="" className={css({ width: "8", height: "8" })} />
-        <span className={css({ textStyle: "xl", fontWeight: "semibold", color: "colorPalette.fg" })}>{applicationName}</span>
-      </header>
-      <Separator />
       {children}
     </div>
   </main>

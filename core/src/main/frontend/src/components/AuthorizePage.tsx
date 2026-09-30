@@ -1,5 +1,4 @@
 import { css } from "styled-system/css";
-import { Separator } from "../chlorophyll";
 import type { Messages } from "../i18n";
 import type { AuthorizeModel } from "../model";
 import { ClientInfo } from "./ClientInfo";
@@ -13,20 +12,25 @@ interface AuthorizePageProps {
 
 /**
  * OAuth2 認可画面。
- * 左にクライアントと要求スコープ、右にログインフォームを並べる（狭い画面では縦に積む）
+ * 左の色付きパネルにクライアントと要求スコープ、右にログインフォームを並べる（狭い画面では縦に積む）
  */
 export const AuthorizePage = ({ model, messages }: AuthorizePageProps) => (
-  <PageShell logoUrl={model.logoUrl} applicationName={model.applicationName}>
-    <div className={css({ display: "flex", flexDirection: { base: "column", md: "row" } })}>
-      <div className={css({ flex: "1", p: "6" })}>
+  <PageShell>
+    <div className={css({ display: "grid", gridTemplateColumns: { base: "1fr", md: "1fr 1fr" } })}>
+      <section
+        className={css({
+          bg: "colorPalette.2",
+          borderBottomWidth: { base: "1px", md: "0" },
+          borderEndWidth: { base: "0", md: "1px" },
+          borderColor: "border.subtle",
+          p: { base: "6", md: "14" },
+        })}
+      >
         <ClientInfo model={model} messages={messages} />
-      </div>
-      {/* 縦並びのときは横線、横並びのときは縦線で区切る */}
-      <Separator className={css({ display: { base: "block", md: "none" } })} />
-      <Separator orientation="vertical" className={css({ display: { base: "none", md: "block" } })} />
-      <div className={css({ flex: "1", p: "6" })}>
+      </section>
+      <section className={css({ p: { base: "6", md: "14" }, display: "flex", alignItems: "center" })}>
         <LoginForm model={model} messages={messages} />
-      </div>
+      </section>
     </div>
   </PageShell>
 );

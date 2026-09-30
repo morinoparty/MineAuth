@@ -1,27 +1,16 @@
 package party.morino.mineauth.core.utils
 
-import com.password4j.Argon2Function
-import com.password4j.Password
-import com.password4j.types.Argon2
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import party.morino.mineauth.core.file.data.PasswordConfig
 import kotlin.test.assertEquals
 
 /**
- * PlayerPasswordHasherのハッシュ化と旧pepperへのフォールバックのテスト
+ * PlayerPasswordHasherのハッシュ化と再ハッシュ判定のテスト
  */
 class PlayerPasswordHasherTest {
     private val config = PasswordConfig(pepper = "test-pepper")
     private val hasher = PlayerPasswordHasher(config)
-
-    // 旧バージョンのpsw4j.propertiesと同じパラメータで生成したハッシュ
-    private fun legacyHash(password: String, pepper: String): String =
-        Password.hash(password)
-            .addRandomSalt(64)
-            .addPepper(pepper)
-            .with(Argon2Function.getInstance(1024, 2, 1, 32, Argon2.ID, 19))
-            .result
 
     @Test
     @DisplayName("Matches a hash created with the current pepper")
@@ -36,10 +25,10 @@ class PlayerPasswordHasherTest {
     }
 
     @Test
-    @DisplayName("Requires rehash for legacy pepper hashes")
-    fun matchesLegacyHashes() {
-        assertEquals(PasswordVerification.MATCHED_NEEDS_REHASH, hasher.verify("password", legacyHash("password", "MineAuth")))
-        assertEquals(PasswordVerification.MATCHED_NEEDS_REHASH, hasher.verify("password", legacyHash("password", "")))
+    @DisplayName("Rejects a hash created with a different pepper")
+    fun rejectsDifferentPepper() {
+        val otherHash = PlayerPasswordHasher(config.copy(pepper = "MineAuth")).hash("password")
+        assertEquals(PasswordVerification.NOT_MATCHED, hasher.verify("password", otherHash))
     }
 
     @Test

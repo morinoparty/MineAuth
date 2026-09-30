@@ -7,7 +7,7 @@ enum class PasswordVerification {
     // 現在の設定で生成されたハッシュと一致した
     MATCHED,
 
-    // 一致したが、旧pepperまたは旧パラメータのハッシュだった（現在の設定で再ハッシュが必要）
+    // 一致したが、現在と異なるArgon2パラメータのハッシュだった（現在の設定で再ハッシュが必要）
     MATCHED_NEEDS_REHASH,
 
     // 一致しなかった

@@ -45,7 +45,7 @@ object OAuthService : AuthenticationService, KoinComponent {
         }
         when (passwordHasher.verify(password, hashedPassword)) {
             PasswordVerification.MATCHED -> Unit
-            // 旧pepper・旧パラメータのハッシュは現在の設定で再ハッシュして移行する
+            // 旧パラメータのハッシュは現在の設定で再ハッシュして移行する
             PasswordVerification.MATCHED_NEEDS_REHASH -> {
                 val rehashed = passwordHasher.hash(password)
                 withDatabaseSpan("user_auth_data", "update") {
