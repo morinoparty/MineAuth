@@ -1,6 +1,5 @@
 package party.morino.mineauth.core.commands
 
-import com.password4j.Password
 import kotlinx.coroutines.Dispatchers
 import org.apache.commons.lang3.RandomStringUtils
 import org.bukkit.command.CommandSender
@@ -11,10 +10,15 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.v1.jdbc.update
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import party.morino.mineauth.core.database.UserAuthData
+import party.morino.mineauth.core.utils.PlayerPasswordHasher
 
 @Command("mineauth|ma|mauth")
-class RegisterCommand {
+class RegisterCommand : KoinComponent {
+    private val passwordHasher: PlayerPasswordHasher by inject()
+
 
     @Command("register")
     suspend fun register(sender: CommandSender) {
@@ -34,7 +38,7 @@ class RegisterCommand {
         sender.sendRichMessage(
             "Password is  $password  <yellow><click:copy_to_clipboard:'$password'>Click to copy</click></yellow>"
         )
-        val hashed = Password.hash(password).addRandomSalt().addPepper().withArgon2().result
+        val hashed = passwordHasher.hash(password)
 
         newSuspendedTransaction(Dispatchers.IO) {
             UserAuthData.insert {
@@ -62,7 +66,7 @@ class RegisterCommand {
         sender.sendRichMessage(
             "Password is  $password. <yellow><click:copy_to_clipboard:'$password'>Click to copy</click></yellow>"
         )
-        val hashed = Password.hash(password).addRandomSalt().addPepper().withArgon2().result
+        val hashed = passwordHasher.hash(password)
         newSuspendedTransaction(Dispatchers.IO) {
             UserAuthData.update({ UserAuthData.uuid eq sender.uniqueId.toString() }) {
                 it[UserAuthData.password] = hashed

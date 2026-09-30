@@ -25,7 +25,10 @@ data class MineAuthConfig(
     val database: DatabaseConfig = DatabaseConfig.SQLite(),
 
     // Observability設定（メトリクス・トレーシング）
-    val observability: ObservabilityConfig = ObservabilityConfig()
+    val observability: ObservabilityConfig = ObservabilityConfig(),
+
+    // パスワードハッシュ設定
+    val password: PasswordConfig = PasswordConfig()
 )
 
 /**
