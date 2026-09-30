@@ -21,9 +21,6 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import io.opentelemetry.instrumentation.ktor.v3_0.KtorServerTelemetry
 import io.opentelemetry.instrumentation.micrometer.v1_5.OpenTelemetryMeterRegistry
 import org.slf4j.event.Level
-import io.ktor.server.velocity.*
-import org.apache.velocity.runtime.RuntimeConstants
-import org.apache.velocity.runtime.resource.loader.FileResourceLoader
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
@@ -174,11 +171,6 @@ internal fun Application.module() {
         json(get<kotlinx.serialization.json.Json>(kotlinx.serialization.json.Json::class.java))
     }
 
-    install(Velocity) {
-        setProperty(RuntimeConstants.RESOURCE_LOADERS, "file")
-        setProperty("resource.loader.file.class", FileResourceLoader::class.java.name)
-        setProperty("resource.loader.file.path", plugin.dataFolder.resolve("templates").absolutePath)
-    }
     val jwkProvider = JwkProviderBuilder(jwtConfigData.issuer).cached(10, 24, TimeUnit.HOURS).rateLimited(10, 1, TimeUnit.MINUTES).build()
     install(Authentication) {
         jwt(JwtCompleteCode.USER_TOKEN.code) {

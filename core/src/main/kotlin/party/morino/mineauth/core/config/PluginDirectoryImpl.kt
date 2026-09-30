@@ -31,6 +31,7 @@ class PluginDirectoryImpl : PluginDirectory, KoinComponent {
         return clientsDirectoryFile
     }
 
+    @Deprecated("Templates are no longer loaded from the plugin directory. The authorization page is bundled in the JAR.")
     override fun getTemplatesDirectory(): File {
         if (!templatesDirectoryFile.exists()) {
             templatesDirectoryFile.mkdirs()

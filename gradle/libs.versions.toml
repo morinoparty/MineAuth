@@ -51,7 +51,6 @@ ktor-serialization-kotlinxJson = { group = "io.ktor", name = "ktor-serialization
 ktor-server-auth = { group = "io.ktor", name = "ktor-server-auth", version.ref = "ktor" }
 ktor-server-authJwt = { group = "io.ktor", name = "ktor-server-auth-jwt", version.ref = "ktor" }
 ktor-network-tlsCertificates = { group = "io.ktor", name = "ktor-network-tls-certificates", version.ref = "ktor" }
-ktor-server-velocity = { group = "io.ktor", name = "ktor-server-velocity", version.ref = "ktor" }
 ktor-server-openapi = { group = "io.ktor", name = "ktor-server-openapi", version.ref = "ktor" }
 ktor-server-call-logging = { group = "io.ktor", name = "ktor-server-call-logging", version.ref = "ktor" }
 ktor-server-metrics-micrometer = { group = "io.ktor", name = "ktor-server-metrics-micrometer", version.ref = "ktor" }
@@ -124,6 +123,6 @@ securities = ["password4j", "nimbus-jose-jwt", "bcpkix-jdk18on"]
 coroutines = ["mccoroutine-bukkit-api", "mccoroutine-bukkit-core" , "kotlinx-coroutines-core"]
 exposed = ["exposed-core", "exposed-dao", "exposed-jdbc", "exposed-java-time"]
 ktor-client = ["ktor-client-core", "ktor-client-java", "ktor-client-logging", "ktor-client-contentNegotiation"]
-ktor-server = ["ktor-server-core", "ktor-server-jetty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "ktor-server-velocity", "logback-classic","ktor-server-call-logging", "ktor-server-metrics-micrometer", "micrometer-registry-prometheus"]
+ktor-server = ["ktor-server-core", "ktor-server-jetty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "logback-classic","ktor-server-call-logging", "ktor-server-metrics-micrometer", "micrometer-registry-prometheus"]
 junit-jupiter = ["junit-jupiter", "junit-platform-launcher"]
 koin-test = ["koin-test", "koin-test-junit5"]

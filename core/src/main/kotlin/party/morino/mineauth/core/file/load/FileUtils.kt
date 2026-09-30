@@ -5,7 +5,6 @@ import org.koin.core.component.inject
 import party.morino.mineauth.core.database.DatabaseConnector
 import party.morino.mineauth.core.file.load.config.ConfigLoader
 import party.morino.mineauth.core.file.load.resources.AssetsResourceLoader
-import party.morino.mineauth.core.file.load.resources.TemplatePageResourceLoader
 import party.morino.mineauth.core.file.utils.KeyUtils
 
 object FileUtils : KoinComponent {
@@ -23,7 +22,6 @@ object FileUtils : KoinComponent {
         // 3. リソースファイルの読み込み
         val loaders = listOf<FileLoaderInterface>(
             AssetsResourceLoader(),
-            TemplatePageResourceLoader()
         )
 
         loaders.forEach {

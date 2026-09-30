@@ -4,7 +4,6 @@ import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.server.velocity.*
 import io.opentelemetry.api.trace.Span
 import java.security.SecureRandom
 import org.koin.core.component.KoinComponent
@@ -12,6 +11,8 @@ import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.OAuthConfigData
+import party.morino.mineauth.core.web.page.AuthorizePageRenderer
+import party.morino.mineauth.core.web.router.auth.data.AuthorizePageModel
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthRouter.authorizedData
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationError
@@ -113,25 +114,26 @@ object AuthorizeRouter: KoinComponent {
             val normalizedScope = OAuthScope.normalize(scope)
             val scopeList = OAuthScope.parse(scope)
 
-            val model = mutableMapOf(
-                "clientId" to clientData.clientId,
-                "clientName" to clientData.clientName,
-                "redirectUri" to redirectUri,
-                "responseType" to "code",
-                "state" to state,
-                "scope" to normalizedScope,
-                "scopeList" to scopeList,
-                "issuer" to config.server.baseUrl,
-                "codeChallenge" to codeChallenge,
-                "codeChallengeMethod" to (codeChallengeMethod ?: "S256"),
-                "logoUrl" to oauthConfig.logoUrl,
-                "applicationName" to oauthConfig.applicationName,
+            val model = AuthorizePageModel(
+                clientId = clientData.clientId,
+                clientName = clientData.clientName,
+                redirectUri = redirectUri,
+                responseType = "code",
+                state = state,
+                scope = normalizedScope,
+                scopeList = scopeList,
+                issuer = config.server.baseUrl,
+                // validatePKCE を通過しているので null にはならない
+                codeChallenge = checkNotNull(codeChallenge),
+                codeChallengeMethod = codeChallengeMethod ?: "S256",
+                logoUrl = oauthConfig.logoUrl,
+                applicationName = oauthConfig.applicationName,
+                // nonceが存在する場合のみJSONに含まれる（OIDC対応）
+                nonce = nonce,
             )
-            // nonceが存在する場合はモデルに追加（OIDC対応）
-            nonce?.let { model["nonce"] = it }
 
-            // Velocityテンプレートを使用して認可画面を表示
-            call.respond(VelocityContent("authorize.vm", model as Map<String, Any>))
+            // ビューモデルを埋め込んだReactの認可画面を返す
+            call.respondText(AuthorizePageRenderer.render(model), ContentType.Text.Html)
         }
 
         // 認可リクエストを処理するエンドポイント
