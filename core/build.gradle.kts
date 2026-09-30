@@ -29,7 +29,7 @@ dependencies {
     compileOnly(kotlin("stdlib-jdk8"))
 
     // JARにバンドル（Paperのlibrariesでは動かない）
-    // password4jはpsw4j.propertiesを読み込むためJARにバンドル
+    // password4jは従来通りJARにバンドル（librariesでの動作は未検証）
     implementation(libs.password4j)
     implementation(libs.koin.core)
     implementation(libs.bundles.ktor.server)
@@ -90,7 +90,7 @@ fun isBundled(
         // クラスローダー競合（ClassCastException）を防ぐためrelocateするもの
         group == "io.ktor" ||
         (group == "org.jetbrains.kotlinx" && name == "kotlinx-coroutines-slf4j") ||
-        // password4jはpsw4j.propertiesを読み込むためJARにバンドル
+        // password4jは従来通りJARにバンドル（librariesでの動作は未検証）
         group == "com.password4j" ||
         // cloudはMaven Centralにないスナップショット版を使う
         group == "org.incendo" ||
@@ -204,7 +204,7 @@ val manualLibraries =
         add("org.jetbrains.kotlin:kotlin-stdlib:${libs.plugins.kotlin.jvm.get().version}")
         addAll(libs.bundles.coroutines.asString())
         addAll(libs.bundles.exposed.asString())
-        // password4jはpsw4j.propertiesを読み込むためJARにバンドル（librariesに含めない）
+        // password4jはJARにバンドルするためlibrariesに含めない
         add(libs.nimbus.jose.jwt.asString())
         add(libs.bcpkix.jdk18on.asString())
         add(libs.arrow.core.asString())
