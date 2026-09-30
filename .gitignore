@@ -132,3 +132,6 @@ docs/.docusaurus/*
 docs/static/dokka/*
 
 docs/static/openapi/openapi-mineauth.yaml
+
+# morinoparty 専用にカスタマイズした認可画面（ローカルでのみ管理する）
+brand/

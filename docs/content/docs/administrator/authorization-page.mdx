@@ -1,0 +1,48 @@
+---
+title: Customizing the Authorization Page
+description: Replace the OAuth2 authorization page with a custom design without rebuilding the plugin
+icon: Palette
+---
+
+MineAuth serves the authorization page (`GET /oauth2/authorize`) from an HTML file bundled in the plugin JAR. A server can replace this page with its own design by placing an HTML file in the plugin directory. The plugin does not need to be rebuilt.
+
+## Placing a Custom Page
+
+Put the custom page at the following path.
+
+```
+plugins/MineAuth/
+├── web/
+│   └── authorize.html   # Custom authorization page
+└── assets/              # Images and other files used by the page
+```
+
+When `web/authorize.html` exists, it is used instead of the bundled page. When the file is removed, the bundled page is used again.
+
+The file is checked on every request. It is read again only when its modification time or size changes, so an updated page is reflected without restarting the server. A message is written to the server log each time the file is loaded.
+
+## Requirements for the Custom Page
+
+The custom page must contain the following element exactly as written. MineAuth replaces it with the authorization request data encoded as JSON.
+
+```html
+<script id="mineauth-model" type="application/json">__MINEAUTH_MODEL__</script>
+```
+
+If the element is missing, MineAuth writes a warning to the server log and falls back to the bundled page. This prevents a broken page from being shown to players.
+
+The data format is the same as the bundled page. See [Authorization Page](/docs/contributer/frontend) for the fields and for how the bundled page reads them.
+
+The page should also satisfy the following points.
+
+- The login form must be submitted as a native `POST` to the current URL with the same fields as the bundled page, so that MineAuth can redirect to `redirect_uri`.
+- JavaScript and CSS should be inlined into the HTML. Only `web/authorize.html` is read, and the `web/` directory is not served over HTTP.
+- Images and other files can be placed in `assets/`. The directory is served at `/assets`, so a file at `assets/cover/image.avif` is available at `/assets/cover/image.avif`.
+
+<Callout type="warn">
+Files in `assets/` are public. Do not place the custom page or any private file there.
+</Callout>
+
+## Building a Custom Page
+
+The easiest way is to copy `core/src/main/frontend/` and change the design. `pnpm run build` outputs a single self-contained `dist/index.html`. Rename it to `authorize.html` and place it in `plugins/MineAuth/web/`.

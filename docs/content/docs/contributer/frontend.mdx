@@ -11,6 +11,7 @@ The OAuth2 authorization page (`GET /oauth2/authorize`) is a React application b
 - Gradle copies the file into the plugin JAR as `web/authorize.html`.
 - `AuthorizeRouter` performs every request validation first, then builds an `AuthorizePageModel` and passes it to `AuthorizePageRenderer`.
 - `AuthorizePageRenderer` replaces the `<script id="mineauth-model" type="application/json">` placeholder in the HTML with the model encoded as JSON. `<`, `>`, `&`, U+2028 and U+2029 are Unicode-escaped so that values such as `client_name` cannot break out of the script element.
+- When `plugins/MineAuth/web/authorize.html` exists and contains the placeholder, `AuthorizePageRenderer` uses it instead of the bundled HTML. See [Customizing the Authorization Page](/docs/administrator/authorization-page).
 - React reads the JSON on startup and renders the page. The login form is submitted as a native `POST` to the same URL, so `POST /oauth2/authorize` responds with the usual `302` redirect to `redirect_uri`.
 
 | Kotlin | TypeScript | Role |

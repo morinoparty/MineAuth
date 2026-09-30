@@ -69,4 +69,19 @@ class AuthorizePageRendererTest {
         assertEquals(malicious, Json.parseToJsonElement(embedded).jsonObject["clientName"]?.jsonPrimitive?.content)
         assertTrue(html.endsWith("</head><body></body>"))
     }
+
+    @Test
+    @DisplayName("Accepts an override page that contains the placeholder")
+    fun acceptsOverrideWithPlaceholder() {
+        assertEquals(template, AuthorizePageRenderer.validateOverride(template).getOrNull())
+    }
+
+    @Test
+    @DisplayName("Rejects an override page without the placeholder")
+    fun rejectsOverrideWithoutPlaceholder() {
+        // プレースホルダを書き換えてしまったHTMLは、ビューモデルを埋め込めないので使わない
+        val broken = template.replace("__MINEAUTH_MODEL__", "{}")
+
+        assertTrue(AuthorizePageRenderer.validateOverride(broken).isLeft())
+    }
 }
