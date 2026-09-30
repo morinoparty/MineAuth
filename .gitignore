@@ -1,3 +1,7 @@
+# .agent/build.sh の生成物（.agent/rules/*.md から生成する）
+AGENTS.md
+CLAUDE.md
+
 # User-specific stuff
 .idea/
 
