@@ -2,6 +2,11 @@ name: preview.yml
 on:
   pull_request:
     types: [opened, synchronize, closed]
+  # master でもビルドジョブを走らせ、PR が復元する Gradle / pnpm のキャッシュを書き込む
+  # （PR からのキャッシュは読み取り専用で、別ブランチの PR 同士では共有されないため）
+  push:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
@@ -87,15 +92,11 @@ jobs:
         run: |
           sed -i "s/VersionPlaceholder/${{ env.COMMIT_SHORT_SHA }}/" ./gradle.properties
 
-      - name: Run tests
+      # テストとビルドを 1 回の Gradle 実行にまとめる（起動・設定のコストを 2 回払わない）
+      # --continue でテストが失敗しても JAR などの成果物は作り、レポートを後続のステップで集計する
+      - name: Build and test with Gradle
         continue-on-error: true
-        run: ./gradlew test
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build with Gradle
-        continue-on-error: true
-        run: ./gradlew build -x test
+        run: ./gradlew build --continue
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -219,8 +220,10 @@ jobs:
         working-directory: docs
         run: pnpm install
 
+      # ルートの :dokkaGenerate だけを実行する（core と api を集約したもの）。
+      # タスク名だけを指定すると、docs に使わない各 addon の Dokka まで生成してしまう
       - name: Generate Dokka API documentation
-        run: ./gradlew dokkaGenerate
+        run: ./gradlew :dokkaGenerate
 
       - name: Build Fumadocs
         working-directory: docs
@@ -241,7 +244,8 @@ jobs:
   # （後続の comment ジョブも needs 経由で自動的にスキップされる）
   upload-s3:
     needs: [setup, build-gradle, build-docs]
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    # master への push はキャッシュを書き込むためだけに走らせるので、プレビューはアップロードしない
+    if: ${{ github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}

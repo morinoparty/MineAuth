@@ -31,8 +31,9 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
+      # ルートの :dokkaGenerate だけを実行する（各 addon の Dokka は docs に使わない）
       - name: Generate Dokka
-        run: ./gradlew dokkaGenerate
+        run: ./gradlew :dokkaGenerate
 
       - name: Upload Dokka artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
