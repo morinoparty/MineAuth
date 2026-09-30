@@ -39,6 +39,13 @@ class OIDCDiscoveryResponseTest {
         }
 
         @Test
+        @DisplayName("Always includes plugin scope")
+        fun includesPluginScope() {
+            val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com")
+            assertContains(response.scopesSupported, "plugin")
+        }
+
+        @Test
         @DisplayName("Includes email scope when enabled")
         fun includesEmailScopeWhenEnabled() {
             val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com", emailEnabled = true)

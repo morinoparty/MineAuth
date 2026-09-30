@@ -89,6 +89,8 @@ data class OIDCDiscoveryResponse(
             val scopes = buildList {
                 add("openid")
                 add("profile")
+                // プラグインAPIをユーザートークンで呼ぶには plugin スコープが必須（AuthenticationHandler で検査）
+                add("plugin")
                 if (emailEnabled) add("email")
                 if (rolesEnabled) add("roles")
             }
