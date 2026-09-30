@@ -16,11 +16,8 @@ description: File-based record data reference
     │   ├── privateKey.pem
     │   └── publicKey.pem
     │
-    ├─ assets/
-    │   └── lock.svg
-    │
-    └─ templates/
-        └── authorize.vm
+    └─ assets/
+        └── lock.svg
 ```
 
 ---
@@ -61,4 +58,5 @@ Files in the `generated/` directory are automatically generated on first startup
 | Directory | Description |
 |-----------|-------------|
 | assets/ | Static asset files (copied from resources/assets) |
-| templates/ | Velocity templates (copied from resources/templates) |
+
+The authorization page is bundled in the plugin JAR and is not copied to the plugin directory. See [Authorization Page](/docs/contributer/frontend) for details. A `templates/` directory left over from older versions is no longer read and can be deleted.

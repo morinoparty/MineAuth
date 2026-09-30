@@ -108,9 +108,57 @@ val runtimeLibraries =
             .distinct()
     }
 
+// 認可画面（React + Chlorophyll）のフロントエンド
+// @morinoparty/chlorophyll-react は GitHub Packages にあるため、pnpm の認証設定が必要（docs 参照）
+val frontendDir = layout.projectDirectory.dir("src/main/frontend")
+
+// 依存パッケージのインストール。lockfile が変わったときだけ実行する
+val installFrontend = tasks.register<Exec>("installFrontend") {
+    group = "frontend"
+    description = "Installs the frontend dependencies with pnpm"
+    workingDir(frontendDir)
+    commandLine("pnpm", "install", "--frozen-lockfile")
+    inputs.files(
+        frontendDir.file("package.json"),
+        frontendDir.file("pnpm-lock.yaml"),
+        frontendDir.file("pnpm-workspace.yaml"),
+        frontendDir.file(".npmrc"),
+    )
+    // node_modules 全体をフィンガープリントすると遅いため、pnpm がインストールのたびに書き出すメタデータで判定する
+    outputs.file(frontendDir.file("node_modules/.modules.yaml"))
+}
+
+// JS/CSS をインライン化した 1 枚の index.html を dist に出力する
+val buildFrontend = tasks.register<Exec>("buildFrontend") {
+    group = "frontend"
+    description = "Builds the authorization page into a single HTML file"
+    dependsOn(installFrontend)
+    workingDir(frontendDir)
+    commandLine("pnpm", "run", "build")
+    inputs.dir(frontendDir.dir("src"))
+    inputs.files(
+        frontendDir.file("index.html"),
+        frontendDir.file("package.json"),
+        frontendDir.file("pnpm-lock.yaml"),
+        frontendDir.file("panda.config.ts"),
+        frontendDir.file("vite.config.ts"),
+        frontendDir.file("postcss.config.cjs"),
+        frontendDir.file("tsconfig.json"),
+    )
+    outputs.dir(frontendDir.dir("dist"))
+}
+
 tasks {
     build {
         dependsOn("shadowJar")
+    }
+    processResources {
+        // ビルドした認可画面を web/authorize.html としてJARに同梱する（AuthorizePageRenderer が読み込む）
+        from(buildFrontend) {
+            include("index.html")
+            rename { "authorize.html" }
+            into("web")
+        }
     }
     shadowJar {
         // Paperのlibrariesでダウンロードするので同梱しない

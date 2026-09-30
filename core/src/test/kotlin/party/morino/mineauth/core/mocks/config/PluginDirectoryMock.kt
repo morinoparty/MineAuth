@@ -28,6 +28,7 @@ class PluginDirectoryMock : PluginDirectory {
         return clientsDirectory
     }
 
+    @Deprecated("Templates are no longer loaded from the plugin directory. The authorization page is bundled in the JAR.")
     override fun getTemplatesDirectory(): File {
         if (!templatesDirectory.exists()) {
             templatesDirectory.mkdirs()

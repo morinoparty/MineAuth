@@ -19,9 +19,11 @@ interface PluginDirectory {
     fun getClientsDirectory(): File
 
     /**
-     * Velocityテンプレートが格納されているディレクトリを取得する
+     * Velocityテンプレートが格納されていたディレクトリを取得する
+     * 認可画面はReactで描画しJARに同梱するようになったため、MineAuth自身はこのディレクトリを使用しない
      * @return テンプレートディレクトリ
      */
+    @Deprecated("Templates are no longer loaded from the plugin directory. The authorization page is bundled in the JAR.")
     fun getTemplatesDirectory(): File
 
     /**

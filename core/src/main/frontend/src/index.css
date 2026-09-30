@@ -1,0 +1,2 @@
+/* Panda CSS のカスケードレイヤー。中身は PostCSS プラグイン（@pandacss/dev/postcss）が panda.config.ts から生成する */
+@layer reset, base, tokens, recipes, utilities;

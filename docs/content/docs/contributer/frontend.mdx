@@ -1,0 +1,66 @@
+---
+title: Authorization Page
+description: How the React + Chlorophyll authorization page is built and served
+---
+
+The OAuth2 authorization page (`GET /oauth2/authorize`) is a React application built with the [Chlorophyll](https://github.com/morinoparty/chlorophyll) design system (`@morinoparty/chlorophyll-react`) and Panda CSS. Its source lives in `core/src/main/frontend/`.
+
+## Architecture
+
+- Vite builds the page into a single self-contained `dist/index.html` with all JavaScript and CSS inlined (`vite-plugin-singlefile`). No static asset route and no CDN are needed.
+- Gradle copies the file into the plugin JAR as `web/authorize.html`.
+- `AuthorizeRouter` performs every request validation first, then builds an `AuthorizePageModel` and passes it to `AuthorizePageRenderer`.
+- `AuthorizePageRenderer` replaces the `<script id="mineauth-model" type="application/json">` placeholder in the HTML with the model encoded as JSON. `<`, `>`, `&`, U+2028 and U+2029 are Unicode-escaped so that values such as `client_name` cannot break out of the script element.
+- React reads the JSON on startup and renders the page. The login form is submitted as a native `POST` to the same URL, so `POST /oauth2/authorize` responds with the usual `302` redirect to `redirect_uri`.
+
+| Kotlin | TypeScript | Role |
+|--------|------------|------|
+| `AuthorizePageModel` | `AuthorizeModel` (`src/model.ts`) | View model. Keep both definitions in sync. |
+| `AuthorizePageRenderer` | `readModel()` (`src/model.ts`) | Embeds and reads the model. |
+
+The `nonce` field is omitted from the JSON when the authorization request does not contain one.
+
+## Localization
+
+The page is displayed in Japanese when the browser language is Japanese and in English otherwise. Messages and scope descriptions are defined in `src/i18n.ts`. A scope without a description is displayed with its raw name.
+
+## Setting Up the Development Environment
+
+`@morinoparty/chlorophyll-react` is published to GitHub Packages, so pnpm needs a token with the `read:packages` scope. pnpm does not expand environment variables in credentials of the repository `.npmrc`, so the token has to be configured in the user-level `~/.npmrc`.
+
+```ini title="~/.npmrc"
+@morinoparty:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+A GitHub CLI token that has the `read:packages` scope can be reused.
+
+```bash
+export NODE_AUTH_TOKEN=$(gh auth token)
+```
+
+## Building
+
+The frontend is built automatically as part of the Gradle build.
+
+| Task | Description |
+|------|-------------|
+| `:core:installFrontend` | Runs `pnpm install --frozen-lockfile`. It is skipped while the lockfile is unchanged. |
+| `:core:buildFrontend` | Runs `pnpm run build` (Panda codegen, type check, Vite build). It is skipped while the sources are unchanged. |
+
+To preview the page with sample data, run the development server.
+
+```bash
+cd core/src/main/frontend
+pnpm dev
+```
+
+## Chlorophyll Usage
+
+- Components are imported one by one through `src/chlorophyll.ts` instead of the package barrel, which would pull in three.js and other heavy dependencies.
+- Only the recipes listed in `USED_RECIPES` / `USED_SLOT_RECIPES` in `panda.config.ts` are emitted. When a new Chlorophyll component is used, add its recipe there and its source directory to `include`.
+- Chlorophyll has no text input component, so the input fields in `src/components/fieldStyles.ts` follow the form control style of the Chlorophyll `Select` trigger.
+
+## CI
+
+The Gradle workflows set up pnpm and Node.js with `registry-url: https://npm.pkg.github.com` and pass `GITHUB_TOKEN` as `NODE_AUTH_TOKEN` with the `packages: read` permission. The `chlorophyll-react` package must grant read access to this repository in its package settings ("Manage Actions access").

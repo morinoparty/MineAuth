@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  # @morinoparty/chlorophyll-react（GitHub Packages）の取得に必要
+  packages: read
   id-token: write
   attestations: write
 
@@ -23,6 +25,23 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '25'
+
+      # 認可画面（core/src/main/frontend）は Gradle のビルド中に pnpm でビルドする
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        name: Install pnpm
+        with:
+          package_json_file: core/src/main/frontend/package.json
+          run_install: false
+
+      # registry-url と scope を渡すと、setup-node が //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN} を
+      # ユーザー単位の .npmrc に書く。pnpm はリポジトリの .npmrc にある認証情報の環境変数を展開しないため、こちらで渡す
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '26'
+          cache: pnpm
+          cache-dependency-path: core/src/main/frontend/pnpm-lock.yaml
+          registry-url: https://npm.pkg.github.com
+          scope: '@morinoparty'
 
       # Gradle キャッシュの設定（setup-gradle を使用）
       - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
@@ -44,6 +63,8 @@ jobs:
       # Core と Addons を並列ビルド
       - name: Build with Gradle (parallel)
         run: ./gradlew build -x test --parallel
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Maven CentralへAPIモジュールを公開
       - name: Publish API to Maven Central

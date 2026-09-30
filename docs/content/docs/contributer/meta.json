@@ -2,5 +2,5 @@
 	"title": "Contributer",
 	"icon": "Users",
 	"root": true,
-	"pages": ["endpoint", "reference", "telemetry", "record"]
+	"pages": ["endpoint", "reference", "telemetry", "frontend", "record"]
 }
