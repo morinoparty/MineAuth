@@ -3,6 +3,8 @@ import { css } from "styled-system/css";
 /**
  * テキスト入力欄の見た目。
  * Chlorophyll には入力欄のコンポーネントが無いため、Select のトリガーと同じ「フォームコントロール」の見た目に揃える
+ *
+ * TODO: Chlorophyll に Input / Field が追加されたら置き換える（https://github.com/morinoparty/Chlorophyll/issues/43）
  */
 export const inputStyle = css({
   width: "full",

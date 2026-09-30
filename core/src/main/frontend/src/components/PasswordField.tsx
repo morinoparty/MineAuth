@@ -8,7 +8,11 @@ interface PasswordFieldProps {
   messages: Messages;
 }
 
-/** 表示・非表示を切り替えられるパスワード入力欄 */
+/**
+ * 表示・非表示を切り替えられるパスワード入力欄
+ *
+ * TODO: Chlorophyll に Input / Field が追加されたら置き換える（https://github.com/morinoparty/Chlorophyll/issues/43）
+ */
 export const PasswordField = ({ messages }: PasswordFieldProps) => {
   const [visible, setVisible] = useState(false);
 
