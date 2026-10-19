@@ -1,6 +1,6 @@
 [versions]
 arrow = "2.2.3"
-paper = "26.2.build.132-stable"
+paper = "26.3.build.194-stable"
 mccoroutine = "2.23.0"
 cloud = "2.2.0-SNAPSHOT"
 cloudPaper = "2.0.1"
