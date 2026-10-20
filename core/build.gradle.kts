@@ -11,6 +11,18 @@ plugins {
 group = "party.morino"
 version = project.version.toString()
 
+// OpenTelemetry の計装ライブラリは古い opentelemetry-api-incubator を推移的に引き込む。
+// SDK と版がずれると OpenTelemetrySdkBuilder.build() で NoClassDefFoundError になるため、SDK と同じ版にそろえる
+val openTelemetryAlphaVersion = "${libs.versions.opentelemetry.asProvider().get()}-alpha"
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.opentelemetry" && requested.name == "opentelemetry-api-incubator") {
+            useVersion(openTelemetryAlphaVersion)
+            because("opentelemetry-sdk と同じ版にそろえる")
+        }
+    }
+}
+
 dependencies {
     implementation(project(":api"))
     compileOnly(libs.paper.api)
@@ -95,7 +107,9 @@ fun isBundled(
         // cloudはMaven Centralにないスナップショット版を使う
         group == "org.incendo" ||
         group == "io.leangen.geantyref" ||
-        // スナップショット版（OpenTelemetry instrumentationなど）はMaven Centralにない
+        // OpenTelemetry の Ktor 計装は relocate した io.ktor を参照するため同梱する
+        group == "io.opentelemetry.instrumentation" ||
+        // スナップショット版はMaven Centralにない
         version.endsWith("-SNAPSHOT")
 
 // runtimeClasspathのうち同梱しない外部依存（KMPは解決済みの -jvm アーティファクトになる）
