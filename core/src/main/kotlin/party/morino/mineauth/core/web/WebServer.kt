@@ -1,6 +1,5 @@
 package party.morino.mineauth.core.web
 
-import com.auth0.jwk.JwkProviderBuilder
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -30,6 +29,7 @@ import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
+import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
 import party.morino.mineauth.core.repository.AccountRepository
@@ -171,13 +171,11 @@ internal fun Application.module() {
         json(get<kotlinx.serialization.json.Json>(kotlinx.serialization.json.Json::class.java))
     }
 
-    val jwkProvider = JwkProviderBuilder(jwtConfigData.issuer).cached(10, 24, TimeUnit.HOURS).rateLimited(10, 1, TimeUnit.MINUTES).build()
     install(Authentication) {
         jwt(JwtCompleteCode.USER_TOKEN.code) {
             realm = jwtConfigData.realm
-            verifier(jwkProvider, jwtConfigData.issuer) {
-                acceptLeeway(3)
-            }
+            // ローカルの公開鍵で署名を検証し、自サーバーとtrustedIssuersのissを受け付ける
+            verifier(JwtProvider.bearerVerifier)
 
             validate { credential ->
                 // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）
@@ -224,9 +222,8 @@ internal fun Application.module() {
         // サービスアカウントトークンのJWT検証
         jwt(JwtCompleteCode.SERVICE_TOKEN.code) {
             realm = jwtConfigData.realm
-            verifier(jwkProvider, jwtConfigData.issuer) {
-                acceptLeeway(3)
-            }
+            // ローカルの公開鍵で署名を検証し、自サーバーとtrustedIssuersのissを受け付ける
+            verifier(JwtProvider.bearerVerifier)
 
             validate { credential ->
                 // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）

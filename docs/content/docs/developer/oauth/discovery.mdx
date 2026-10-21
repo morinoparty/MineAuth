@@ -24,7 +24,7 @@ GET /.well-known/openid-configuration
   "subject_types_supported": ["public"],
   "id_token_signing_alg_values_supported": ["RS256"],
   "scopes_supported": ["openid", "profile", "plugin", "email", "roles"],
-  "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+  "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
   "claims_supported": [
     "sub",
     "name",
@@ -44,7 +44,12 @@ GET /.well-known/openid-configuration
   "grant_types_supported": ["authorization_code", "refresh_token"],
   "code_challenge_methods_supported": ["S256"],
   "introspection_endpoint": "https://api.example.com/oauth2/introspect",
-  "end_session_endpoint": "https://api.example.com/oauth2/end_session"
+  "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+  "revocation_endpoint": "https://api.example.com/oauth2/revoke",
+  "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+  "end_session_endpoint": "https://api.example.com/oauth2/end_session",
+  "response_modes_supported": ["query"],
+  "request_uri_parameter_supported": false
 }
 ```
 
@@ -57,7 +62,7 @@ The `roles` scope and its claim are backed by [LuckPerms](https://luckperms.net/
 
 | Field | Description |
 |-------|-------------|
-| `issuer` | Token issuer identifier |
+| `issuer` | Issuer identifier. Always equal to `server.baseUrl` and to the `iss` claim of issued tokens |
 | `authorization_endpoint` | Authorization endpoint URL |
 | `token_endpoint` | Token endpoint URL |
 | `userinfo_endpoint` | UserInfo endpoint URL |
@@ -71,7 +76,12 @@ The `roles` scope and its claim are backed by [LuckPerms](https://luckperms.net/
 | `grant_types_supported` | Supported grant types |
 | `code_challenge_methods_supported` | PKCE code challenge methods |
 | `introspection_endpoint` | Token introspection endpoint URL (RFC 7662) |
+| `introspection_endpoint_auth_methods_supported` | Client authentication methods for the introspection endpoint. Only confidential clients can use it |
+| `revocation_endpoint` | Token revocation endpoint URL (RFC 7009) |
+| `revocation_endpoint_auth_methods_supported` | Client authentication methods for the revocation endpoint. Only confidential clients can use it |
 | `end_session_endpoint` | RP-Initiated Logout endpoint URL (OIDC) |
+| `response_modes_supported` | Supported response modes. The authorization code is returned in the query string |
+| `request_uri_parameter_supported` | Always `false`. The `request_uri` parameter is not supported (the specification treats an omitted value as `true`) |
 
 ## Configuration
 
@@ -85,7 +95,12 @@ URLs published in Discovery are generated from `server.baseUrl` in `config.json`
 }
 ```
 
-If using a reverse proxy, set the proxy URL here.
+If using a reverse proxy, set the proxy URL here, including any path prefix.
+For example, if the proxy forwards `https://api.example.com/main/*` to this server, set `baseUrl` to `https://api.example.com/main`.
+The Discovery document is then available at `https://api.example.com/main/.well-known/openid-configuration`, as required by OpenID Connect Discovery 1.0.
+
+The same value is used as the `iss` claim of ID tokens and access tokens, so clients that check the issuer can verify tokens.
+See [Server Settings](/docs/administrator/config/server) for running multiple servers.
 
 ## Related Endpoints
 

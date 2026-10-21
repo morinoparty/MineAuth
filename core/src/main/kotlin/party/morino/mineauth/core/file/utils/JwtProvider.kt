@@ -32,11 +32,24 @@ object JwtProvider : KoinComponent {
     /**
      * 標準JWTVerifier（署名 + issuer + 有効期限を検証）
      * トークンイントロスペクション、リフレッシュトークン検証等で使用
+     * issuerは自サーバーとtrustedIssuersのいずれかに一致すればよい（署名鍵は共有前提）
      */
     val verifier: JWTVerifier by lazy {
-        val jwtConfig = get<JWTConfigData>()
         JWT.require(algorithm)
-            .withIssuer(jwtConfig.issuer)
+            .withIssuer(*acceptedIssuers())
+            .build()
+    }
+
+    /**
+     * Bearerトークン認証用のJWTVerifier（標準Verifierに時刻ずれの許容を加えたもの）
+     *
+     * 以前はissuerのURLからJWKSをHTTPで取得していたが、鍵はローカルにあるため直接検証する
+     * ロードバランサ越しに自分自身へリクエストする必要がなくなり、起動直後や障害時も検証できる
+     */
+    val bearerVerifier: JWTVerifier by lazy {
+        JWT.require(algorithm)
+            .withIssuer(*acceptedIssuers())
+            .acceptLeeway(BEARER_LEEWAY_SECONDS)
             .build()
     }
 
@@ -48,10 +61,18 @@ object JwtProvider : KoinComponent {
      * acceptExpiresAtで期限切れを安全に許容しつつ、署名検証は常に実行する
      */
     val lenientVerifier: JWTVerifier by lazy {
-        val jwtConfig = get<JWTConfigData>()
         JWT.require(algorithm)
-            .withIssuer(jwtConfig.issuer)
+            .withIssuer(*acceptedIssuers())
             .acceptExpiresAt(Long.MAX_VALUE)
             .build()
     }
+
+    /**
+     * 検証時に受け付けるissuerの配列を返す
+     * JWT.require().withIssuer()がvarargを取るため配列に変換する
+     */
+    private fun acceptedIssuers(): Array<String> = get<JWTConfigData>().acceptedIssuers.toTypedArray()
+
+    // Bearerトークン検証で許容する時刻ずれ（秒）
+    private const val BEARER_LEEWAY_SECONDS = 3L
 }
