@@ -53,8 +53,9 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew build -x test
+      # テストも必須チェックに含める（-x test のままだと、テストが落ちても PR が緑になり Dependabot の自動マージも通ってしまう）
+      - name: Build and test with Gradle
+        run: ./gradlew build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
