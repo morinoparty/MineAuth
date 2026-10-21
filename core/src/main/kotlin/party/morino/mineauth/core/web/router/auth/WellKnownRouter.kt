@@ -5,6 +5,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.utils.KeyUtils
 import party.morino.mineauth.core.integration.luckperms.LuckPermsIntegration
@@ -16,6 +17,7 @@ import party.morino.mineauth.core.web.components.auth.OIDCDiscoveryResponse
  */
 object WellKnownRouter : KoinComponent {
     private val config: MineAuthConfig by inject()
+    private val jwtConfig: JWTConfigData by inject()
 
     fun Route.wellKnownRouter() {
         route(".well-known") {
@@ -26,8 +28,9 @@ object WellKnownRouter : KoinComponent {
                 val emailEnabled = config.server.emailFormat != null
                 // LuckPermsがインストールされている場合、rolesスコープを有効化
                 val rolesEnabled = LuckPermsIntegration.available
+                // トークンのissと同じ値をissuerとして使う（両者は一致している必要がある）
                 val response = OIDCDiscoveryResponse.fromBaseUrl(
-                    baseUrl = config.server.baseUrl,
+                    baseUrl = jwtConfig.issuer,
                     emailEnabled = emailEnabled,
                     rolesEnabled = rolesEnabled
                 )
