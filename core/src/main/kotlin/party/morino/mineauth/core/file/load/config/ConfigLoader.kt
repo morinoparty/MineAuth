@@ -79,12 +79,17 @@ class ConfigLoader : AbstractConfigLoader() {
      * 直接injectしている場合でも動作するようにする
      */
     private fun loadLegacyModules(config: MineAuthConfig) {
+        // issuerはDiscoveryと同じくbaseUrlから作る（OIDC Discovery 1.0 Section 4.3: issuerとissは一致必須）
+        val issuer = JWTConfigData.normalizeIssuer(config.server.baseUrl)
+        warnIfLegacyIssuerDiffers(config.jwt.issuer, issuer)
+
         // JWTConfigData への変換
         val jwtConfigData = JWTConfigData(
-            issuer = config.jwt.issuer,
+            issuer = issuer,
             realm = config.jwt.realm,
             privateKeyFile = config.jwt.privateKeyFile,
-            keyId = config.jwt.keyId
+            keyId = config.jwt.keyId,
+            trustedIssuers = config.jwt.trustedIssuers
         )
 
         // OAuthConfigData への変換
@@ -104,6 +109,22 @@ class ConfigLoader : AbstractConfigLoader() {
             single { oauthConfigData }
             single { webServerConfigData }
         })
+    }
+
+    /**
+     * 非推奨のjwt.issuerがbaseUrlと異なる場合に警告する
+     * 以前はjwt.issuerがトークンのissに使われていたため、値が残っていると設定者が混乱しやすい
+     *
+     * @param legacyIssuer config.jsonのjwt.issuer（未設定ならnull）
+     * @param issuer 実際に使うissuer
+     */
+    private fun warnIfLegacyIssuerDiffers(legacyIssuer: String?, issuer: String) {
+        if (legacyIssuer == null || JWTConfigData.normalizeIssuer(legacyIssuer) == issuer) return
+        plugin.logger.warning(
+            "jwt.issuer ($legacyIssuer) is deprecated and ignored. " +
+                "Tokens are issued with iss=$issuer (server.baseUrl). " +
+                "Add other servers' issuers to jwt.trustedIssuers to accept their tokens."
+        )
     }
 
     private companion object {

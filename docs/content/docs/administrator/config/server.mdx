@@ -20,10 +20,10 @@ description: HTTP server, SSL, JWT, and OAuth configuration
     "emailFormat": "<uuid>+<username>@example.com"  // Optional
   },
   "jwt": {
-    "issuer": "https://api.example.com/",
     "realm": "example.com",
     "privateKeyFile": "privateKey.pem",
-    "keyId": "a22c063a-a708-c801-6f92-49f6d53b89b2"
+    "keyId": "a22c063a-a708-c801-6f92-49f6d53b89b2",
+    "trustedIssuers": []  // Optional
   },
   "oauth": {
     "applicationName": "MineAuth",
@@ -36,7 +36,7 @@ description: HTTP server, SSL, JWT, and OAuth configuration
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `baseUrl` | string | Yes | Base URL for endpoints published in OIDC Discovery. Set to proxy URL if using a reverse proxy |
+| `baseUrl` | string | Yes | Public URL of this server. It is used as the OIDC `issuer`, the `iss` claim of issued tokens, and the prefix of every endpoint published in OIDC Discovery. Set it to the proxy URL, including any path prefix, if you use a reverse proxy |
 | `port` | number | Yes | HTTP server port number |
 | `ssl` | object | No | SSL configuration (optional) |
 | `emailFormat` | string | No | Email address format for OIDC email scope. Supports `<uuid>` and `<username>` placeholders |
@@ -70,10 +70,51 @@ Note: `email_verified` is always returned as `false` since these are generated a
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `issuer` | string | Yes | JWT token issuer identifier |
 | `realm` | string | Yes | JWT authentication realm name |
 | `privateKeyFile` | string | Yes | Private key file path (relative to generated/) |
 | `keyId` | string | Yes | JWK key ID (UUID format) |
+| `trustedIssuers` | string[] | No | Issuers of other MineAuth servers whose tokens this server also accepts. The servers must share the same signing key |
+| `issuer` | string | No | **Deprecated and ignored.** The issuer is always `server.baseUrl`. A warning is logged at startup if this value differs from `server.baseUrl` |
+
+:::warning[Issuer is derived from baseUrl]
+OpenID Connect requires the `issuer` in the Discovery document and the `iss` claim of the ID token to be identical.
+MineAuth therefore builds both from `server.baseUrl` (trailing slashes are removed).
+Clients that verify ID tokens, such as better-auth 1.7 or later, fail to log in if these values differ.
+
+After upgrading from a version that used `jwt.issuer`, tokens issued before the upgrade carry the old `iss` and are rejected, so users have to log in again once.
+:::
+
+## Running Multiple Servers Behind a Reverse Proxy
+
+When MineAuth runs on several Minecraft servers behind one domain, give each server its own `baseUrl` with a path prefix.
+Each server then becomes an independent OIDC issuer, and its Discovery document is served at `<baseUrl>/.well-known/openid-configuration`.
+
+```json5
+// main server
+{
+  "server": { "baseUrl": "https://api.example.com/main" },
+  "jwt": {
+    "keyId": "a22c063a-a708-c801-6f92-49f6d53b89b2",
+    "trustedIssuers": ["https://api.example.com/lobby"]
+  }
+}
+
+// lobby server
+{
+  "server": { "baseUrl": "https://api.example.com/lobby" },
+  "jwt": {
+    "keyId": "a22c063a-a708-c801-6f92-49f6d53b89b2",
+    "trustedIssuers": ["https://api.example.com/main"]
+  }
+}
+```
+
+To call the API of one server with a token issued by another server:
+
+1. Copy the same `generated/privateKey.pem` and `generated/publicKey.pem` to every server and use the same `keyId`.
+2. List the other servers' `baseUrl` values in `trustedIssuers`.
+
+MineAuth verifies Bearer tokens with its local public key, so it does not need to fetch the JWK Set over HTTP.
 
 ## OAuth Configuration
 

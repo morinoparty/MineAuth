@@ -56,8 +56,14 @@ data class ServerConfig(
  */
 @Serializable
 data class JwtConfig(
-    // JWTのissuer（通常はbaseUrlと同じ）
-    val issuer: String = "https://api.example.com",
+    // 非推奨: issuerは常にserver.baseUrlから作るため、この値は使わない
+    // OIDCではDiscoveryのissuerとトークンのissが一致している必要があり、別々に設定できると食い違うため
+    // 既存のconfig.jsonとの互換性のためにキーだけ残している
+    val issuer: String? = null,
+
+    // 自サーバー以外に受け付けるトークンのiss（署名鍵を共有する他サーバーのbaseUrl）
+    // 例: ["https://api.example.com/lobby", "https://api.example.com/res"]
+    val trustedIssuers: List<String> = emptyList(),
 
     // JWTのrealm
     val realm: String = "example.com",
