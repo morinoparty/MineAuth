@@ -138,7 +138,7 @@ class OAuthValidationTest {
             val clientData = ClientData.PublicClientData(
                 clientId = "test-client",
                 clientName = "Test Client",
-                redirectUri = "https://example.com/callback/"
+                redirectUris = listOf("https://example.com/callback/")
             )
 
             // パス以下の任意のURLも許可される
@@ -154,7 +154,7 @@ class OAuthValidationTest {
             val clientData = ClientData.PublicClientData(
                 clientId = "test-client",
                 clientName = "Test Client",
-                redirectUri = "https://example.com/callback"
+                redirectUris = listOf("https://example.com/callback")
             )
 
             // 末尾に"/"以降がある場合にマッチする
@@ -170,7 +170,7 @@ class OAuthValidationTest {
             val clientData = ClientData.PublicClientData(
                 clientId = "test-client",
                 clientName = "Test Client",
-                redirectUri = "https://\\w+-example.com/callback"
+                redirectUris = listOf("https://\\w+-example.com/callback")
             )
 
             // サブパスを含むURLにマッチする
@@ -179,12 +179,39 @@ class OAuthValidationTest {
         }
 
         @Test
+        @DisplayName("Matches any of multiple registered redirect URIs")
+        fun matchesAnyOfMultipleRedirectUris() {
+            val clientData = ClientData.PublicClientData(
+                clientId = "test-client",
+                clientName = "Test Client",
+                redirectUris = listOf("https://example.com/callback", "http://localhost:3000/callback")
+            )
+
+            // 2件目の登録URIに一致するリクエストも許可される
+            val result = OAuthValidation.validateRedirectUri(clientData, "http://localhost:3000/callback")
+            assertTrue(result)
+        }
+
+        @Test
+        @DisplayName("Rejects redirect URI matching none of multiple registered URIs")
+        fun rejectsWhenNoneOfMultipleRedirectUrisMatch() {
+            val clientData = ClientData.PublicClientData(
+                clientId = "test-client",
+                clientName = "Test Client",
+                redirectUris = listOf("https://example.com/callback", "http://localhost:3000/callback")
+            )
+
+            val result = OAuthValidation.validateRedirectUri(clientData, "https://malicious.com/callback")
+            assertFalse(result)
+        }
+
+        @Test
         @DisplayName("Invalid redirect URI")
         fun invalidRedirectUri() {
             val clientData = ClientData.PublicClientData(
                 clientId = "test-client",
                 clientName = "Test Client",
-                redirectUri = "https://example.com/callback"
+                redirectUris = listOf("https://example.com/callback")
             )
 
             val result = OAuthValidation.validateRedirectUri(clientData, "https://malicious.com/callback/x")

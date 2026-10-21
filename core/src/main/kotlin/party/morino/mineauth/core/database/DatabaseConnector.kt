@@ -3,8 +3,6 @@ package party.morino.mineauth.core.database
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.SchemaUtils
-import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
@@ -32,11 +30,8 @@ class DatabaseConnector : KoinComponent {
             is DatabaseConfig.MySQL -> connectMySQL(dbConfig)
         }
 
-        // テーブル作成（Accountsを先に作成 - OAuthClientsが参照するため）
-        // RevokedTokensはトークン失効管理用（RFC 7009準拠）
-        transaction {
-            SchemaUtils.create(UserAuthData, Accounts, OAuthClients, RevokedTokens, ServiceAccountTokens)
-        }
+        // テーブル作成と、旧バージョンのスキーマからのマイグレーション
+        DatabaseMigrator.migrate().forEach { plugin.logger.info("Database migration: $it") }
 
         plugin.logger.info("Database connected: ${config.database::class.simpleName}")
     }

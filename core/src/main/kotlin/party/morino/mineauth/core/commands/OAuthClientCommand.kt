@@ -6,10 +6,12 @@ import org.bukkit.entity.Player
 import org.incendo.cloud.annotations.Argument
 import org.incendo.cloud.annotations.Command
 import org.incendo.cloud.annotations.Permission
+import org.incendo.cloud.annotation.specifier.Greedy
 import party.morino.mineauth.core.dialog.OAuthClientCreateDialog
 import party.morino.mineauth.core.model.ClientId
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
+import party.morino.mineauth.core.utils.RedirectUriValidator
 
 /**
  * OAuthクライアント管理コマンド
@@ -103,7 +105,8 @@ class OAuthClientCommand {
                         "${client.clientId}</click></yellow> <dark_gray>(クリックでコピー)</dark_gray>"
                 )
                 sender.sendRichMessage("<gray>クライアント種別:</gray> <white>${client.clientType.value}</white>")
-                sender.sendRichMessage("<gray>リダイレクトURI:</gray> <white>${client.redirectUri}</white>")
+                sender.sendRichMessage("<gray>リダイレクトURI:</gray>")
+                client.redirectUris.forEach { uri -> sender.sendRichMessage("  <white>$uri</white>") }
                 sender.sendRichMessage("<gray>作成日時:</gray> <white>${client.createdAt}</white>")
                 sender.sendRichMessage("<gray>更新日時:</gray> <white>${client.updatedAt}</white>")
             }
@@ -176,6 +179,84 @@ class OAuthClientCommand {
                     "<gray>新しいシークレット:</gray> <yellow><click:copy_to_clipboard:'$newSecret'>" +
                         "$newSecret</click></yellow> <dark_gray>(クリックでコピー)</dark_gray>"
                 )
+            }
+        }
+    }
+
+    /**
+     * OAuthクライアントにリダイレクトURIを追加する
+     * URIには : や / が含まれるため、残りの引数をまとめて1つのURIとして受け取る
+     */
+    @Command("client redirect add <clientId> <uri>")
+    @Permission("mineauth.client.redirect")
+    suspend fun addRedirectUri(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId,
+        @Argument("uri") @Greedy uri: String
+    ) {
+        updateRedirectUris(sender, clientId) { current ->
+            // 既に登録済みなら一覧を変えずにエラーにする
+            if (uri in current) {
+                Either.Left("このリダイレクトURIは登録済みです: $uri")
+            } else {
+                RedirectUriValidator.validateAll(current + uri.trim())
+            }
+        }
+    }
+
+    /**
+     * OAuthクライアントからリダイレクトURIを削除する
+     * 認可できないクライアントが生まれないよう、最後の1件は削除できない
+     */
+    @Command("client redirect remove <clientId> <uri>")
+    @Permission("mineauth.client.redirect")
+    suspend fun removeRedirectUri(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId,
+        @Argument("uri") @Greedy uri: String
+    ) {
+        updateRedirectUris(sender, clientId) { current ->
+            when {
+                uri !in current -> Either.Left("このリダイレクトURIは登録されていません: $uri")
+                current.size == 1 -> Either.Left("最後のリダイレクトURIは削除できません")
+                else -> Either.Right(current - uri)
+            }
+        }
+    }
+
+    /**
+     * リダイレクトURIの一覧を読み出し、変更して保存する共通処理
+     *
+     * @param sender 実行者（結果を通知する）
+     * @param clientId 対象クライアント
+     * @param transform 現在の一覧から新しい一覧を作る関数（失敗時はエラーメッセージ）
+     */
+    private suspend fun updateRedirectUris(
+        sender: CommandSender,
+        clientId: ClientId,
+        transform: (List<String>) -> Either<String, List<String>>
+    ) {
+        val client = when (val found = OAuthClientRepository.findById(clientId.value)) {
+            is Either.Left -> {
+                sender.sendRichMessage("<red>クライアントが見つかりません: ${clientId.value}</red>")
+                return
+            }
+            is Either.Right -> found.value
+        }
+
+        val newUris = when (val transformed = transform(client.redirectUris)) {
+            is Either.Left -> {
+                sender.sendRichMessage("<red>${transformed.value}</red>")
+                return
+            }
+            is Either.Right -> transformed.value
+        }
+
+        when (val updated = OAuthClientRepository.update(clientId.value, redirectUris = newUris)) {
+            is Either.Left -> sender.sendRichMessage("<red>リダイレクトURIの更新に失敗しました</red>")
+            is Either.Right -> {
+                sender.sendRichMessage("<green>クライアント「${updated.value.clientName}」のリダイレクトURIを更新しました</green>")
+                updated.value.redirectUris.forEach { uri -> sender.sendRichMessage("  <white>$uri</white>") }
             }
         }
     }

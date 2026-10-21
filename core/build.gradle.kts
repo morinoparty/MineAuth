@@ -55,6 +55,8 @@ dependencies {
     // コルーチンのテスト用（runTest / TestScheduler）
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.bundles.exposed)
+    // マイグレーションのテスト用（本番ではPaperサーバーに同梱されたドライバを使う）
+    testImplementation(libs.sqlite.jdbc)
     testImplementation(libs.koin.core)
     testImplementation(libs.arrow.core)
     testImplementation(libs.bundles.ktor.server)

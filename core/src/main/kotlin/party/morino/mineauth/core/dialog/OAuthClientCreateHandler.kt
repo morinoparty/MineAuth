@@ -11,7 +11,7 @@ import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientCreationResult
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
-import java.net.URI
+import party.morino.mineauth.core.utils.RedirectUriValidator
 
 /**
  * OAuthクライアント作成処理を行うハンドラ
@@ -25,21 +25,23 @@ object OAuthClientCreateHandler : KoinComponent {
      * @param player 実行したプレイヤー
      * @param clientName クライアント名
      * @param clientType クライアント種別（"public" or "confidential"）
-     * @param redirectUri リダイレクトURI
+     * @param redirectUriInput リダイレクトURIの入力値（改行区切りで複数指定できる）
      */
     fun handleCreate(
         player: Player,
         clientName: String,
         clientType: String,
-        redirectUri: String
+        redirectUriInput: String
     ) {
         // コルーチンスコープで非同期処理を実行
         plugin.launch {
-            // バリデーション
-            val validationResult = validate(clientName, clientType, redirectUri)
-            if (validationResult is Either.Left) {
-                player.sendRichMessage("<red>${validationResult.value}</red>")
-                return@launch
+            // バリデーション（成功時は整形済みのリダイレクトURI一覧を得る）
+            val redirectUris = when (val validationResult = validate(clientName, clientType, redirectUriInput)) {
+                is Either.Left -> {
+                    player.sendRichMessage("<red>${validationResult.value}</red>")
+                    return@launch
+                }
+                is Either.Right -> validationResult.value
             }
 
             // プレイヤーのアカウントを取得または作成
@@ -59,7 +61,7 @@ object OAuthClientCreateHandler : KoinComponent {
             val result = OAuthClientRepository.create(
                 clientName = clientName,
                 clientType = type,
-                redirectUri = redirectUri,
+                redirectUris = redirectUris,
                 issuerAccountId = account.accountId
             )
 
@@ -73,12 +75,14 @@ object OAuthClientCreateHandler : KoinComponent {
 
     /**
      * 入力値のバリデーション
+     *
+     * @return 成功時は整形済みのリダイレクトURI一覧、失敗時はエラーメッセージ
      */
     private fun validate(
         clientName: String,
         clientType: String,
-        redirectUri: String
-    ): Either<String, Unit> {
+        redirectUriInput: String
+    ): Either<String, List<String>> {
         // クライアント名のチェック
         if (clientName.isBlank()) {
             return Either.Left("クライアント名を入力してください")
@@ -92,47 +96,8 @@ object OAuthClientCreateHandler : KoinComponent {
             return Either.Left("無効なクライアント種別です")
         }
 
-        // リダイレクトURIのチェック
-        if (redirectUri.isBlank()) {
-            return Either.Left("リダイレクトURIを入力してください")
-        }
-        if (!isValidRedirectUri(redirectUri)) {
-            return Either.Left("無効なリダイレクトURI形式です")
-        }
-
-        return Either.Right(Unit)
-    }
-
-    /**
-     * リダイレクトURIの形式チェック
-     * 認可時の検証（OAuthValidation.validateRedirectUri）が正規表現パターンを
-     * サポートしているため、通常のURIに加えて正規表現パターンも受け付ける
-     */
-    private fun isValidRedirectUri(uri: String): Boolean {
-        // 通常のURIとしてパースできればOK（最も一般的なケース）
-        val isPlainUri = try {
-            val parsed = URI(uri)
-            // スキームとホストが存在することを確認
-            parsed.scheme != null && parsed.host != null
-        } catch (e: Exception) {
-            false
-        }
-        if (isPlainUri) {
-            return true
-        }
-
-        // 正規表現パターンとして受け付ける場合は、オープンリダイレクトを防ぐため
-        // http(s)スキームで始まるパターンのみ許可する（先頭の^は任意）
-        if (!uri.removePrefix("^").startsWith("http")) {
-            return false
-        }
-        return try {
-            // 正規表現としてコンパイルできることを確認
-            Regex(uri)
-            true
-        } catch (e: Exception) {
-            false
-        }
+        // リダイレクトURIのチェック（1件ずつ検証する）
+        return RedirectUriValidator.parseAndValidate(redirectUriInput)
     }
 
     /**
@@ -174,7 +139,8 @@ object OAuthClientCreateHandler : KoinComponent {
         }
 
         player.sendRichMessage("")
-        player.sendRichMessage("<gray>リダイレクトURI:</gray> <white>${result.client.redirectUri}</white>")
+        player.sendRichMessage("<gray>リダイレクトURI:</gray>")
+        result.client.redirectUris.forEach { uri -> player.sendRichMessage("  <white>$uri</white>") }
         player.sendRichMessage("<gray>クライアント種別:</gray> <white>${result.client.clientType.value}</white>")
     }
 }

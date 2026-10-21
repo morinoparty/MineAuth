@@ -49,7 +49,7 @@ A dialog will appear where you can enter the following information:
 |------|-------------|
 | Client Name | Application name (e.g., "My Website") |
 | Client Type | `Public` or `Confidential` |
-| Redirect URI | OAuth callback URL (e.g., `http://localhost:3000/api/auth/callback/mineauth`) |
+| Redirect URI | OAuth callback URL (e.g., `http://localhost:3000/api/auth/callback/mineauth`). Enter one URI per line to register several (up to 10) |
 
 ### Client Types
 
@@ -80,6 +80,18 @@ Check detailed information of a specific client:
 /ma client info <clientId>
 ```
 
+### Manage Redirect URIs
+
+A client can have up to 10 redirect URIs. An authorization request is accepted when its `redirect_uri` matches any of them.
+Add or remove a redirect URI of an existing client:
+
+```
+/ma client redirect add <clientId> <uri>
+/ma client redirect remove <clientId> <uri>
+```
+
+The last remaining redirect URI cannot be removed.
+
 ### Delete Client
 
 Delete a client that is no longer needed:
@@ -109,6 +121,8 @@ Regenerating the secret will invalidate the old secret. Please update your appli
 | `/ma client create` | `mineauth.client.create` | Create OAuth client |
 | `/ma client list` | `mineauth.client.list` | List clients |
 | `/ma client info <id>` | `mineauth.client.info` | View client details |
+| `/ma client redirect add <id> <uri>` | `mineauth.client.redirect` | Add redirect URI |
+| `/ma client redirect remove <id> <uri>` | `mineauth.client.redirect` | Remove redirect URI |
 | `/ma client delete <id>` | `mineauth.client.delete` | Delete client |
 | `/ma client regenerate-secret <id>` | `mineauth.client.regenerate` | Regenerate secret |
 
