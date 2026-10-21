@@ -85,6 +85,7 @@ exposed-core = { group = "org.jetbrains.exposed", name = "exposed-core", version
 exposed-dao = { group = "org.jetbrains.exposed", name = "exposed-dao", version.ref = "exposed" }
 exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version.ref = "exposed" }
 exposed-java-time = { group = "org.jetbrains.exposed", name = "exposed-java-time", version.ref = "exposed" }
+exposed-migration-jdbc = { group = "org.jetbrains.exposed", name = "exposed-migration-jdbc", version.ref = "exposed" }
 
 koin-core = { group = "io.insert-koin", name = "koin-core", version.ref = "koinVersion" }
 guice = { group = "com.google.inject", name = "guice", version = "7.0.0" }
@@ -104,6 +105,7 @@ junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.r
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher" }
 koin-test = { group = "io.insert-koin", name = "koin-test", version.ref = "koinVersion" }
 koin-test-junit5 = { group = "io.insert-koin", name = "koin-test-junit5", version.ref = "koinVersion" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.50.3.0" }
 ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", version.ref = "ktor" }
 
 [plugins]
@@ -121,7 +123,7 @@ commands = ["cloud", "cloudPaper", "cloud-annotations", "cloud-kotlin-coroutines
 opentelemetry = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp", "opentelemetry-semconv", "opentelemetry-ktor", "opentelemetry-extension-kotlin", "opentelemetry-micrometer"]
 securities = ["password4j", "nimbus-jose-jwt", "bcpkix-jdk18on"]
 coroutines = ["mccoroutine-bukkit-api", "mccoroutine-bukkit-core" , "kotlinx-coroutines-core"]
-exposed = ["exposed-core", "exposed-dao", "exposed-jdbc", "exposed-java-time"]
+exposed = ["exposed-core", "exposed-dao", "exposed-jdbc", "exposed-java-time", "exposed-migration-jdbc"]
 ktor-client = ["ktor-client-core", "ktor-client-java", "ktor-client-logging", "ktor-client-contentNegotiation"]
 ktor-server = ["ktor-server-core", "ktor-server-jetty", "ktor-server-contentNegotiation", "ktor-serialization-kotlinxJson", "ktor-server-auth", "ktor-server-authJwt", "ktor-network-tlsCertificates", "logback-classic","ktor-server-call-logging", "ktor-server-metrics-micrometer", "micrometer-registry-prometheus"]
 junit-jupiter = ["junit-jupiter", "junit-platform-launcher"]

@@ -22,8 +22,7 @@ object OAuthClients : Table("oauth_clients") {
     // クライアントシークレットのArgon2idハッシュ（Publicクライアントの場合はNULL）
     val clientSecretHash = varchar("client_secret_hash", 255).nullable()
 
-    // リダイレクトURI（正規表現パターンをサポート）
-    val redirectUri = varchar("redirect_uri", 2048)
+    // リダイレクトURIは複数登録できるよう OAuthClientRedirectUris テーブルで管理する
 
     // 発行者アカウントID（Accountsテーブルへの外部キー）
     val issuerAccountId = varchar("issuer_account_id", 36)

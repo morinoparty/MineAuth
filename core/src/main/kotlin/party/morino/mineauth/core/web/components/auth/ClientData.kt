@@ -25,7 +25,8 @@ import party.morino.mineauth.core.database.OAuthClients as OAuthClientsTable
 sealed class ClientData : KoinComponent {
     abstract val clientId: String
     abstract val clientName: String
-    abstract val redirectUri: String
+    // 登録済みのリダイレクトURI（いずれかに一致すれば認可を許可する）
+    abstract val redirectUris: List<String>
 
     /**
      * Publicクライアント（シークレットなし）
@@ -34,7 +35,7 @@ sealed class ClientData : KoinComponent {
     data class PublicClientData(
         override val clientId: String,
         override val clientName: String,
-        override val redirectUri: String
+        override val redirectUris: List<String>
     ) : ClientData()
 
     /**
@@ -45,7 +46,7 @@ sealed class ClientData : KoinComponent {
     data class ConfidentialClientData(
         override val clientId: String,
         override val clientName: String,
-        override val redirectUri: String,
+        override val redirectUris: List<String>,
         val hashedClientSecret: String
     ) : ClientData() {
         /**
@@ -75,7 +76,7 @@ sealed class ClientData : KoinComponent {
                         ClientType.PUBLIC -> PublicClientData(
                             clientId = client.clientId,
                             clientName = client.clientName,
-                            redirectUri = client.redirectUri
+                            redirectUris = client.redirectUris
                         )
 
                         ClientType.CONFIDENTIAL -> {
@@ -85,7 +86,7 @@ sealed class ClientData : KoinComponent {
                                 ConfidentialClientData(
                                     clientId = client.clientId,
                                     clientName = client.clientName,
-                                    redirectUri = client.redirectUri,
+                                    redirectUris = client.redirectUris,
                                     hashedClientSecret = secretHash
                                 )
                             } else {
@@ -126,7 +127,7 @@ sealed class ClientData : KoinComponent {
                 ConfidentialClientData(
                     clientId = client.clientId,
                     clientName = client.clientName,
-                    redirectUri = client.redirectUri,
+                    redirectUris = client.redirectUris,
                     hashedClientSecret = "" // 検証後は不要
                 )
             }

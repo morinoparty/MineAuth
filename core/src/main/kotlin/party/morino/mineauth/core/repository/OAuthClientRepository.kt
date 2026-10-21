@@ -7,11 +7,14 @@ import com.fasterxml.uuid.Generators
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.v1.jdbc.update
+import party.morino.mineauth.core.database.OAuthClientRedirectUris
 import party.morino.mineauth.core.database.OAuthClients
 import party.morino.mineauth.core.utils.Argon2Utils
 import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
@@ -38,7 +41,8 @@ data class OAuthClientData(
     val clientId: String,
     val clientName: String,
     val clientType: ClientType,
-    val redirectUri: String,
+    // 登録順のリダイレクトURI（1件以上）
+    val redirectUris: List<String>,
     val issuerAccountId: String,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime
@@ -90,14 +94,14 @@ object OAuthClientRepository {
      *
      * @param clientName クライアント名
      * @param clientType クライアント種別（public または confidential）
-     * @param redirectUri リダイレクトURI
+     * @param redirectUris リダイレクトURI（登録順に保存する）
      * @param issuerAccountId 発行者のアカウントID
      * @return 成功時は作成されたクライアント（Confidentialの場合は平文シークレット付き）、失敗時はエラー
      */
     suspend fun create(
         clientName: String,
         clientType: ClientType,
-        redirectUri: String,
+        redirectUris: List<String>,
         issuerAccountId: String
     ): Either<OAuthClientError, OAuthClientCreationResult> = newSuspendedTransaction {
         try {
@@ -125,18 +129,19 @@ object OAuthClientRepository {
                 it[OAuthClients.clientName] = clientName
                 it[OAuthClients.clientType] = clientType.value
                 it[OAuthClients.clientSecretHash] = secretHash
-                it[OAuthClients.redirectUri] = redirectUri
                 it[OAuthClients.issuerAccountId] = issuerAccountId
                 it[OAuthClients.createdAt] = now
                 it[OAuthClients.updatedAt] = now
             }
+            // クライアントと同じトランザクションで登録し、URIのないクライアントが残らないようにする
+            insertRedirectUris(clientId, redirectUris)
 
             OAuthClientCreationResult(
                 client = OAuthClientData(
                     clientId = clientId,
                     clientName = clientName,
                     clientType = clientType,
-                    redirectUri = redirectUri,
+                    redirectUris = redirectUris,
                     issuerAccountId = issuerAccountId,
                     createdAt = now,
                     updatedAt = now
@@ -165,7 +170,7 @@ object OAuthClientRepository {
                     if (row == null) {
                         OAuthClientError.NotFound.left()
                     } else {
-                        row.toOAuthClientData().right()
+                        row.toOAuthClientData(findRedirectUris(clientId)).right()
                     }
                 } catch (e: Exception) {
                     OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
@@ -210,7 +215,7 @@ object OAuthClientRepository {
                     return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
                 }
 
-                row.toOAuthClientData().right()
+                row.toOAuthClientData(findRedirectUris(clientId)).right()
             } catch (e: Exception) {
                 OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
             }
@@ -222,13 +227,13 @@ object OAuthClientRepository {
      *
      * @param clientId クライアントID
      * @param clientName 新しいクライアント名（nullの場合は更新しない）
-     * @param redirectUri 新しいリダイレクトURI（nullの場合は更新しない）
+     * @param redirectUris 新しいリダイレクトURIの一覧（nullの場合は更新しない。指定時は全件を置き換える）
      * @return 成功時は更新されたクライアントデータ、失敗時はエラー
      */
     suspend fun update(
         clientId: String,
         clientName: String? = null,
-        redirectUri: String? = null
+        redirectUris: List<String>? = null
     ): Either<OAuthClientError, OAuthClientData> = newSuspendedTransaction {
         try {
             val existing = OAuthClients.selectAll()
@@ -241,8 +246,13 @@ object OAuthClientRepository {
 
             OAuthClients.update({ OAuthClients.clientId eq clientId }) {
                 clientName?.let { name -> it[OAuthClients.clientName] = name }
-                redirectUri?.let { uri -> it[OAuthClients.redirectUri] = uri }
                 it[updatedAt] = LocalDateTime.now()
+            }
+
+            // リダイレクトURIは順序ごと置き換えるため、全件削除してから登録し直す
+            redirectUris?.let { uris ->
+                OAuthClientRedirectUris.deleteWhere { OAuthClientRedirectUris.clientId eq clientId }
+                insertRedirectUris(clientId, uris)
             }
 
             // 更新後のデータを取得して返す
@@ -250,7 +260,7 @@ object OAuthClientRepository {
                 .where { OAuthClients.clientId eq clientId }
                 .first()
 
-            updated.toOAuthClientData().right()
+            updated.toOAuthClientData(findRedirectUris(clientId)).right()
         } catch (e: Exception) {
             OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
         }
@@ -301,11 +311,11 @@ object OAuthClientRepository {
     suspend fun findByIssuerAccountId(issuerAccountId: String): Either<OAuthClientError, List<OAuthClientData>> =
         newSuspendedTransaction {
             try {
-                val clients = OAuthClients.selectAll()
+                val rows = OAuthClients.selectAll()
                     .where { OAuthClients.issuerAccountId eq issuerAccountId }
-                    .map { it.toOAuthClientData() }
+                    .toList()
 
-                clients.right()
+                rows.withRedirectUris().right()
             } catch (e: Exception) {
                 OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
             }
@@ -343,10 +353,7 @@ object OAuthClientRepository {
      */
     suspend fun findAll(): Either<OAuthClientError, List<OAuthClientData>> = newSuspendedTransaction {
         try {
-            val clients = OAuthClients.selectAll()
-                .map { it.toOAuthClientData() }
-
-            clients.right()
+            OAuthClients.selectAll().toList().withRedirectUris().right()
         } catch (e: Exception) {
             OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
         }
@@ -370,13 +377,55 @@ object OAuthClientRepository {
     }
 
     /**
-     * ResultRowからOAuthClientDataに変換する
+     * リダイレクトURIを登録順（position）付きで一括登録する
+     * トランザクション内から呼び出すこと
      */
-    private fun ResultRow.toOAuthClientData(): OAuthClientData = OAuthClientData(
+    private fun insertRedirectUris(clientId: String, redirectUris: List<String>) {
+        OAuthClientRedirectUris.batchInsert(redirectUris.withIndex()) { (index, uri) ->
+            this[OAuthClientRedirectUris.clientId] = clientId
+            this[OAuthClientRedirectUris.position] = index
+            this[OAuthClientRedirectUris.redirectUri] = uri
+        }
+    }
+
+    /**
+     * 1クライアント分のリダイレクトURIを登録順で取得する
+     * トランザクション内から呼び出すこと
+     */
+    private fun findRedirectUris(clientId: String): List<String> =
+        OAuthClientRedirectUris.selectAll()
+            .where { OAuthClientRedirectUris.clientId eq clientId }
+            .orderBy(OAuthClientRedirectUris.position)
+            .map { it[OAuthClientRedirectUris.redirectUri] }
+
+    /**
+     * 複数クライアントの行にリダイレクトURIを付けて変換する
+     * クライアントごとにクエリを発行しないよう、URIは1回のクエリでまとめて取得する
+     * トランザクション内から呼び出すこと
+     */
+    private fun List<ResultRow>.withRedirectUris(): List<OAuthClientData> {
+        if (isEmpty()) return emptyList()
+        val clientIds = map { it[OAuthClients.clientId] }
+        val urisByClient = OAuthClientRedirectUris.selectAll()
+            .where { OAuthClientRedirectUris.clientId inList clientIds }
+            .orderBy(OAuthClientRedirectUris.position)
+            .groupBy(
+                keySelector = { it[OAuthClientRedirectUris.clientId] },
+                valueTransform = { it[OAuthClientRedirectUris.redirectUri] }
+            )
+        return map { row -> row.toOAuthClientData(urisByClient[row[OAuthClients.clientId]].orEmpty()) }
+    }
+
+    /**
+     * ResultRowからOAuthClientDataに変換する
+     *
+     * @param redirectUris 別テーブルから取得したリダイレクトURI
+     */
+    private fun ResultRow.toOAuthClientData(redirectUris: List<String>): OAuthClientData = OAuthClientData(
         clientId = this[OAuthClients.clientId],
         clientName = this[OAuthClients.clientName],
         clientType = ClientType.fromValue(this[OAuthClients.clientType]) ?: ClientType.PUBLIC,
-        redirectUri = this[OAuthClients.redirectUri],
+        redirectUris = redirectUris,
         issuerAccountId = this[OAuthClients.issuerAccountId],
         createdAt = this[OAuthClients.createdAt],
         updatedAt = this[OAuthClients.updatedAt]

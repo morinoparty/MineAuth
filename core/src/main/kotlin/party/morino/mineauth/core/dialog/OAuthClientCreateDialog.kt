@@ -7,6 +7,7 @@ import io.papermc.paper.registry.data.dialog.action.DialogAction
 import io.papermc.paper.registry.data.dialog.body.DialogBody
 import io.papermc.paper.registry.data.dialog.input.DialogInput
 import io.papermc.paper.registry.data.dialog.input.SingleOptionDialogInput
+import io.papermc.paper.registry.data.dialog.input.TextDialogInput
 import io.papermc.paper.registry.data.dialog.type.DialogType
 import net.kyori.adventure.text.event.ClickCallback
 import net.kyori.adventure.text.Component
@@ -31,7 +32,12 @@ object OAuthClientCreateDialog {
 
     // 入力フィールドの最大長
     private const val MAX_LENGTH_NAME = 64
-    private const val MAX_LENGTH_URI = 255
+    // 複数URIを改行区切りで入力するため、1件分より長くしておく
+    private const val MAX_LENGTH_URI = 2048
+
+    // リダイレクトURI入力欄の行数と高さ（複数URIを1行に1つずつ入力する）
+    private const val MAX_LINES_URI = 8
+    private const val HEIGHT_URI = 96
 
     /**
      * ダイアログを表示する
@@ -97,10 +103,12 @@ object OAuthClientCreateDialog {
             ).width(INPUT_WIDTH_TYPE).build(),
 
             // リダイレクトURI（テキスト入力）
-            DialogInput.text(KEY_REDIRECT_URI, Component.text("リダイレクトURI"))
+            // 複数登録できるよう複数行入力にし、1行に1つのURIを書いてもらう
+            DialogInput.text(KEY_REDIRECT_URI, Component.text("リダイレクトURI（1行に1つ）"))
                 .width(INPUT_WIDTH_URI)
                 .initial("http://localhost:8080/callback")
                 .maxLength(MAX_LENGTH_URI)
+                .multiline(TextDialogInput.MultilineOptions.create(MAX_LINES_URI, HEIGHT_URI))
                 .build()
         )
     }
@@ -116,14 +124,14 @@ object OAuthClientCreateDialog {
                         // コールバック内で入力値を取得して処理
                         val clientName = view.getText(KEY_CLIENT_NAME)
                         val clientType = view.getText(KEY_CLIENT_TYPE)
-                        val redirectUri = view.getText(KEY_REDIRECT_URI)
+                        val redirectUris = view.getText(KEY_REDIRECT_URI)
 
                         // 非同期で作成処理を実行
                         OAuthClientCreateHandler.handleCreate(
                             player,
                             clientName ?: "",
                             clientType ?: "public",
-                            redirectUri ?: ""
+                            redirectUris ?: ""
                         )
                     },
                     ClickCallback.Options.builder()

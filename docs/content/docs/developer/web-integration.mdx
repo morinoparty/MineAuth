@@ -203,7 +203,10 @@ See [Userinfo Endpoint](/docs/developer/oauth/userinfo) for more details.
 
 ## Redirect URI Patterns
 
-The registered redirect URI is validated in two steps: an exact string match first, then as a regular expression. When used as a regular expression, `/.*` is appended to the registered value (or `.*` if it already ends with `/`), so sub-paths are allowed automatically.
+A client can have several registered redirect URIs, and a request is accepted when its `redirect_uri` matches any of them.
+For example, you can register both the production URL and `http://localhost:3000/...` for local development.
+
+Each registered redirect URI is validated in two steps: an exact string match first, then as a regular expression. When used as a regular expression, `/.*` is appended to the registered value (or `.*` if it already ends with `/`), so sub-paths are allowed automatically.
 
 This is useful for platforms with per-deployment preview URLs, such as Cloudflare Workers:
 

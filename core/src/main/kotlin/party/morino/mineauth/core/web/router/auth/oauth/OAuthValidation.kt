@@ -36,8 +36,18 @@ object OAuthValidation : KoinComponent {
      * @return 有効な場合true
      */
     fun validateRedirectUri(clientData: ClientData, redirectUri: String): Boolean {
-        val registeredUri = clientData.redirectUri
+        // 登録済みURIのいずれかに一致すれば有効とする
+        return clientData.redirectUris.any { registeredUri -> matchesRedirectUri(registeredUri, redirectUri) }
+    }
 
+    /**
+     * 1件の登録URIとリクエストのリダイレクトURIを照合する
+     *
+     * @param registeredUri 登録済みのリダイレクトURI（正規表現パターン可）
+     * @param redirectUri 検証するリダイレクトURI
+     * @return 一致する場合true
+     */
+    private fun matchesRedirectUri(registeredUri: String, redirectUri: String): Boolean {
         // 完全一致チェック（最も一般的なケース）
         if (registeredUri == redirectUri) {
             return true
