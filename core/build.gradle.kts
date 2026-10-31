@@ -111,7 +111,6 @@ val runtimeLibraries =
     }
 
 // 認可画面（React + Chlorophyll）のフロントエンド
-// @morinoparty/chlorophyll-react は GitHub Packages にあるため、pnpm の認証設定が必要（docs 参照）
 val frontendDir = layout.projectDirectory.dir("src/main/frontend")
 
 // 依存パッケージのインストール。lockfile が変わったときだけ実行する
