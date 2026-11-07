@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import party.morino.mineauth.core.web.components.auth.TokenData
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -137,6 +138,77 @@ class RefreshTokenResponseCacheTest {
         // エントリは削除済みのため、次のリクエストで再試行できる
         val retry = cache.getOrIssue("token-a") { tokenData("retry").right() }
         assertEquals(tokenData("retry").right(), retry)
+    }
+
+    @Test
+    @DisplayName("Invalidate stops a cached response from being returned")
+    fun invalidateDropsCachedResponse() = runTest {
+        val cache = RefreshTokenResponseCache(gracePeriodMillis = 60_000L, clock = { 0L })
+        cache.getOrIssue("token-a") { tokenData("first").right() }
+
+        cache.invalidate("token-a")
+
+        // キャッシュ未ヒットとなり、発行処理の中の失効チェックに到達する
+        val failure = TokenRotationFailure(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
+        assertEquals(failure.left(), cache.getOrIssue("token-a") { failure.left() })
+    }
+
+    @Test
+    @DisplayName("Invalidate removes an in-flight entry and a late failure keeps the newer entry")
+    fun invalidateRemovesInFlightEntry() = runTest {
+        val cache = RefreshTokenResponseCache(gracePeriodMillis = 60_000L, clock = { 0L })
+        val gate = CompletableDeferred<Unit>()
+        val failure = TokenRotationFailure(OAuthErrorCode.SERVER_ERROR, "Failed to rotate refresh token")
+
+        // 発行中のエントリを作る
+        val inFlight = async {
+            cache.getOrIssue("token-a") {
+                gate.await()
+                failure.left()
+            }
+        }
+        testScheduler.runCurrent()
+
+        cache.invalidate("token-a")
+
+        // 無効化の後のリクエストは発行中のエントリに合流せず、自分で発行処理を実行する
+        assertEquals(tokenData("newer").right(), cache.getOrIssue("token-a") { tokenData("newer").right() })
+
+        // 古い発行処理が後から失敗しても、新しいエントリは消えない
+        gate.complete(Unit)
+        assertEquals(failure.left(), inFlight.await())
+        assertEquals(tokenData("newer").right(), cache.getOrIssue("token-a") { tokenData("unexpected").right() })
+    }
+
+    @Test
+    @DisplayName("Only responses served from the cache go through the cache-only check")
+    fun cacheOnlyCheckSkipsTheFreshIssuance() = runTest {
+        val cache = RefreshTokenResponseCache(gracePeriodMillis = 60_000L, clock = { 0L })
+        val rejected = TokenRotationFailure(OAuthErrorCode.INVALID_GRANT, "Invalid or expired refresh token")
+        val rejectCached: suspend (TokenData) -> Either<TokenRotationFailure, TokenData> = { rejected.left() }
+
+        // 発行したリクエスト自身の応答には確認を適用しない
+        val issued = cache.getOrIssue("token-a", verifyCached = rejectCached) { tokenData("first").right() }
+        // キャッシュから返す応答には適用する
+        val replayed = cache.getOrIssue("token-a", verifyCached = rejectCached) { tokenData("unexpected").right() }
+
+        assertEquals(tokenData("first").right(), issued)
+        assertEquals(rejected.left(), replayed)
+        // 確認の失敗はその呼び出しだけに反映し、キャッシュ済みの応答は残る
+        assertEquals(tokenData("first").right(), cache.getOrIssue("token-a") { tokenData("unexpected").right() })
+    }
+
+    @Test
+    @DisplayName("The grace window tolerates small clock skew but not a start far in the future")
+    fun graceWindowIsTwoSided() {
+        val cache = RefreshTokenResponseCache(gracePeriodMillis = 60_000L, clock = { 1_000_000L })
+
+        assertTrue(cache.isWithinGracePeriod(1_000_000L - 60_000L))
+        assertFalse(cache.isWithinGracePeriod(1_000_000L - 60_001L))
+        // 少し未来の起点はサーバー間の時計のずれとして期間内にする
+        assertTrue(cache.isWithinGracePeriod(1_000_000L + 60_000L))
+        // grace期間を超えて未来の起点は、再利用の検知を止めないよう期間外にする
+        assertFalse(cache.isWithinGracePeriod(1_000_000L + 60_001L))
     }
 
     @Test

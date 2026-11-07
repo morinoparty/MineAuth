@@ -52,6 +52,7 @@ import kotlin.reflect.typeOf
  * ハンドラ内のContext.current()がサーバースパンを保持してしまう（＝偽陽性）。
  * このテストは実Jettyサーバーを起動し、実HTTPリクエストでhttp.route属性を検証することで、
  * ディスパッチャのルート補正が本番エンジン上でも機能することを保証する。
+ * あわせて、WebServerと同じredactUrlAttributesでurl.pathとurl.queryが置き換わることを確認する。
  */
 class HttpRouteJettyTest {
 
@@ -119,20 +120,15 @@ class HttpRouteJettyTest {
     }
 
     @Test
-    @DisplayName("Dispatcher refines http.route on the real Jetty engine")
+    @DisplayName("Dispatcher refines http.route and URL attributes on the real Jetty engine")
     fun dispatcherRefinesRouteOnJetty() {
         val dispatcher = buildDispatcher()
         val server = embeddedServer(Jetty, port = 0) {
             install(Authentication) { bearer("test-auth") { authenticate { null } } }
             install(KtorServerTelemetry) {
                 setOpenTelemetry(openTelemetry)
-                attributesExtractor {
-                    onEnd {
-                        request.call.attributes.getOrNull(OTEL_ROUTE_TEMPLATE)?.let { template ->
-                            attributes.put(io.opentelemetry.semconv.UrlAttributes.URL_PATH, template)
-                        }
-                    }
-                }
+                // WebServerと同じ設定でurl.pathとurl.queryを置き換える
+                redactUrlAttributes()
             }
             installAuthRouteSanitizer()
             routing {
@@ -155,7 +151,7 @@ class HttpRouteJettyTest {
             val port = runBlocking { server.engine.resolvedConnectors().first().port }
             val client = HttpClient(Java)
             val body = runBlocking {
-                client.get("http://localhost:$port/api/v1/plugins/vault/balance/_NIKOMARU").bodyAsText()
+                client.get("http://localhost:$port/api/v1/plugins/vault/balance/_NIKOMARU?token=secret-value&state=abc").bodyAsText()
             }
             client.close()
             assertEquals("ok", body)
@@ -166,6 +162,8 @@ class HttpRouteJettyTest {
             assertEquals("GET /api/v1/plugins/vault/balance/{player}", span.name)
             // url.pathもテンプレート化され、具体的なプレイヤー名（PII）が含まれないこと
             assertEquals("/api/v1/plugins/vault/balance/{player}", span.attributes.get(UrlAttributes.URL_PATH))
+            // url.queryはパラメーター名だけが残り、値は伏せられること
+            assertEquals("token=REDACTED&state=REDACTED", span.attributes.get(UrlAttributes.URL_QUERY))
         } finally {
             server.stop(0, 0, TimeUnit.SECONDS)
         }

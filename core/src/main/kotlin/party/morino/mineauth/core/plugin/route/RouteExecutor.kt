@@ -20,6 +20,7 @@ import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
+import party.morino.mineauth.core.web.BearerChallenge
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
 import kotlin.reflect.KClass
@@ -44,8 +45,6 @@ class RouteExecutor(
      * @param metadata エンドポイントメタデータ
      */
     suspend fun execute(context: RequestContext, metadata: EndpointMetadata) {
-        val call = context.call
-
         // アドオンルート全体の処理を1つのスパンで計測する（全アドオンルートの単一チョークポイント）
         val attributes = Attributes.builder()
             .put(TelemetryAttributes.HANDLER_CLASS, metadata.handlerClassName)
@@ -61,8 +60,8 @@ class RouteExecutor(
 
             // ハンドラーを実行して結果を処理
             when (val result = handler.execute(metadata, resolvedParams)) {
-                is Either.Left -> handleExecutionError(call, result.value, metadata, resolvedParams)
-                is Either.Right -> handleResult(call, result.value, metadata)
+                is Either.Left -> handleExecutionError(context, result.value, metadata, resolvedParams)
+                is Either.Right -> handleResult(context, result.value, metadata)
             }
         }
     }
@@ -101,17 +100,23 @@ class RouteExecutor(
      * shadeしていても直列化でき、直列化失敗もKtor既定のtext/plain 500ではなくMineAuthの
      * サニタイズ済みJSONエラーに収まる。
      *
-     * @param call ApplicationCall
+     * @param context リクエストコンテキスト
      * @param result メソッドの戻り値
      * @param metadata エンドポイントメタデータ
      */
-    private suspend fun handleResult(call: ApplicationCall, result: Any?, metadata: EndpointMetadata) {
+    private suspend fun handleResult(context: RequestContext, result: Any?, metadata: EndpointMetadata) {
+        val call = context.call
         // Either<HttpError, T>のアンラップ（アドオンのクラスローダー差異に備えてリフレクションで処理）
         val value = if (metadata.returnsEither && result != null) {
             when (val unwrapped = unwrapEither(result)) {
                 is EitherUnwrap.Success -> unwrapped.value
                 is EitherUnwrap.HttpFailure -> {
-                    respondHttpError(call, unwrapped.error)
+                    val error = unwrapped.error
+                    respondHandlerError(
+                        context,
+                        HttpStatusCode.fromValue(error.status.code),
+                        ErrorResponse.fromDetails(error.message, error.details, error.code)
+                    )
                     return
                 }
                 is EitherUnwrap.Unknown -> {
@@ -345,30 +350,46 @@ class RouteExecutor(
     }
 
     /**
-     * HttpErrorをHTTPレスポンスに変換する
+     * ハンドラーが意図的に返したHTTPエラーをレスポンスに変換する
+     *
+     * RFC 9110 Section 15.5.2 は全ての401にチャレンジを求め、RFC 6750 Section 3 はアクセスを許可しないトークンへの応答にも求めている。
+     * 公開エンドポイントもトークンなしで403を返せるため、insufficient_scopeは検証済みの呼び出し元がいる場合に限る。
+     * スコープを追加しても解決するとは限らないので、scope属性は付けない。
+     *
+     * @param context リクエストコンテキスト
+     * @param status HTTPステータス
+     * @param body レスポンスボディ（ハンドラーが指定した内容をそのまま返す）
      */
-    private suspend fun respondHttpError(call: ApplicationCall, error: HttpError) {
-        call.respond(
-            HttpStatusCode.fromValue(error.status.code),
-            ErrorResponse.fromDetails(error.message, error.details, error.code)
-        )
+    private suspend fun respondHandlerError(context: RequestContext, status: HttpStatusCode, body: ErrorResponse) {
+        val call = context.call
+        when (status) {
+            HttpStatusCode.Unauthorized -> BearerChallenge.respond(call, status, body)
+            HttpStatusCode.Forbidden -> BearerChallenge.respond(
+                call,
+                status,
+                body,
+                BearerChallenge.ErrorCode.INSUFFICIENT_SCOPE.takeIf { context.principal != null }
+            )
+            else -> call.respond(status, body)
+        }
     }
 
     /**
      * 実行エラーをHTTPレスポンスに変換する
      * セキュリティ: 内部エラー詳細はログにのみ出力し、クライアントには汎用メッセージを返す
      *
-     * @param call ApplicationCall
+     * @param context リクエストコンテキスト
      * @param error 実行エラー
      * @param metadata エンドポイントメタデータ（ログ用）
      * @param resolvedParams 解決済みパラメータ（ログ用）
      */
     private suspend fun handleExecutionError(
-        call: ApplicationCall,
+        context: RequestContext,
         error: ExecutionError,
         metadata: EndpointMetadata,
         resolvedParams: List<Any?>
     ) {
+        val call = context.call
         when (error) {
             is ExecutionError.InvocationFailed -> {
                 // 詳細はログにのみ出力（サニタイズしてログ注入を防止）
@@ -404,7 +425,8 @@ class RouteExecutor(
 
             is ExecutionError.HttpErrorThrown -> {
                 // HttpErrorは意図的にスローされたものなのでメッセージを返す
-                call.respond(
+                respondHandlerError(
+                    context,
                     HttpStatusCode.fromValue(error.status),
                     ErrorResponse.fromDetails(error.message, error.details ?: emptyMap(), error.code)
                 )
@@ -420,6 +442,7 @@ class RouteExecutor(
 
     /**
      * 認証エラーをHTTPレスポンスに変換する
+     * RFC 6750 Section 3: すべての分岐でWWW-Authenticateヘッダーを返す
      * セキュリティ: トークンの詳細やパーミッション名は漏洩させない
      *
      * @param call ApplicationCall
@@ -428,7 +451,9 @@ class RouteExecutor(
     suspend fun respondAuthError(call: ApplicationCall, error: AuthError) {
         when (error) {
             is AuthError.NotAuthenticated ->
-                call.respond(
+                // RFC 6750 3.1: 資格情報が無いリクエストにはerror属性を付けない
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Unauthorized,
                     ErrorResponse("Authentication required", code = "authentication_required")
                 )
@@ -436,39 +461,49 @@ class RouteExecutor(
             is AuthError.InvalidToken -> {
                 // 詳細はログにのみ出力
                 logger.warn("InvalidToken: {}", sanitizeForLog(error.reason))
-                call.respond(
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Unauthorized,
-                    ErrorResponse("Invalid token", code = "invalid_token")
+                    ErrorResponse("Invalid token", code = "invalid_token"),
+                    BearerChallenge.ErrorCode.INVALID_TOKEN
                 )
             }
 
             is AuthError.WrongTokenType -> {
                 logger.warn("WrongTokenType: allowed={}", error.allowed)
-                call.respond(
+                // トークンではアクセスできないことをヘッダーで伝える（scope属性で解決できないので付けない）
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Forbidden,
-                    ErrorResponse("This endpoint does not accept this token type", code = "wrong_token_type")
+                    ErrorResponse("This endpoint does not accept this token type", code = "wrong_token_type"),
+                    BearerChallenge.ErrorCode.INSUFFICIENT_SCOPE
                 )
             }
 
             is AuthError.PermissionDenied -> {
-                // パーミッション名はログにのみ出力
+                // パーミッション名はログにのみ出力（scope属性にも載せない）
                 logger.warn("PermissionDenied: {}", sanitizeForLog(error.permission))
-                call.respond(
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Forbidden,
-                    ErrorResponse("Permission denied", code = "access_denied")
+                    ErrorResponse("Permission denied", code = "access_denied"),
+                    BearerChallenge.ErrorCode.INSUFFICIENT_SCOPE
                 )
             }
 
             is AuthError.InsufficientScope -> {
                 // RFC 6750 3.1: スコープ不足は403 insufficient_scope（必要なスコープ名は公開情報なので返してよい）
                 logger.warn("InsufficientScope: required={}", error.required)
-                call.respond(
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Forbidden,
                     ErrorResponse(
                         "This endpoint requires the '${error.required}' scope",
                         code = "insufficient_scope",
                         details = mapOf("required_scope" to JsonPrimitive(error.required))
-                    )
+                    ),
+                    BearerChallenge.ErrorCode.INSUFFICIENT_SCOPE,
+                    scope = error.required
                 )
             }
         }
@@ -505,7 +540,9 @@ class RouteExecutor(
             }
 
             is ResolveError.AuthenticationRequired ->
-                call.respond(
+                // RFC 6750 3.1: 資格情報が無いリクエストにはerror属性を付けない
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Unauthorized,
                     ErrorResponse("Authentication required", code = "authentication_required")
                 )
@@ -527,9 +564,12 @@ class RouteExecutor(
             is ResolveError.AccessDenied -> {
                 // アクセス拒否理由はログにのみ出力
                 logger.warn("AccessDenied: {}", sanitizeForLog(error.reason))
-                call.respond(
+                // トークンではアクセスできないことをヘッダーで伝える（PermissionDeniedと同じくscope属性は付けない）
+                BearerChallenge.respond(
+                    call,
                     HttpStatusCode.Forbidden,
-                    ErrorResponse("Access denied", code = "access_denied")
+                    ErrorResponse("Access denied", code = "access_denied"),
+                    BearerChallenge.ErrorCode.INSUFFICIENT_SCOPE
                 )
             }
         }

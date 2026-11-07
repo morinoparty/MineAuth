@@ -28,6 +28,10 @@ object OAuthClients : Table("oauth_clients") {
     val issuerAccountId = varchar("issuer_account_id", 36)
         .references(Accounts.accountId, onDelete = ReferenceOption.CASCADE)
 
+    // トークンイントロスペクション（RFC 7662）の利用権限。サーバー管理者が許可したConfidentialクライアントのみtrueになる
+    // 既存のテーブルには DatabaseMigrator が追加するため、DB側のデフォルト値が必要（clientDefaultでは既存行を埋められない）
+    val introspectionAllowed = bool("introspection_allowed").default(false)
+
     // 作成日時
     val createdAt = datetime("created_at").clientDefault { LocalDateTime.now() }
 

@@ -1,0 +1,208 @@
+---
+title: Rate Limiting
+description: Request limits, failure backoff, and client address detection for the OAuth endpoints
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+MineAuth limits how often the token endpoint and password login can be used, and it stops evaluating credentials from a source that keeps failing. This slows down password guessing and credential stuffing. Separately, MineAuth caps how many Argon2 password verifications run at the same time, so that a burst of requests cannot exhaust the server's memory. See [Password Hashing Capacity](#password-hashing-capacity).
+
+## config.json Example
+
+```json5
+{
+  "rateLimit": {
+    "enabled": true,
+    "trustedProxies": [
+      "127.0.0.0/8",
+      "::1/128",
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "fc00::/7"
+    ],
+    "tokenRequestsPerMinutePerIp": 120,
+    "tokenRequestsPerMinutePerClient": 600,
+    "loginAttemptsPerMinutePerIp": 30
+  }
+}
+```
+
+The section is optional. A `config.json` without it uses the values shown above.
+
+## Rate Limit Configuration
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | Set to `false` to turn off every limit and every failure backoff on this page. The [password hashing capacity](#password-hashing-capacity), including its share per client address, still applies |
+| `trustedProxies` | string[] | See above | Addresses allowed to report the client address through `X-Forwarded-For`, as IP addresses or CIDR ranges. See [Client Address](#client-address) |
+| `tokenRequestsPerMinutePerIp` | number | `120` | Token requests per minute from one client address by public clients, counted after the client is identified |
+| `tokenRequestsPerMinutePerClient` | number | `600` | Token requests per minute by one confidential client, counted after it authenticates |
+| `loginAttemptsPerMinutePerIp` | number | `30` | Password login submissions per minute from one client address |
+
+A value of `0` or less turns off that one limit.
+
+Changes apply after `/mineauth reload`, so a server restart is not required.
+
+## Request Limits
+
+A limit of N per minute allows a burst of up to N requests and then refills continuously at N per minute.
+
+| Limit | Endpoint | Counts | Checked |
+|-------|----------|--------|---------|
+| `tokenRequestsPerMinutePerIp` | `POST /oauth2/token` | Requests by public clients, per client address | After client authentication succeeds |
+| `tokenRequestsPerMinutePerClient` | `POST /oauth2/token` | Requests by one confidential client, from any address | After client authentication succeeds |
+| `loginAttemptsPerMinutePerIp` | Login submissions at `POST /oauth2/authorize` | Login submissions, per client address | After the request has been validated, before the password is evaluated |
+
+Each token request that passes client authentication uses exactly one of the two token limits. A token request that fails client authentication, or that is rejected before it, for example because `grant_type` is missing, uses neither. Repeated authentication failures are stopped by the [client authentication backoff](#failure-backoff) instead.
+
+Counting only authenticated requests means that knowing a `client_id` is not enough to use up that client's allowance:
+
+- A public client has no secret, so anyone can present its `client_id`. Its requests are therefore counted per client address and never per `client_id`, and requests from other addresses cannot lock out its users.
+- A confidential client is counted by its `client_id` only after its secret has been verified, so requests with a wrong secret do not use its allowance. Its requests do not use `tokenRequestsPerMinutePerIp`, so a backend that refreshes tokens for many users from one address is limited only by `tokenRequestsPerMinutePerClient`.
+
+### Sizing the Token Limits
+
+Access tokens are valid for 300 seconds. A client that refreshes each user's token before it expires makes about one token request per active user every 5 minutes, which is 0.2 requests per minute per user. Each login adds one authorization code exchange.
+
+- `tokenRequestsPerMinutePerClient` should be at least the number of users that a confidential client keeps signed in at the same time, divided by 5, plus room for logins and retries. The default of 600 covers about 3,000 active users per client.
+- `tokenRequestsPerMinutePerIp` should cover the users of public clients who share one address, such as players behind one NAT. The default of 120 covers about 600 active users per address.
+
+A login submission with an invalid `client_id` or `redirect_uri`, or without `username` or `password`, is not counted.
+
+The revocation and introspection endpoints have no request limit, because a resource server may legitimately introspect many times per second. They do use the client authentication backoff described below.
+
+## Failure Backoff
+
+After a number of failures, MineAuth blocks further attempts for a period of time. The first block lasts 1 second, and the block doubles with each further failure up to a maximum.
+
+| Counter | Applies to | Failures before blocking | Longest block | Forgotten after no failures for | Reset by success |
+|---------|------------|--------------------------|---------------|---------------------------------|------------------|
+| Client authentication, per client address | Token, revocation, and introspection endpoints | 10 | 5 minutes | 1 hour | No |
+| Login, per client address | Login submissions | 5 | 15 minutes | 30 minutes | No |
+| Login, per username | Login submissions, except from a client address where the same username has logged in within the last 30 days. See [Username Block](#username-block) | 20 | 60 seconds | 1 hour | Yes |
+
+These values are fixed and cannot be changed in `config.json`.
+
+- An attempt made during a block is not evaluated, so a correct password or secret is also refused. It does not count as another failure.
+- A client authentication failure counts only when MineAuth actually checked the credentials: the presented `client_id` does not exist, or the secret was verified and did not match. A request without a secret, a public client at the revocation or introspection endpoint, a malformed `Authorization: Basic` header, and repeated parameters are rejected but not counted, because nothing was guessed. For example, a public client that calls the revocation endpoint at logout does not put its users' address into the backoff.
+- If the client registration cannot be read from the database, the request is answered with `500 server_error` and is not counted, because MineAuth could not tell whether the `client_id` exists. A database outage therefore does not block the addresses of clients that keep sending requests during it.
+- Client authentication failures at the three endpoints share one counter, so the revocation and introspection endpoints are not a way around the limit on the token endpoint.
+- Every failed login counts, whether the player is unknown, not registered, or used a wrong password.
+- A request refused because no [password hashing capacity](#password-hashing-capacity) was free is not a failure and is not counted.
+- A successful login does not reset the counter for the client address, because an attacker with a valid account could otherwise reset it between guesses.
+- Usernames are compared without regard to letter case.
+
+### Username Block
+
+The username block stops guessing against one account from many client addresses. Minecraft player names are public, so anyone can also cause login failures for a name and renew its block by failing once each time the block ends. To keep that from locking the owner out, MineAuth remembers each client address from which a username has logged in successfully, and the username block does not apply to that username from that address.
+
+- The block applies to every other address, including addresses that have no login failure of their own. Changing addresses does not get around it.
+- A remembered address is still subject to its own per-address backoff and to `loginAttemptsPerMinutePerIp`. Its failed attempts, such as the owner's own typos, still count toward both the name and the address, but they do not make the name block apply to it.
+- An address is remembered for a username for 30 days after its last successful login with that username. The record is kept in memory on each server, holds at most 10,000 address and username pairs, and is cleared by a server restart and by `/mineauth reload`.
+- The block lasts at most 60 seconds.
+
+The owner therefore keeps access from addresses where they have logged in before, even while someone keeps the name blocked. From a new address during such an attack, the owner may have to wait for the block to end before each attempt. Each wait is at most 60 seconds, but the attacker can renew the block.
+
+## Client Address
+
+MineAuth counts by the address of the client, which it determines as follows. The same address decides the [share of password hashing capacity](#share-per-client-address), and it is determined the same way when `enabled` is `false`.
+
+1. If the address that connected to MineAuth is not in `trustedProxies`, `X-Forwarded-For` is ignored and the connecting address is the client.
+2. Otherwise, `X-Forwarded-For` is read from right to left, skipping entries in `trustedProxies`. The first entry that is not trusted is the client. Entries further to the left can be written by the client, so they are never used.
+3. If the header is absent or every entry is trusted, the connecting address is the client.
+4. If an entry is not an IP address, reading stops and the connecting address is the client. Host names are never resolved, and an address with a port is not accepted.
+
+An IPv4-mapped IPv6 address counts as the IPv4 address. Other IPv6 addresses are counted by their `/64` prefix, because a single user usually controls a whole `/64`.
+
+### Reverse Proxy Setup
+
+The default `trustedProxies` covers loopback and private addresses, so a reverse proxy on the same host or in a private network works without changes. The proxy must add the address of its client to `X-Forwarded-For`. Caddy does this by default. nginx needs the following setting.
+
+```nginx
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+```
+
+A proxy on a public address must be added to `trustedProxies`, as must every proxy in a chain. Otherwise all clients behind it share one counter, and one person's failures throttle everyone. When a request carries `X-Forwarded-For` from an address that is not trusted, MineAuth logs one warning per configuration load that names `rateLimit.trustedProxies`.
+When a trusted address sends a request without `X-Forwarded-For`, MineAuth also logs one warning per configuration load. The warning names the likely cause, a TCP tunnel or port forwarder as described in [TCP Tunnels and Port Forwarders](#tcp-tunnels-and-port-forwarders), and the fix. A local health check that connects without a proxy can trigger the same warning, so check how clients reach MineAuth before you change the setting.
+
+Both warnings are logged even when `enabled` is `false`, because the address still decides the [share of password hashing capacity](#share-per-client-address).
+
+An entry that cannot be parsed, such as a host name, logs a warning at each configuration load and is ignored. Ignoring an entry only narrows what is trusted.
+
+<Callout type="warn">
+  Under the default setting, a client that connects directly from a loopback or private address can write any value in `X-Forwarded-For` and be counted as a different client each time. If such clients can reach MineAuth directly, list only your proxy's address. Without a reverse proxy, set `trustedProxies` to `[]`, the strict setting, which ignores the header from every address.
+</Callout>
+
+### TCP Tunnels and Port Forwarders
+
+<Callout type="error" title="Do not use the default trustedProxies behind a TCP tunnel">
+  A TCP tunnel or port forwarder, such as playit.gg, frp, ngrok tcp, `ssh -R`, or socat, passes each connection through without adding `X-Forwarded-For`. When it runs on the same host or in a private network, MineAuth sees every client as the forwarder's loopback or private address, which the default `trustedProxies` trusts. Docker's userland proxy (docker-proxy) does the same for IPv6 clients, which arrive from the address of the bridge gateway.
+
+  This causes two problems, and neither produces an error:
+
+  - Every client behind the forwarder is counted under the forwarder's address. Once anyone has failed to log in five times, each further failure blocks every player, for up to 15 minutes at a time. All of them also share the two [password hashing slots](#share-per-client-address) of that one address.
+  - The forwarder's address is trusted, so a client can send its own `X-Forwarded-For` and choose the address it is counted under, which bypasses every per-address limit.
+
+  In such a deployment, set `trustedProxies` to `[]`, or to the exact address of a reverse proxy that adds `X-Forwarded-For`. With `[]`, the header is never trusted, but all clients behind the forwarder still share one counter. To count them separately, put an HTTP reverse proxy such as Caddy or nginx between the tunnel and MineAuth and list only that proxy's address.
+</Callout>
+
+Do not add wide public ranges such as `0.0.0.0/0`. Every client in a trusted range can choose the address it is counted under.
+
+## Password Hashing Capacity
+
+Each Argon2id verification of a client secret or a player password allocates tens of megabytes, and that memory comes from the heap that the Minecraft server uses. Many simultaneous verifications can run the server out of memory. MineAuth therefore runs at most a fixed number of verifications at once across the whole server: half the number of available processors, at least 1 and at most 4.
+
+The cap covers client secret verification at the token, revocation, and introspection endpoints, and password verification at login, including the rehash of a password whose hash uses outdated parameters. Each client address also has a [share of the cap](#share-per-client-address). A request waits up to about 2 seconds for a free slot and is then refused without evaluating the credentials:
+
+- The token, revocation, and introspection endpoints respond with `503 Service Unavailable`, `Retry-After: 1`, and `temporarily_unavailable`. See [Error Responses](/docs/developer/oauth/error-responses#server-busy).
+- A login submission redirects to the validated `redirect_uri` with `error=temporarily_unavailable`.
+
+A refused request is not counted as a failure by any backoff. If no slot is free for the rehash after a correct password, the login still succeeds and the hash is updated at a later login.
+
+The cap applies even when `enabled` is `false`, because it protects memory rather than enforcing a request policy. It cannot be changed in `config.json`. Hashing done by the `/ma register` and `/ma change` commands is not covered by the cap.
+
+### Share per Client Address
+
+One [client address](#client-address) can have at most two verifications waiting or running at the same time. Further requests from the same address wait for one of that address's own two slots, within the same limit of about 2 seconds in total, and are then refused in the same way. This keeps one address from filling the queue and making requests from every other address time out.
+
+- A backend that sends many concurrent token requests with a client secret from one address is served two at a time. Requests that do not get a slot within about 2 seconds receive `503` with `Retry-After: 1`. The rehash after a login uses a slot of the same address.
+- When `trustedProxies` does not match the deployment, for example behind a [TCP tunnel](#tcp-tunnels-and-port-forwarders), all clients share one address and therefore two slots.
+- An address is tracked only while it has a verification waiting or running, so this share does not keep memory for idle addresses.
+
+<Callout type="warn">
+  An attacker who controls many addresses, for example many IPv6 `/64` prefixes or more addresses than the 10,000 keys that each backoff counter keeps, can still occupy the slots and make other requests receive `503` for a while. The attacker cannot exhaust memory this way, because the server-wide cap on concurrent hashing still applies.
+</Callout>
+
+## Responses When Limited
+
+The token, revocation, and introspection endpoints respond with `429 Too Many Requests`. `Retry-After` gives the wait in seconds, and it is always at least 1.
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+Cache-Control: no-store
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "Too many requests. Retry later"
+}
+```
+
+A login submission that is limited redirects to the validated `redirect_uri` with `error=temporarily_unavailable`, as described in [Error Responses](/docs/developer/oauth/error-responses#authorization-endpoint-errors).
+
+Limited requests do not log a warning, so a flood of requests does not become a flood of log lines. Each one records `mineauth.oauth.error_code` on its trace span. The HTTP access log also leaves out `429` responses. A limited login submission is answered with a redirect, which appears in the access log like any other redirect.
+
+A request refused for [password hashing capacity](#password-hashing-capacity) does not log a warning either, but its `503` response appears in the access log.
+
+## Scope of the Counters
+
+Counters are kept in memory on each server.
+
+- Limits are per server. With several MineAuth servers behind one domain, a client can reach each limit once per server.
+- Counters reset when the server restarts and on `/mineauth reload`.
+- The [password hashing capacity](#password-hashing-capacity) is also per server.
+- Each counter holds at most 10,000 keys, which keeps memory use bounded. Beyond that, the least recently used key is forgotten along with its count.

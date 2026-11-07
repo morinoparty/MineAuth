@@ -283,18 +283,20 @@ class CorePathsGenerator {
                         Parameter(name = "redirect_uri", location = "query", required = true, schema = Schema(type = "string"), description = "Redirect URI"),
                         Parameter(name = "scope", location = "query", required = true, schema = Schema(type = "string"), description = "Requested scopes (space-separated)"),
                         Parameter(name = "state", location = "query", required = true, schema = Schema(type = "string"), description = "CSRF protection state"),
-                        Parameter(name = "code_challenge", location = "query", required = false, schema = Schema(type = "string"), description = "PKCE code challenge"),
-                        Parameter(name = "code_challenge_method", location = "query", required = false, schema = Schema(type = "string"), description = "PKCE method (S256)"),
+                        Parameter(name = "code_challenge", location = "query", required = true, schema = Schema(type = "string"), description = "PKCE code challenge"),
+                        Parameter(name = "code_challenge_method", location = "query", required = true, schema = Schema(type = "string"), description = "PKCE method. Must be S256"),
                         Parameter(name = "nonce", location = "query", required = false, schema = Schema(type = "string"), description = "OIDC nonce for replay protection"),
+                        Parameter(name = "prompt", location = "query", required = false, schema = Schema(type = "string"), description = "OIDC prompt. 'none' fails with login_required"),
                     ),
                     responses = mapOf(
                         "200" to Response(description = "Authorization screen (HTML)"),
-                        "400" to Response(description = "Invalid request parameters"),
+                        "302" to Response(description = "Redirect to the validated redirect_uri with an error"),
+                        "400" to Response(description = "client_id or redirect_uri is missing or invalid. No redirect is performed"),
                     ),
                 ),
                 post = Operation(
-                    summary = "Process authorization",
-                    description = "Processes the authorization request with user credentials. Returns authorization code via redirect.",
+                    summary = "Authorization request or login submission",
+                    description = "A form body containing username or password is a login submission and returns the authorization code via redirect. Any other POST is an authorization request and displays the authorization screen. OIDC Core Section 3.1.2.1.",
                     operationId = "post_oauth2_authorize",
                     tags = listOf(TAG_OAUTH),
                     requestBody = RequestBody(
@@ -311,23 +313,29 @@ class CorePathsGenerator {
                                         "scope" to Schema(type = "string"),
                                         "state" to Schema(type = "string"),
                                         "code_challenge" to Schema(type = "string"),
-                                        "code_challenge_method" to Schema(type = "string"),
+                                        "code_challenge_method" to Schema(type = "string", description = "Must be S256"),
+                                        "nonce" to Schema(type = "string"),
+                                        "prompt" to Schema(type = "string"),
                                     ),
-                                    required = listOf("username", "password", "response_type", "client_id", "redirect_uri", "scope", "state", "code_challenge"),
+                                    required = listOf("response_type", "client_id", "redirect_uri", "scope", "state", "code_challenge", "code_challenge_method"),
                                 )
                             )
                         ),
                         required = true,
                     ),
                     responses = mapOf(
+                        "200" to Response(description = "Authorization screen (HTML)"),
                         "302" to Response(description = "Redirect with authorization code or error"),
+                        "400" to Response(description = "client_id or redirect_uri is missing or invalid. No redirect is performed"),
                     ),
                 ),
             ),
             "/oauth2/token" to PathItem(
                 post = Operation(
                     summary = "Token endpoint",
-                    description = "Issues access tokens. Supports authorization_code and refresh_token grant types. RFC 6749 Section 4.1.3.",
+                    description = "Issues access tokens. Supports authorization_code and refresh_token grant types. RFC 6749 Section 4.1.3. " +
+                        "Confidential clients authenticate with client_secret_basic or client_secret_post. " +
+                        "Public clients send client_id in the body without client_secret.",
                     operationId = "post_oauth2_token",
                     tags = listOf(TAG_OAUTH),
                     requestBody = RequestBody(
@@ -339,12 +347,14 @@ class CorePathsGenerator {
                                         "grant_type" to Schema(type = "string", description = "authorization_code or refresh_token"),
                                         "code" to Schema(type = "string", description = "Authorization code (for authorization_code grant)"),
                                         "redirect_uri" to Schema(type = "string"),
-                                        "client_id" to Schema(type = "string"),
-                                        "client_secret" to Schema(type = "string", description = "Required for confidential clients"),
                                         "code_verifier" to Schema(type = "string", description = "PKCE code verifier"),
                                         "refresh_token" to Schema(type = "string", description = "Refresh token (for refresh_token grant)"),
+                                    ) + clientSecretPostProperties() + mapOf(
+                                        // Publicクライアントもclient_secretを付けずに本文でclient_idを送る
+                                        "client_id" to Schema(type = "string", description = "Client identifier. Required for public clients and with client_secret_post"),
                                     ),
-                                    required = listOf("grant_type", "client_id"),
+                                    // client_secret_basicではクレデンシャルをヘッダーで送るため、grant_typeだけが常に必須になる
+                                    required = listOf("grant_type"),
                                 )
                             )
                         ),
@@ -360,13 +370,24 @@ class CorePathsGenerator {
                             content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
                         ),
                         "401" to Response(description = "Invalid client authentication"),
+                        "429" to rateLimitedResponse(oauthErrorSchema),
+                        // クライアントの登録情報を読めなかった場合（どちらのグラントでも）と、リフレッシュトークンの状態を読み取れない場合・
+                        // ローテーションに失敗した場合は、トークンを発行せずにserver_errorを返す
+                        "500" to Response(
+                            description = "server_error. No tokens were issued. The client registration could not be read during client authentication, " +
+                                "or, for the refresh_token grant, the state of the refresh token could not be read or the refresh token could not be rotated. " +
+                                "The client may retry the same request, with the same authorization code or refresh token",
+                            content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
+                        ),
+                        "503" to verifierBusyResponse(oauthErrorSchema),
                     ),
                 ),
             ),
             "/oauth2/revoke" to PathItem(
                 post = Operation(
                     summary = "Token revocation endpoint",
-                    description = "Revokes an access token or refresh token. RFC 7009.",
+                    description = "Revokes an access token or refresh token. RFC 7009. " +
+                        "Requires confidential client authentication with client_secret_basic or client_secret_post.",
                     operationId = "post_oauth2_revoke",
                     tags = listOf(TAG_OAUTH),
                     requestBody = RequestBody(
@@ -377,53 +398,267 @@ class CorePathsGenerator {
                                     properties = mapOf(
                                         "token" to Schema(type = "string", description = "Token to revoke"),
                                         "token_type_hint" to Schema(type = "string", description = "access_token or refresh_token"),
-                                        "client_id" to Schema(type = "string"),
-                                        "client_secret" to Schema(type = "string"),
-                                    ),
-                                    required = listOf("token", "client_id", "client_secret"),
+                                    ) + clientSecretPostProperties(),
+                                    // client_secret_basicではクレデンシャルをヘッダーで送るため、tokenだけが常に必須になる
+                                    required = listOf("token"),
                                 )
                             )
                         ),
                         required = true,
                     ),
                     responses = mapOf(
-                        "200" to Response(description = "Token revoked successfully"),
+                        "200" to Response(description = "Token revoked successfully, or there was nothing this client could revoke"),
                         "400" to Response(
                             description = "OAuth error",
                             content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
                         ),
                         "401" to Response(description = "Invalid client authentication"),
+                        "429" to rateLimitedResponse(oauthErrorSchema),
+                        // クライアントの登録情報を読めなかった場合も、認証の失敗ではないのでserver_errorを返す
+                        "500" to Response(
+                            description = "server_error. The client registration could not be read, or the revocation could not be recorded in full. " +
+                                "In the second case the token or other tokens of its grant may still be valid. In both cases the client should retry",
+                            content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
+                        ),
+                        "503" to verifierBusyResponse(oauthErrorSchema),
                     ),
                 ),
             ),
+            "/oauth2/introspect" to introspectPathItem(oauthErrorSchema),
+            "/oauth2/end_session" to endSessionPathItem(oauthErrorSchema),
+            // OIDC Core Section 5.3: UserInfoはGETとPOSTで同じ応答を返す
             "/oauth2/userinfo" to PathItem(
-                get = Operation(
-                    summary = "UserInfo endpoint",
-                    description = "Returns claims about the authenticated user. OIDC Core Section 5.3.",
-                    operationId = "get_oauth2_userinfo",
-                    tags = listOf(TAG_OAUTH),
-                    security = listOf(mapOf("oauth2" to listOf("openid"))),
-                    responses = mapOf(
-                        "200" to Response(
-                            description = "User information",
-                            content = mapOf(
-                                "application/json" to MediaType(
-                                    schema = Schema(
-                                        type = "object",
-                                        properties = mapOf(
-                                            "sub" to Schema(type = "string", description = "Player UUID"),
-                                            "name" to Schema(type = "string", description = "Player name"),
-                                            "preferred_username" to Schema(type = "string", description = "Player name"),
-                                            "email" to Schema(type = "string", description = "Generated email address"),
-                                            "roles" to Schema(type = "array", items = Schema(type = "string"), description = "LuckPerms groups"),
-                                        ),
-                                        required = listOf("sub"),
-                                    )
-                                )
-                            ),
-                        ),
-                        "401" to Response(description = "Unauthorized"),
+                get = userInfoOperation("get_oauth2_userinfo"),
+                post = userInfoOperation("post_oauth2_userinfo"),
+            ),
+        )
+    }
+
+    /**
+     * client_secret_post で送るフォームパラメータを生成する
+     * client_secret_basic ではヘッダーで送るので、呼び出し側のスキーマでは必須にしないこと
+     *
+     * @return パラメータ名とスキーマのマップ
+     */
+    private fun clientSecretPostProperties(): Map<String, Schema> = mapOf(
+        "client_id" to Schema(type = "string", description = "Client identifier. Required with client_secret_post"),
+        "client_secret" to Schema(type = "string", description = "Client secret. Required with client_secret_post"),
+    )
+
+    /**
+     * トークンイントロスペクションエンドポイントのPathItemを生成する（RFC 7662）
+     *
+     * @param oauthErrorSchema OAuthエラーレスポンスのスキーマ
+     * @return /oauth2/introspect のPathItem
+     */
+    private fun introspectPathItem(oauthErrorSchema: Schema): PathItem {
+        val errorContent = mapOf("application/json" to MediaType(schema = oauthErrorSchema))
+
+        return PathItem(
+            post = Operation(
+                summary = "Token introspection endpoint",
+                description = "Reports the state and metadata of a token. RFC 7662. " +
+                    "Requires confidential client authentication with client_secret_basic or client_secret_post, " +
+                    "and a server administrator must have granted the client the introspection permission.",
+                operationId = "post_oauth2_introspect",
+                tags = listOf(TAG_OAUTH),
+                requestBody = RequestBody(
+                    content = mapOf(
+                        "application/x-www-form-urlencoded" to MediaType(
+                            schema = Schema(
+                                type = "object",
+                                properties = mapOf(
+                                    "token" to Schema(type = "string", description = "Token to introspect"),
+                                    "token_type_hint" to Schema(type = "string", description = "access_token or refresh_token. Does not change the result"),
+                                ) + clientSecretPostProperties(),
+                                // client_secret_basicではクレデンシャルをヘッダーで送るため、tokenだけが常に必須になる
+                                required = listOf("token"),
+                            )
+                        )
                     ),
+                    required = true,
+                ),
+                responses = mapOf(
+                    "200" to Response(
+                        description = "Token state. An inactive token returns only active=false",
+                        content = mapOf("application/json" to MediaType(schema = introspectionResponseSchema())),
+                    ),
+                    "400" to Response(description = "OAuth error", content = errorContent),
+                    "401" to Response(description = "Invalid client authentication", content = errorContent),
+                    "403" to Response(
+                        description = "unauthorized_client. The client has not been granted the introspection permission",
+                        content = errorContent,
+                    ),
+                    "429" to rateLimitedResponse(oauthErrorSchema),
+                    // クライアントの登録情報を読めなかった場合は、認証の失敗ではないのでserver_errorを返す
+                    "500" to Response(
+                        description = "server_error. The client registration could not be read. The client should retry",
+                        content = errorContent,
+                    ),
+                    "503" to verifierBusyResponse(oauthErrorSchema),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 流量制限時の429レスポンスを生成する
+     * トークンエンドポイントはリクエスト数とバックオフ、失効とイントロスペクションはバックオフでこの応答を返す
+     *
+     * @param oauthErrorSchema OAuthエラーレスポンスのスキーマ
+     * @return 429のレスポンス
+     */
+    private fun rateLimitedResponse(oauthErrorSchema: Schema): Response = Response(
+        description = "Rate limited (temporarily_unavailable). The Retry-After header gives the wait in seconds",
+        content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
+    )
+
+    /**
+     * Argon2の同時実行数の上限でクライアントシークレットを照合できなかった場合の503レスポンスを生成する
+     * トークン・失効・イントロスペクションの各エンドポイントが、シークレットを照合せずにこの応答を返す（失敗の試行としては数えない）
+     *
+     * @param oauthErrorSchema OAuthエラーレスポンスのスキーマ
+     * @return 503のレスポンス
+     */
+    private fun verifierBusyResponse(oauthErrorSchema: Schema): Response = Response(
+        description = "Server busy (temporarily_unavailable). The client secret could not be verified because no verification slot became free. Retry after the Retry-After header, which is always 1 second",
+        content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
+    )
+
+    /**
+     * イントロスペクションレスポンスのスキーマを生成する（IntrospectionResponse に対応）
+     *
+     * @return レスポンスのスキーマ
+     */
+    private fun introspectionResponseSchema(): Schema = Schema(
+        type = "object",
+        properties = mapOf(
+            "active" to Schema(type = "boolean", description = "Whether the token is currently active"),
+            "scope" to Schema(type = "string", description = "Granted scopes (space-separated)"),
+            "client_id" to Schema(type = "string", description = "Client the token was issued to"),
+            "username" to Schema(type = "string", description = "Minecraft player name"),
+            "token_type" to Schema(type = "string", description = "Bearer for access and service account tokens. Omitted for refresh tokens"),
+            "exp" to Schema(type = "integer", format = "int64", description = "Expiration time (Unix seconds)"),
+            "iat" to Schema(type = "integer", format = "int64", description = "Issued-at time (Unix seconds)"),
+            "nbf" to Schema(type = "integer", format = "int64", description = "Not-before time (Unix seconds)"),
+            "sub" to Schema(type = "string", description = "Player UUID"),
+            "aud" to Schema(type = "string", description = "Audience the token was intended for"),
+            "iss" to Schema(type = "string", description = "Issuer identifier"),
+            "jti" to Schema(type = "string", description = "JWT identifier"),
+        ),
+        required = listOf("active"),
+    )
+
+    /**
+     * RP-Initiated LogoutエンドポイントのPathItemを生成する
+     * OIDC RP-Initiated Logout 1.0 Section 2: GETとPOSTはパラメータの渡し方だけが異なる
+     *
+     * @param oauthErrorSchema OAuthエラーレスポンスのスキーマ
+     * @return /oauth2/end_session のPathItem
+     */
+    private fun endSessionPathItem(oauthErrorSchema: Schema): PathItem {
+        val summary = "End session endpoint"
+        val description = "Starts RP-Initiated Logout. OpenID Connect RP-Initiated Logout 1.0. " +
+            "MineAuth keeps no server-side session, so the client discards its tokens and uses /oauth2/revoke to invalidate them."
+
+        // パラメータ名と説明はGETのクエリとPOSTのフォームで共通にする
+        val parameterDescriptions = mapOf(
+            "id_token_hint" to "Previously issued ID Token. Required when post_logout_redirect_uri is specified",
+            "client_id" to "Client identifier. When sent with id_token_hint, it must be one of the ID Token's audiences",
+            "post_logout_redirect_uri" to "URL to redirect to after logout. It must match a registered redirect URI of the client",
+            "state" to "Opaque value returned in the redirect",
+        )
+
+        val responses = mapOf(
+            "200" to Response(
+                description = "Logout completed. Returned when post_logout_redirect_uri is not specified",
+                content = mapOf(
+                    "application/json" to MediaType(
+                        schema = Schema(
+                            type = "object",
+                            properties = mapOf("message" to Schema(type = "string", description = "Completion message")),
+                            required = listOf("message"),
+                        )
+                    )
+                ),
+            ),
+            "302" to Response(description = "Redirect to post_logout_redirect_uri with state, if provided"),
+            "400" to Response(
+                description = "invalid_request. The id_token_hint, client_id or post_logout_redirect_uri is invalid. No redirect is performed",
+                content = mapOf("application/json" to MediaType(schema = oauthErrorSchema)),
+            ),
+        )
+
+        return PathItem(
+            get = Operation(
+                summary = summary,
+                description = description,
+                operationId = "get_oauth2_end_session",
+                tags = listOf(TAG_OAUTH),
+                parameters = parameterDescriptions.map { (name, parameterDescription) ->
+                    Parameter(name = name, location = "query", schema = Schema(type = "string"), description = parameterDescription)
+                },
+                responses = responses,
+            ),
+            post = Operation(
+                summary = summary,
+                description = description,
+                operationId = "post_oauth2_end_session",
+                tags = listOf(TAG_OAUTH),
+                requestBody = RequestBody(
+                    content = mapOf(
+                        "application/x-www-form-urlencoded" to MediaType(
+                            schema = Schema(
+                                type = "object",
+                                properties = parameterDescriptions.mapValues { (_, parameterDescription) ->
+                                    Schema(type = "string", description = parameterDescription)
+                                },
+                            )
+                        )
+                    ),
+                ),
+                responses = responses,
+            ),
+        )
+    }
+
+    /**
+     * UserInfoエンドポイントのOperationを生成する
+     * OpenAPIではoperationIdが一意である必要があるため、メソッドごとに指定する
+     *
+     * @param operationId メソッドごとのoperationId
+     * @return UserInfoエンドポイントのOperation
+     */
+    private fun userInfoOperation(operationId: String): Operation {
+        return Operation(
+            summary = "UserInfo endpoint",
+            description = "Returns claims about the authenticated user. " +
+                "The access token must be sent in the Authorization header. OIDC Core Section 5.3.",
+            operationId = operationId,
+            tags = listOf(TAG_OAUTH),
+            security = listOf(mapOf("oauth2" to listOf("openid"))),
+            responses = mapOf(
+                "200" to Response(
+                    description = "User information",
+                    content = mapOf(
+                        "application/json" to MediaType(
+                            schema = Schema(
+                                type = "object",
+                                properties = mapOf(
+                                    "sub" to Schema(type = "string", description = "Player UUID"),
+                                    "name" to Schema(type = "string", description = "Player name"),
+                                    "preferred_username" to Schema(type = "string", description = "Player name"),
+                                    "email" to Schema(type = "string", description = "Generated email address"),
+                                    "roles" to Schema(type = "array", items = Schema(type = "string"), description = "LuckPerms groups"),
+                                ),
+                                required = listOf("sub"),
+                            )
+                        )
+                    ),
+                ),
+                "401" to Response(
+                    description = "Missing or invalid access token. " +
+                        "The WWW-Authenticate header carries the Bearer challenge (RFC 6750 Section 3).",
                 ),
             ),
         )

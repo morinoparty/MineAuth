@@ -29,6 +29,23 @@ class OAuthErrorTest {
         }
 
         @Test
+        @DisplayName("Authorization error code values match the specs")
+        fun authorizationErrorCodeValuesMatchSpecs() {
+            assertEquals("unsupported_response_type", OAuthErrorCode.UNSUPPORTED_RESPONSE_TYPE.code)
+            assertEquals("login_required", OAuthErrorCode.LOGIN_REQUIRED.code)
+            assertEquals("request_not_supported", OAuthErrorCode.REQUEST_NOT_SUPPORTED.code)
+            assertEquals("request_uri_not_supported", OAuthErrorCode.REQUEST_URI_NOT_SUPPORTED.code)
+        }
+
+        @Test
+        @DisplayName("toResponse removes forbidden description characters")
+        fun toResponseRemovesForbiddenDescriptionCharacters() {
+            val response = OAuthErrorCode.INVALID_REQUEST.toResponse("bad \"value\"\n")
+
+            assertEquals("bad value", response.errorDescription)
+        }
+
+        @Test
         @DisplayName("toResponse creates correct error response")
         fun toResponseCreatesCorrectErrorResponse() {
             val description = "Missing required parameter"
@@ -45,6 +62,33 @@ class OAuthErrorTest {
 
             assertEquals("invalid_grant", response.error)
             assertNull(response.errorDescription)
+        }
+    }
+
+    @Nested
+    @DisplayName("sanitizeErrorDescription")
+    inner class SanitizeErrorDescriptionTest {
+
+        @Test
+        @DisplayName("Keeps every allowed character")
+        fun keepsAllowedCharacters() {
+            // RFC 6749: %x20-21 / %x23-5B / %x5D-7E が全て許可文字
+            val allowed = (0x20..0x7E).filter { it != 0x22 && it != 0x5C }.map { it.toChar() }.joinToString("")
+
+            assertEquals(allowed, sanitizeErrorDescription(allowed))
+        }
+
+        @Test
+        @DisplayName("Drops quotes, backslashes, control and non-ASCII characters")
+        fun dropsForbiddenCharacters() {
+            assertEquals("foobar", sanitizeErrorDescription("foo\"bar\\\n\t\u007Fé😀"))
+        }
+
+        @Test
+        @DisplayName("Returns null when nothing remains")
+        fun returnsNullWhenNothingRemains() {
+            assertNull(sanitizeErrorDescription("\"é"))
+            assertNull(sanitizeErrorDescription(null))
         }
     }
 

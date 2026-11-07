@@ -130,6 +130,8 @@ genericOAuth({
 }),
 ```
 
+A Confidential client can log users in without any extra setup. To also call the [token introspection endpoint](/docs/developer/oauth/introspect), a server administrator must grant it the permission with `/ma client introspection allow <clientId>`, which requires `mineauth.client.introspection`. Without it, the endpoint responds with `403 unauthorized_client`.
+
 ## Framework Integration
 
 ### Next.js
@@ -206,17 +208,31 @@ See [Userinfo Endpoint](/docs/developer/oauth/userinfo) for more details.
 A client can have several registered redirect URIs, and a request is accepted when its `redirect_uri` matches any of them.
 For example, you can register both the production URL and `http://localhost:3000/...` for local development.
 
-Each registered redirect URI is validated in two steps: an exact string match first, then as a regular expression. When used as a regular expression, `/.*` is appended to the registered value (or `.*` if it already ends with `/`), so sub-paths are allowed automatically.
+Each registered redirect URI is validated in two steps: an exact string match first, then as a regular expression. When used as a regular expression, `(/.*)?` is appended to the registered value (or `.*` if it already ends with `/`), so a request can use the value itself or any of its sub-paths.
 
-This is useful for platforms with per-deployment preview URLs, such as Cloudflare Workers:
+A `redirect_uri` containing `#` is always rejected, whatever is registered.
+
+A registered value whose scheme contains `.` or `+`, such as the custom scheme `com.example.app://callback`, is never evaluated as a regular expression. Those characters would otherwise let the scheme match another one: `h.tp://evil.example/cb` would match `http://evil.example/cb`. Such a value is compared as plain text instead. A request matches when it equals the registered value or is a sub-path of it, such as `com.example.app://callback/done`. A leading `^` is ignored.
+
+Regular expressions are useful for platforms with per-deployment preview URLs, such as Cloudflare Workers:
 
 ```
 https://(?:[0-9a-f]{8}-)?myapp\.example\.workers\.dev/api/auth/oauth2/callback/
 ```
 
 - `(?:[0-9a-f]{8}-)?` matches the optional 8-character hex prefix of preview deployments, while still allowing the stable domain.
-- Ending the pattern with `/` means only `.*` is appended, so `.../callback/MineAuth` matches as a sub-path.
-- Regular expression patterns must start with `http` (an optional leading `^` is allowed); other schemes are rejected at registration time to prevent open redirects.
+- Ending the pattern with `/` means only `.*` is appended, so `.../callback/MineAuth` matches as a sub-path, while `.../callback` without the slash does not match.
+
+Because `http` and `https` values are also evaluated as regular expressions, an unescaped `.` matches any character. Write dots as `\.` when the host must match exactly.
+
+### Pattern Registration Rules
+
+A value that cannot be read as a URI with a host is treated as a regular expression pattern. The following rules are checked at registration, in addition to the [redirect URI rules](/docs/administrator/quick-start#redirect-uri-rules):
+
+- A pattern must start with `https://`, or with `http://` followed by a loopback host. A leading `^` is allowed. Prefixes such as `https?://` and `httpx` are rejected.
+- In an `http://` pattern, the loopback host must be written literally as `localhost`, `127\.0\.0\.1`, or `\[::1\]`. An optional port written as digits, `:\d+`, `:[0-9]+`, or an optional group such as `(:\d+)?` may follow. After that, the pattern must end or continue with a `/` that is not optional. For example, `http://localhost:\d+/callback` is accepted, while `http://localhost:.*/callback` is rejected because it also matches `http://localhost:x@evil.example/callback`.
+- A `|` at the top level of a pattern is rejected, because the alternatives after it would not be restricted by the start of the pattern. Write alternatives inside a group, such as `https://(a|b)\.example\.com/callback`.
+- A pattern cannot contain `#`.
 
 ## Troubleshooting
 
@@ -225,7 +241,8 @@ https://(?:[0-9a-f]{8}-)?myapp\.example\.workers\.dev/api/auth/oauth2/callback/
 **"Invalid redirect URI"**
 - Ensure the redirect URI in your application matches exactly what was registered in MineAuth
 - Check for trailing slashes
-- If you registered a regular expression pattern, remember that `/.*` is appended unless the pattern ends with `/` (see [Redirect URI Patterns](#redirect-uri-patterns))
+- If you registered a regular expression pattern, remember that `(/.*)?` is appended, or `.*` if the pattern ends with `/` (see [Redirect URI Patterns](#redirect-uri-patterns))
+- Remove any `#` fragment from the `redirect_uri`
 
 **"PKCE verification failed"**
 - Make sure `pkce: true` is set for Public clients

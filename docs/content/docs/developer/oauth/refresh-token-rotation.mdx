@@ -28,10 +28,48 @@ client_secret=your-client-secret
 Each successful refresh request performs the following steps:
 
 1. The refresh token's signature, expiration, and client binding are verified
-2. The old refresh token is added to the revocation list
-3. A new access token and a new refresh token are issued
+2. The token's grant is checked. A token of a revoked grant is rejected with `invalid_grant`
+3. The token itself is checked. A refresh token that was already rotated or revoked is rejected with `invalid_grant` (see [Reuse Detection](#reuse-detection))
+4. A new access token and a new refresh token are signed in the same grant
+5. The old refresh token is added to the revocation list. If another request added it first, for example a concurrent rotation on another server or a call to the [revocation endpoint](/docs/developer/oauth/revoke), the signed tokens are discarded and the request is rejected with `invalid_grant`
+6. The new tokens are returned
+
+The old refresh token is recorded as used only after the new tokens have been signed. A request that fails before that step, for example because a token could not be signed, leaves the old refresh token unused, so the client can retry with it. A response lost after that step is covered by the [reuse grace period](#reuse-grace-period).
 
 Clients must always store the refresh token returned in the latest response and discard the old one.
+
+### Server Errors
+
+If the server cannot read the state of the grant or of the presented token, or cannot record the old token, it answers `server_error` with HTTP status 500 and revokes nothing. `invalid_grant` would tell the client that its refresh token is no longer valid, so it is never returned for a database failure. A client that receives `server_error` should keep its refresh token and retry later.
+
+Once a request has recorded the old token as used, it reads nothing more from the database and returns the new tokens, so a database failure never leaves the client with a used refresh token and no successor.
+
+```json
+{
+  "error": "server_error",
+  "error_description": "Failed to read the state of the refresh token"
+}
+```
+
+These failures are logged as errors with the client ID and the grant ID.
+
+## Grants
+
+A grant is one authorization and everything issued from it. MineAuth generates a grant ID when it issues an authorization code, and the access tokens and refresh tokens from that code and from all later rotations carry it in the `grant_id` claim. ID tokens and service account tokens do not have this claim.
+
+The grant is the unit MineAuth revokes when it detects misuse or when a client revokes a refresh token. Once a grant is revoked, none of its tokens pass the Bearer check, introspection, or the refresh grant, including tokens issued after the event that caused the revocation.
+
+Three events revoke a grant:
+
+- A refresh token is presented again after the grace period ([Reuse Detection](#reuse-detection))
+- An authorization code is presented again by the client it was issued to ([Authorization Code Replay](#authorization-code-replay))
+- A client revokes a refresh token through the [revocation endpoint](/docs/developer/oauth/revoke)
+
+### Tokens Without a Grant
+
+Tokens issued before grants were introduced have no `grant_id` claim and are checked by their own `jti` only. When such a refresh token is rotated, the new tokens start a new grant, so these older tokens disappear within the 30-day refresh token lifetime.
+
+Because such a token has no grant to check before the rotation, a response repeated from the [grace period](#reuse-grace-period) cache is checked against the grant of the new tokens it contains. If that grant has been revoked, the repeated request is rejected with `invalid_grant`. If its state cannot be read, the repeated request is answered with `server_error`. The request that performed the rotation is not checked this way, because the grant it has just created cannot have been revoked yet.
 
 ## Reuse Grace Period
 
@@ -41,13 +79,13 @@ To handle this, MineAuth implements a reuse grace period as described in [RFC 97
 
 - The response for each rotation is cached in memory for **60 seconds**, keyed by the old refresh token's JWT ID
 - Requests that reuse the same refresh token within the grace period receive **the same response** (the same new access token and refresh token) as the first request
-- Concurrent requests are collapsed into a single issuance, so rotation is performed exactly once per token
+- Concurrent requests are collapsed into a single issuance, so rotation is performed exactly once per token. Servers that share a database cannot both rotate the same token, because only the request that records the old token as used returns new tokens
 
 This makes the refresh operation idempotent within the grace period. All concurrent callers receive an identical token pair, which also prevents cookie or storage conflicts on the client side.
 
-### After the Grace Period
+### Reuse Detection
 
-Reuse of a rotated refresh token after the grace period has elapsed is rejected with `invalid_grant`, preserving the theft-detection property of token rotation.
+Reuse of a rotated refresh token after the grace period has elapsed is rejected with `invalid_grant`, and MineAuth also revokes the token's whole grant, as [RFC 9700 Section 4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2) requires for public clients. Rejecting the old token alone would not be enough, because an attacker who used a stolen token first would be holding the newest refresh token.
 
 ```json
 {
@@ -56,13 +94,44 @@ Reuse of a rotated refresh token after the grace period has elapsed is rejected 
 }
 ```
 
+MineAuth cannot tell which party presented the rotated token, so this is a deliberate trade-off: a legitimate client that presents an old refresh token after the grace period, for example by retrying very late or by restoring old stored state, ends its own session. All tokens of the grant stop working and the user has to authorize the client again.
+
+Detection writes a warning to the server log with the client ID and the grant ID. Token values are never logged. If the grant revocation cannot be written, the request is still denied and the failure is logged as an error. If the server cannot read the state of the presented token, it answers `server_error` and revokes nothing, because a database failure is not evidence of reuse (see [Server Errors](#server-errors)).
+
+Reuse within the grace period is not treated as misuse and revokes nothing. The grace period is measured from the time the old token was recorded as used, which is stored in the database as milliseconds since the Unix epoch. A recorded time up to 60 seconds ahead of the reading server's clock is treated as a clock difference between servers and counts as within the grace period. A recorded time further ahead cannot come from a recent rotation, so it counts as outside the grace period and the presentation is treated as reuse. A token whose time of use was not recorded, because it was used before the upgrade to this version or by a server running an earlier version, also counts as outside the grace period (see [Implementation Notes](#implementation-notes)). A server that has no cached response for a token rotated less than 60 seconds ago, for example after a restart or when the retry reaches a different server than the one that rotated the token, cannot return the original response. It rejects the request with `invalid_grant` and logs a warning, but does not revoke the grant, because such a request is most likely a retry after a lost response. The client has to start a new authorization in that case.
+
 ### Interaction with Explicit Revocation
 
-Tokens revoked through the [revocation endpoint](/docs/developer/oauth/revoke) are not eligible for the grace period. The cached response only exists for tokens that were revoked as part of a rotation.
+Tokens revoked through the [revocation endpoint](/docs/developer/oauth/revoke) are not eligible for the grace period. Revoking a refresh token removes its cached response and revokes its grant, so after refresh token `R1` is rotated into `R2`, revoking either of them makes the next request with `R1` fail with `invalid_grant`, even within the 60 seconds.
+
+A revocation can also arrive while the same token is being rotated. If the revocation is recorded before the rotation records the old token as used, the rotation is rejected with `invalid_grant` and its new tokens are never returned.
+
+## Authorization Code Replay
+
+An authorization code can be used once, as [RFC 6749 Section 4.1.2](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2) requires. A code is used up once the client has authenticated, before the code's expiry, client binding, redirect URI, and PKCE checks, so an attempt that fails one of those checks also uses it up. Requests rejected before client authentication completes, for example for missing, malformed, or repeated parameters, for rate limits, or for failed client authentication, do not consume the code.
+
+When a used code is presented again before its original expiry:
+
+- If the authenticated client is the one the code was issued to, MineAuth revokes the grant, which stops the tokens from the first redemption, and writes a warning to the server log with the client ID and the grant ID. The code itself is never logged
+- If another client presents it, the request is denied and nothing is revoked. A code held by another client does not show that the tokens were compromised, and revoking here would let any client end someone else's session
+
+In every case the response is the same `invalid_grant` as for an unknown code:
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "The authorization code is invalid or expired"
+}
+```
 
 ## Implementation Notes
 
-- The response cache is held in memory and entries are removed after the grace period expires
+- The response cache and the record of used authorization codes are held in memory on each server. Entries are removed after the grace period and after the code's original expiry respectively
+- Restarting a server clears both. A used authorization code then counts as an unknown code, which is still denied but no longer revokes the grant. A refresh token rotated less than 60 seconds before the restart no longer has a cached response, so presenting it again is denied with `invalid_grant` without revoking the grant. The same applies when a retry reaches a different server than the one that rotated the token
+- Revoked tokens and revoked grants are stored in the database, so they survive restarts and apply to all servers using that database
+- The time a token was recorded as used is written by the server that rotated it, as milliseconds since the Unix epoch, which carry no time zone. Servers that share a database may run in different time zones, and neither their time zones, the database's time zone, nor a daylight saving time change shifts the grace period. The servers' clocks must still be synchronized, for example with NTP. Clock differences between servers shift the grace period for requests that reach another server by the same amount
+- The `revoked_at` column of the `revoked_tokens` table holds the same time in the local time of the server that wrote it, for reading the table. It is not used for the grace period (see [Database](/docs/contributer/record/db#revokedtokens))
+- Earlier versions did not record the time in milliseconds. A refresh token used before the upgrade to this version, or used by a server that still runs an earlier version and shares the database, has no recorded time. Presenting that token again is treated as reuse and revokes its grant, even within 60 seconds of its rotation. Upgrade every server that shares a database at the same time. Otherwise, when an older server rotates a token and the response is lost, the client's retry on an upgraded server ends its own session
 - Failed rotations are not cached, so a subsequent request can retry the rotation
 - The grace period replay returns the same `Cache-Control: no-store` headers as a normal token response
 
@@ -70,3 +139,4 @@ Tokens revoked through the [revocation endpoint](/docs/developer/oauth/revoke) a
 
 - [RFC 9700 - Best Current Practice for OAuth 2.0 Security, Section 4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2)
 - [RFC 6749 - The OAuth 2.0 Authorization Framework, Section 6](https://datatracker.ietf.org/doc/html/rfc6749#section-6)
+- [RFC 7009 - OAuth 2.0 Token Revocation, Section 2.1](https://datatracker.ietf.org/doc/html/rfc7009#section-2.1)

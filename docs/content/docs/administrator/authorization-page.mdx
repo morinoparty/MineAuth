@@ -35,12 +35,31 @@ The data format is the same as the bundled page. See [Authorization Page](/docs/
 
 The page should also satisfy the following points.
 
-- The login form must be submitted as a native `POST` to the current URL with the same fields as the bundled page, so that MineAuth can redirect to `redirect_uri`.
+- The login form must be submitted as a native `POST` to the current URL with the same fields as the bundled page, so that MineAuth can redirect to `redirect_uri`. MineAuth recognizes a login by the presence of `username` or `password`. A `POST` without them displays the page again, and all fields are validated again on submission.
+- The form must send `code_challenge_method`. A login submission without it is rejected, in the same way as an authorization request.
 - JavaScript and CSS should be inlined into the HTML. Only `web/authorize.html` is read, and the `web/` directory is not served over HTTP.
 - Images and other files can be placed in `assets/`. The directory is served at `/assets`, so a file at `assets/cover/image.avif` is available at `/assets/cover/image.avif`.
 
 <Callout type="warn">
 Files in `assets/` are public. Do not place the custom page or any private file there.
+</Callout>
+
+## Security Headers
+
+Every response from `/oauth2/authorize`, including error pages and redirects, carries the following headers.
+
+```
+Content-Security-Policy: frame-ancestors 'none'
+X-Frame-Options: DENY
+Cache-Control: no-store
+```
+
+These headers stop other sites from embedding the page in a frame, which protects players from clickjacking. They also stop browsers and proxies from storing the page.
+
+The Content Security Policy contains only `frame-ancestors`, so a custom page can still use inline or external scripts, styles, and images. The page cannot be displayed in an iframe.
+
+<Callout type="warn">
+A reverse proxy in front of MineAuth must not remove or overwrite these headers.
 </Callout>
 
 ## Building a Custom Page
