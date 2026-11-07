@@ -19,9 +19,14 @@ import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.ObservabilityConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
+import party.morino.mineauth.core.web.router.auth.oauth.RedeemedCodeStore
+import party.morino.mineauth.core.file.utils.JwtTestSupport
 import party.morino.mineauth.core.mocks.config.PluginDirectoryMock
 import party.morino.mineauth.core.plugin.pluginModule
+import party.morino.mineauth.core.utils.Argon2Gate
+import party.morino.mineauth.core.web.ratelimit.RateLimitTestSupport
 import party.morino.mineauth.core.web.router.auth.oauth.RefreshTokenResponseCache
+import party.morino.mineauth.core.web.router.auth.oauth.TokenStateValidator
 
 /**
  * MineAuthのテスト用拡張機能
@@ -77,6 +82,15 @@ class MineAuthTest :
             single<ServerMock> { server }
             // リフレッシュトークンローテーションのreuse grace period用キャッシュ
             single { RefreshTokenResponseCache() }
+            // 認可コードのリプレイ検知用の使用済み記録
+            single { RedeemedCodeStore() }
+            // Application.module()のBearer認証が参照するVerifierと状態検証（鍵はテスト用に生成したもの）
+            single { JwtTestSupport.verifiers }
+            single { TokenStateValidator() }
+            // 本番ではConfigLoaderが登録する流量制限（テストでは無効にしておく）
+            single { RateLimitTestSupport.disabled() }
+            // Argon2の同時実行数を制限するゲート（本番ではMineAuth.setupKoinが登録する）
+            single { Argon2Gate() }
         }
 
         // Koinを初期化（appModuleとpluginModuleを読み込む）

@@ -19,8 +19,10 @@ import party.morino.mineauth.core.database.OAuthClients
 import party.morino.mineauth.core.utils.Argon2Utils
 import party.morino.mineauth.core.web.telemetry.withDatabaseSpan
 import java.security.SecureRandom
+import java.sql.SQLException
 import java.time.LocalDateTime
 import java.util.*
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * OAuthクライアントの種別
@@ -45,7 +47,9 @@ data class OAuthClientData(
     val redirectUris: List<String>,
     val issuerAccountId: String,
     val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime
+    val updatedAt: LocalDateTime,
+    // トークンイントロスペクションの利用権限（Publicクライアントは常にfalse）
+    val introspectionAllowed: Boolean = false
 )
 
 /**
@@ -96,13 +100,15 @@ object OAuthClientRepository {
      * @param clientType クライアント種別（public または confidential）
      * @param redirectUris リダイレクトURI（登録順に保存する）
      * @param issuerAccountId 発行者のアカウントID
+     * @param introspectionAllowed トークンイントロスペクションを許可するか（Confidentialクライアントにのみ適用する）
      * @return 成功時は作成されたクライアント（Confidentialの場合は平文シークレット付き）、失敗時はエラー
      */
     suspend fun create(
         clientName: String,
         clientType: ClientType,
         redirectUris: List<String>,
-        issuerAccountId: String
+        issuerAccountId: String,
+        introspectionAllowed: Boolean = false
     ): Either<OAuthClientError, OAuthClientCreationResult> = newSuspendedTransaction {
         try {
             // 発行者アカウントの存在確認
@@ -124,12 +130,16 @@ object OAuthClientRepository {
                 null to null
             }
 
+            // Publicクライアントはイントロスペクションエンドポイントで認証できないため、権限を持たせない
+            val grantedIntrospection = introspectionAllowed && clientType == ClientType.CONFIDENTIAL
+
             OAuthClients.insert {
                 it[OAuthClients.clientId] = clientId
                 it[OAuthClients.clientName] = clientName
                 it[OAuthClients.clientType] = clientType.value
                 it[OAuthClients.clientSecretHash] = secretHash
                 it[OAuthClients.issuerAccountId] = issuerAccountId
+                it[OAuthClients.introspectionAllowed] = grantedIntrospection
                 it[OAuthClients.createdAt] = now
                 it[OAuthClients.updatedAt] = now
             }
@@ -144,7 +154,8 @@ object OAuthClientRepository {
                     redirectUris = redirectUris,
                     issuerAccountId = issuerAccountId,
                     createdAt = now,
-                    updatedAt = now
+                    updatedAt = now,
+                    introspectionAllowed = grantedIntrospection
                 ),
                 clientSecret = plainSecret
             ).right()
@@ -172,6 +183,10 @@ object OAuthClientRepository {
                     } else {
                         row.toOAuthClientData(findRedirectUris(clientId)).right()
                     }
+                } catch (e: CancellationException) {
+                    // キャンセルはDBの障害ではないので、DatabaseErrorに変えずに送出する
+                    // （クライアント認証ではDatabaseErrorをserver_errorとしてSEVEREで記録するため、キャンセルを障害に見せない）
+                    throw e
                 } catch (e: Exception) {
                     OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
                 }
@@ -303,6 +318,49 @@ object OAuthClientRepository {
     }
 
     /**
+     * トークンイントロスペクションの利用権限を変更する（Confidentialクライアントのみ）
+     *
+     * Publicクライアントはイントロスペクションエンドポイントで認証できないため、権限を持てない
+     *
+     * @param clientId クライアントID
+     * @param allowed 許可する場合true
+     * @return 成功時は更新されたクライアントデータ、失敗時はエラー（PublicクライアントはInvalidCredentials）
+     */
+    suspend fun setIntrospectionAllowed(
+        clientId: String,
+        allowed: Boolean
+    ): Either<OAuthClientError, OAuthClientData> = newSuspendedTransaction {
+        try {
+            val existing = OAuthClients.selectAll()
+                .where { OAuthClients.clientId eq clientId }
+                .firstOrNull()
+
+            if (existing == null) {
+                return@newSuspendedTransaction OAuthClientError.NotFound.left()
+            }
+
+            val clientType = ClientType.fromValue(existing[OAuthClients.clientType])
+            if (clientType != ClientType.CONFIDENTIAL) {
+                return@newSuspendedTransaction OAuthClientError.InvalidCredentials.left()
+            }
+
+            OAuthClients.update({ OAuthClients.clientId eq clientId }) {
+                it[introspectionAllowed] = allowed
+                it[updatedAt] = LocalDateTime.now()
+            }
+
+            // 更新後のデータを取得して返す
+            val updated = OAuthClients.selectAll()
+                .where { OAuthClients.clientId eq clientId }
+                .first()
+
+            updated.toOAuthClientData(findRedirectUris(clientId)).right()
+        } catch (e: SQLException) {
+            OAuthClientError.DatabaseError(e.message ?: "Unknown error").left()
+        }
+    }
+
+    /**
      * 発行者アカウントIDでクライアント一覧を取得する
      *
      * @param issuerAccountId 発行者のアカウントID
@@ -428,6 +486,7 @@ object OAuthClientRepository {
         redirectUris = redirectUris,
         issuerAccountId = this[OAuthClients.issuerAccountId],
         createdAt = this[OAuthClients.createdAt],
-        updatedAt = this[OAuthClients.updatedAt]
+        updatedAt = this[OAuthClients.updatedAt],
+        introspectionAllowed = this[OAuthClients.introspectionAllowed]
     )
 }

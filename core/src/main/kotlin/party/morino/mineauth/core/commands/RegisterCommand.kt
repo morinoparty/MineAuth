@@ -11,14 +11,18 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.v1.jdbc.update
 import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
+import org.koin.core.component.get
 import party.morino.mineauth.core.database.UserAuthData
 import party.morino.mineauth.core.utils.PlayerPasswordHasher
 
+/**
+ * パスワードの発行と再発行を行うコマンド
+ *
+ * このインスタンスは起動時に一度だけ作られる。
+ * /mineauth reload で設定が変わるとハッシュ化クラスも置き換わるため、保持せず使うたびにKoinから取得する。
+ */
 @Command("mineauth|ma|mauth")
 class RegisterCommand : KoinComponent {
-    private val passwordHasher: PlayerPasswordHasher by inject()
-
 
     @Command("register")
     suspend fun register(sender: CommandSender) {
@@ -38,7 +42,7 @@ class RegisterCommand : KoinComponent {
         sender.sendRichMessage(
             "Password is  $password  <yellow><click:copy_to_clipboard:'$password'>Click to copy</click></yellow>"
         )
-        val hashed = passwordHasher.hash(password)
+        val hashed = get<PlayerPasswordHasher>().hash(password)
 
         newSuspendedTransaction(Dispatchers.IO) {
             UserAuthData.insert {
@@ -66,7 +70,7 @@ class RegisterCommand : KoinComponent {
         sender.sendRichMessage(
             "Password is  $password. <yellow><click:copy_to_clipboard:'$password'>Click to copy</click></yellow>"
         )
-        val hashed = passwordHasher.hash(password)
+        val hashed = get<PlayerPasswordHasher>().hash(password)
         newSuspendedTransaction(Dispatchers.IO) {
             UserAuthData.update({ UserAuthData.uuid eq sender.uniqueId.toString() }) {
                 it[UserAuthData.password] = hashed

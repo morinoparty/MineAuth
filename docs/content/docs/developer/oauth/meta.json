@@ -3,6 +3,7 @@
 	"icon": "KeyRound",
 	"pages": [
 		"discovery",
+		"authorization",
 		"scopes",
 		"userinfo",
 		"refresh-token-rotation",
