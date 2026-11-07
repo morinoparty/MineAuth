@@ -1,5 +1,7 @@
 package party.morino.mineauth.core.file.load.config
 
+import arrow.core.getOrElse
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import org.koin.core.context.loadKoinModules
 import org.koin.dsl.module
@@ -7,8 +9,15 @@ import party.morino.mineauth.core.utils.json
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
 import party.morino.mineauth.core.file.data.OAuthConfigData
+import party.morino.mineauth.core.file.data.ServerConfig
 import party.morino.mineauth.core.file.data.WebServerConfigData
+import party.morino.mineauth.core.file.data.isInsecureBaseUrl
+import party.morino.mineauth.core.file.data.validateBaseUrl
+import party.morino.mineauth.core.file.utils.JwtProvider
+import party.morino.mineauth.core.file.utils.TokenVerifiers
 import party.morino.mineauth.core.utils.PlayerPasswordHasher
+import party.morino.mineauth.core.web.ratelimit.CidrRange
+import party.morino.mineauth.core.web.ratelimit.OAuthRateLimits
 import java.io.File
 import java.security.SecureRandom
 import java.util.Base64
@@ -33,16 +42,80 @@ class ConfigLoader : AbstractConfigLoader() {
             configFile.writeText(json.encodeToString(defaultConfig))
         }
 
-        val config: MineAuthConfig = ensurePepper(json.decodeFromString(configFile.readText()))
+        val decodedConfig: MineAuthConfig = decodeConfig(configFile.readText())
+        // Koinへ登録する前に検証し、不正なissuerを公開しない
+        // ここで失敗するとKoinには以前の設定が残り、/mineauth reload はその設定でHTTPサーバーを再開する
+        checkBaseUrl(decodedConfig.server)
+
+        val config: MineAuthConfig = ensurePepper(decodedConfig)
+        // 初回のリクエストまで遅らせず、読み込みのたびにtrustedProxiesの誤りを警告するためここで作る
+        val rateLimits = OAuthRateLimits(
+            config.rateLimit,
+            parseTrustedProxies(config.rateLimit.trustedProxies),
+            plugin.logger
+        )
 
         // 統合設定とパスワードハッシュ化クラスをKoinに登録
+        // 流量制限も新しいインスタンスに置き換わるので、reloadで新しい上限が適用されカウンターはリセットされる
         loadKoinModules(module {
             single { config }
             single { PlayerPasswordHasher(config.password) }
+            single { rateLimits }
         })
 
         // 後方互換性: 既存のデータクラスにも変換して登録
         loadLegacyModules(config)
+    }
+
+    /**
+     * config.jsonの内容を解釈する
+     *
+     * パーサーのメッセージは2行目以降にエラー位置の前後の入力を引用し、そこにはデータベースのパスワードやpepperが含まれうる。
+     * 起動時の有効化の失敗ログにも /mineauth reload の報告にも残らないよう、ここで引用を取り除いた例外に置き換える
+     *
+     * @param text config.jsonの内容
+     * @return 解釈した設定
+     * @throws ConfigParseException 解釈できなかった場合
+     */
+    private fun decodeConfig(text: String): MineAuthConfig = try {
+        json.decodeFromString(text)
+    } catch (e: SerializationException) {
+        // 元の例外を原因として添付するとCaused byに引用がそのまま出るため、1行目だけを持つ例外を新しく送出する
+        throw ConfigParseException.of(configFile.name, e)
+    }
+
+    /**
+     * server.baseUrlを検証する
+     * クエリやフラグメントは仕様違反のissuerになるため読み込みを失敗させ、httpsでない場合は開発環境もあるので警告に留める
+     *
+     * @param server 読み込んだサーバー設定
+     * @throws IllegalStateException baseUrlが不正な場合
+     */
+    private fun checkBaseUrl(server: ServerConfig) {
+        val baseUrl = server.validateBaseUrl().getOrElse { error(it.message) }
+        if (isInsecureBaseUrl(baseUrl)) {
+            plugin.logger.warning(
+                "server.baseUrl (${server.baseUrl}) does not use https. " +
+                    "OpenID Connect requires https for the issuer and jwks_uri, so clients may reject this server."
+            )
+        }
+    }
+
+    /**
+     * rateLimit.trustedProxiesを解析する
+     * 解釈できない値を無視しても信頼する範囲が狭まるだけで穴は開かないので、起動は止めずに警告に留める
+     *
+     * @param entries 設定されたIPアドレスまたはCIDR
+     * @return 解釈できた範囲
+     */
+    private fun parseTrustedProxies(entries: List<String>): List<CidrRange> = entries.mapNotNull { entry ->
+        CidrRange.parse(entry).also { range ->
+            if (range == null) {
+                plugin.logger.warning(
+                    "rateLimit.trustedProxies entry ($entry) is ignored because it is not an IP address or CIDR range."
+                )
+            }
+        }
     }
 
     /**
@@ -108,6 +181,10 @@ class ConfigLoader : AbstractConfigLoader() {
             single { jwtConfigData }
             single { oauthConfigData }
             single { webServerConfigData }
+            // 種別ごとのJWT Verifier
+            // 読み込みのたびに置き換え、/mineauth reload 後は新しいissuerとtrustedIssuersだけを受け付ける
+            // 署名鍵はKeyUtils.initより後でないと読めないため、初回参照時に構築する
+            single { TokenVerifiers(JwtProvider.algorithm, jwtConfigData.acceptedIssuers) }
         })
     }
 

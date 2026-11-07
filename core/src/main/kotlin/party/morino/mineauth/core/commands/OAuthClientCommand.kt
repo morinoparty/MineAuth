@@ -1,6 +1,7 @@
 package party.morino.mineauth.core.commands
 
 import arrow.core.Either
+import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.incendo.cloud.annotations.Argument
@@ -8,7 +9,10 @@ import org.incendo.cloud.annotations.Command
 import org.incendo.cloud.annotations.Permission
 import org.incendo.cloud.annotation.specifier.Greedy
 import party.morino.mineauth.core.dialog.OAuthClientCreateDialog
+import party.morino.mineauth.core.dialog.OAuthClientCreateHandler
 import party.morino.mineauth.core.model.ClientId
+import party.morino.mineauth.core.repository.ClientType
+import party.morino.mineauth.core.repository.OAuthClientData
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
 import party.morino.mineauth.core.utils.RedirectUriValidator
@@ -107,6 +111,9 @@ class OAuthClientCommand {
                 sender.sendRichMessage("<gray>クライアント種別:</gray> <white>${client.clientType.value}</white>")
                 sender.sendRichMessage("<gray>リダイレクトURI:</gray>")
                 client.redirectUris.forEach { uri -> sender.sendRichMessage("  <white>$uri</white>") }
+                sender.sendRichMessage(
+                    "<gray>トークンイントロスペクション:</gray> <white>${introspectionStateLabel(client)}</white>"
+                )
                 sender.sendRichMessage("<gray>作成日時:</gray> <white>${client.createdAt}</white>")
                 sender.sendRichMessage("<gray>更新日時:</gray> <white>${client.updatedAt}</white>")
             }
@@ -184,6 +191,79 @@ class OAuthClientCommand {
     }
 
     /**
+     * Confidentialクライアントにトークンイントロスペクションを許可する
+     * 変更は次のリクエストから有効になる（クライアント認証のたびにDBから読み直すため）
+     */
+    @Command("client introspection allow <clientId>")
+    @Permission(OAuthClientCreateHandler.INTROSPECTION_PERMISSION)
+    suspend fun allowIntrospection(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId
+    ) {
+        updateIntrospectionAllowed(sender, clientId, allowed = true)
+    }
+
+    /**
+     * Confidentialクライアントのトークンイントロスペクションを拒否する
+     * 変更は次のリクエストから有効になる（クライアント認証のたびにDBから読み直すため）
+     */
+    @Command("client introspection deny <clientId>")
+    @Permission(OAuthClientCreateHandler.INTROSPECTION_PERMISSION)
+    suspend fun denyIntrospection(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId
+    ) {
+        updateIntrospectionAllowed(sender, clientId, allowed = false)
+    }
+
+    /**
+     * トークンイントロスペクションの利用権限を更新し、結果を通知する共通処理
+     *
+     * @param sender 実行者（結果を通知する）
+     * @param clientId 対象クライアント
+     * @param allowed 許可する場合true
+     */
+    private suspend fun updateIntrospectionAllowed(
+        sender: CommandSender,
+        clientId: ClientId,
+        allowed: Boolean
+    ) {
+        val result = OAuthClientRepository.setIntrospectionAllowed(clientId.value, allowed)
+
+        when (result) {
+            is Either.Left -> {
+                when (result.value) {
+                    is OAuthClientError.NotFound ->
+                        sender.sendRichMessage("<red>クライアントが見つかりません: ${clientId.value}</red>")
+                    is OAuthClientError.InvalidCredentials ->
+                        sender.sendRichMessage("<red>このクライアントはPublicタイプのため、トークンイントロスペクションの権限を持てません</red>")
+                    else ->
+                        sender.sendRichMessage("<red>トークンイントロスペクションの権限の更新に失敗しました</red>")
+                }
+            }
+            is Either.Right -> {
+                val state = if (allowed) "許可" else "拒否"
+                sender.sendRichMessage(
+                    "<green>クライアント「${result.value.clientName}」のトークンイントロスペクションを${state}しました</green>"
+                )
+            }
+        }
+    }
+
+    /**
+     * client info に表示するトークンイントロスペクションの権限の状態を返す
+     *
+     * @param client 対象クライアント
+     * @return 表示用の文字列
+     */
+    private fun introspectionStateLabel(client: OAuthClientData): String = when {
+        // Publicクライアントはイントロスペクションエンドポイントで認証できないため、権限の対象にならない
+        client.clientType != ClientType.CONFIDENTIAL -> "対象外（Publicクライアント）"
+        client.introspectionAllowed -> "許可"
+        else -> "拒否"
+    }
+
+    /**
      * OAuthクライアントにリダイレクトURIを追加する
      * URIには : や / が含まれるため、残りの引数をまとめて1つのURIとして受け取る
      */
@@ -199,7 +279,8 @@ class OAuthClientCommand {
             if (uri in current) {
                 Either.Left("このリダイレクトURIは登録済みです: $uri")
             } else {
-                RedirectUriValidator.validateAll(current + uri.trim())
+                // 追加するURIだけを検証する（以前の規則で登録された値が残っていても追加できるようにする）
+                RedirectUriValidator.validateAddition(current, uri.trim()).mapLeft { it.message }
             }
         }
     }
@@ -246,7 +327,8 @@ class OAuthClientCommand {
 
         val newUris = when (val transformed = transform(client.redirectUris)) {
             is Either.Left -> {
-                sender.sendRichMessage("<red>${transformed.value}</red>")
+                // 拒否理由には入力されたURIが含まれるため、MiniMessageのタグとして解釈させない
+                sender.sendRichMessage("<red>${MiniMessage.miniMessage().escapeTags(transformed.value)}</red>")
                 return
             }
             is Either.Right -> transformed.value

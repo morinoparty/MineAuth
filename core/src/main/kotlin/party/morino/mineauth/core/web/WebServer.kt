@@ -19,7 +19,6 @@ import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import io.opentelemetry.instrumentation.ktor.v3_0.KtorServerTelemetry
 import io.opentelemetry.instrumentation.micrometer.v1_5.OpenTelemetryMeterRegistry
-import org.slf4j.event.Level
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
@@ -32,22 +31,20 @@ import party.morino.mineauth.core.file.data.WebServerConfigData
 import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.utils.PlayerUtils.toOfflinePlayer
 import party.morino.mineauth.core.utils.PlayerUtils.toUUID
-import party.morino.mineauth.core.repository.AccountRepository
-import party.morino.mineauth.core.repository.OAuthClientRepository
-import party.morino.mineauth.core.repository.RevokedTokenRepository
+import party.morino.mineauth.core.model.TokenKind
 import party.morino.mineauth.core.repository.ServiceAccountTokenRepository
 import party.morino.mineauth.core.openapi.OpenApiRouter.openApiRouter
 import party.morino.mineauth.core.web.router.auth.AuthRouter.authRouter
+import party.morino.mineauth.core.web.router.auth.oauth.TokenStateValidator
 import party.morino.mineauth.core.web.router.common.CommonRouter.commonRouter
 import party.morino.mineauth.core.web.router.plugin.PluginRouter.pluginRouter
 import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 import party.morino.mineauth.core.web.telemetry.MinecraftMetrics
-import party.morino.mineauth.core.web.telemetry.OTEL_ROUTE_TEMPLATE
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.TelemetryProvider
 import party.morino.mineauth.core.web.telemetry.installAuthRouteSanitizer
+import party.morino.mineauth.core.web.telemetry.redactUrlAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
-import io.opentelemetry.semconv.UrlAttributes
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 
@@ -101,15 +98,9 @@ internal fun Application.module() {
     if (observabilityConfig.enabled) {
         install(KtorServerTelemetry) {
             setOpenTelemetry(openTelemetry)
-            // url.pathには具体パス（例: /api/v1/plugins/vault/balance/_NIKOMARU）がそのまま入り、
-            // プレイヤー名などのPIIを含む。算出済みのルートテンプレートで置換してPIIを除去する。
-            attributesExtractor {
-                onEnd {
-                    request.call.attributes.getOrNull(OTEL_ROUTE_TEMPLATE)?.let { template ->
-                        attributes.put(UrlAttributes.URL_PATH, template)
-                    }
-                }
-            }
+            // url.pathには具体パス（例: /api/v1/plugins/vault/balance/_NIKOMARU）のPIIが、
+            // url.queryにはid_token_hintやstateの値がそのまま入るため、テンプレート化と値の伏せ字で取り除く
+            redactUrlAttributes()
         }
         // KtorServerTelemetryが設定するhttp.routeから認証セレクタ由来のノイズ
         // （例: "(authenticate user-oauth-token, service-oauth-token)"）を除去する
@@ -133,23 +124,9 @@ internal fun Application.module() {
         meterRegistry.close()
     }
 
-    // HTTPリクエスト/レスポンスのロギング
+    // HTTPリクエスト/レスポンスのロギング（流量制限の429などを除外する設定はAccessLog.ktを参照）
     install(CallLogging) {
-        level = Level.INFO
-        // リクエスト情報をログに出力
-        format { call ->
-            val status = call.response.status()
-            val httpMethod = call.request.httpMethod.value
-            val path = call.request.path()
-            val duration = call.processingTimeMillis()
-            "HTTP $httpMethod $path - $status [${duration}ms]"
-        }
-        // ヘルスチェックやアセット、メトリクスへのリクエストは除外
-        filter { call ->
-            !call.request.path().startsWith("/assets") &&
-                call.request.path() != "/health" &&
-                call.request.path() != "/metrics"
-        }
+        configureAccessLog()
     }
 
     // Micrometerメトリクス
@@ -180,42 +157,31 @@ internal fun Application.module() {
             validate { credential ->
                 // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）
                 withSpan("jwt.validate.user_token") { span ->
-                    // セキュリティ: アクセストークンのみを受け付ける
-                    // （リフレッシュトークンがアクセストークンとして使われるのを防ぐ）
-                    val tokenType = credential.payload.getClaim("token_type").asString()
-                    if (tokenType != "token") {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "wrong_token_type")
-                        return@withSpan null
-                    }
+                    // 想定外の例外はchallengeを素通りしてしまうので、無効なトークンとして拒否する
+                    BearerChallenge.failClosed(span, plugin.logger) {
+                        val payload = credential.payload
+                        payload.getClaim("client_id").asString()?.let { span.setAttribute(TelemetryAttributes.CLIENT_ID, it) }
 
-                    // JWTからクライアントIDを取得してDBで検証
-                    val clientId = credential.payload.getClaim("client_id").asString()
-                    clientId?.let { span.setAttribute(TelemetryAttributes.CLIENT_ID, it) }
-                    val clientResult = OAuthClientRepository.findById(clientId)
-                    if (clientResult.isLeft()) {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "client_not_found")
-                        return@withSpan null
+                        // セキュリティ: アクセストークンのみを受け付け、状態の判定はイントロスペクションと同じ規則で行う
+                        // （サービストークンがアクセストークンとして使われるのを防ぐ）
+                        get<TokenStateValidator>(TokenStateValidator::class.java)
+                            .validateBlocking(TokenKind.ACCESS, payload)
+                            .fold(
+                                { failure ->
+                                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, failure.authResult)
+                                    null
+                                },
+                                {
+                                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
+                                    JWTPrincipal(payload)
+                                }
+                            )
                     }
-
-                    // RFC 7009: トークンが失効済みかチェック
-                    val tokenId = credential.payload.id
-                    if (tokenId != null && RevokedTokenRepository.isRevokedBlocking(tokenId)) {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "revoked")
-                        return@withSpan null
-                    }
-
-                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
-                    JWTPrincipal(credential.payload)
                 }
             }
             challenge { _, _ ->
-                // ドキュメント記載のエラーエンベロープ（error/code）に合わせてJSONで応答する
-                call.respond(
-                    HttpStatusCode.Unauthorized,
-                    party.morino.mineauth.core.plugin.route.ErrorResponse(
-                        "Token is not valid or has expired", code = "invalid_token"
-                    )
-                )
+                // RFC 6750 Section 3のWWW-Authenticateとドキュメント記載のエラーエンベロープ（error/code）を返す
+                BearerChallenge.respondProviderFailure(call, "Token is not valid or has expired")
             }
         }
 
@@ -228,49 +194,33 @@ internal fun Application.module() {
             validate { credential ->
                 // JWT検証の過程をスパンとして記録する（トークン本体は記録しない）
                 withSpan("jwt.validate.service_token") { span ->
-                    // token_typeがservice_tokenであることを確認
-                    val tokenType = credential.payload.getClaim("token_type").asString()
-                    if (tokenType != "service_token") {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "wrong_token_type")
-                        return@withSpan null
-                    }
+                    // 想定外の例外はchallengeを素通りしてしまうので、無効なトークンとして拒否する
+                    BearerChallenge.failClosed(span, plugin.logger) {
+                        val payload = credential.payload
 
-                    // accountIdでアカウントの存在確認
-                    val accountId = credential.payload.getClaim("account_id").asString()
-                    if (accountId == null) {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "account_id_missing")
-                        return@withSpan null
-                    }
-                    val accountResult = AccountRepository.findById(accountId)
-                    if (accountResult.isLeft()) {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "account_not_found")
-                        return@withSpan null
-                    }
+                        // サービストークンのみを受け付け、状態の判定はイントロスペクションと同じ規則で行う
+                        get<TokenStateValidator>(TokenStateValidator::class.java)
+                            .validateBlocking(TokenKind.SERVICE, payload)
+                            .fold(
+                                { failure ->
+                                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, failure.authResult)
+                                    null
+                                },
+                                {
+                                    // 最終使用日時を更新（トークン監査用）
+                                    // イントロスペクションを使用として数えないよう、状態の判定とは分けてここで行う
+                                    payload.id?.let { ServiceAccountTokenRepository.updateLastUsedAtBlocking(it) }
 
-                    // トークンIDで失効チェック
-                    val tokenId = credential.payload.id
-                    if (tokenId != null && !ServiceAccountTokenRepository.isTokenValidBlocking(tokenId)) {
-                        span.setAttribute(TelemetryAttributes.AUTH_RESULT, "revoked")
-                        return@withSpan null
+                                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
+                                    JWTPrincipal(payload)
+                                }
+                            )
                     }
-
-                    // 最終使用日時を更新（トークン監査用）
-                    if (tokenId != null) {
-                        ServiceAccountTokenRepository.updateLastUsedAtBlocking(tokenId)
-                    }
-
-                    span.setAttribute(TelemetryAttributes.AUTH_RESULT, "valid")
-                    JWTPrincipal(credential.payload)
                 }
             }
             challenge { _, _ ->
-                // ドキュメント記載のエラーエンベロープ（error/code）に合わせてJSONで応答する
-                call.respond(
-                    HttpStatusCode.Unauthorized,
-                    party.morino.mineauth.core.plugin.route.ErrorResponse(
-                        "Service token is not valid or has expired", code = "invalid_token"
-                    )
-                )
+                // RFC 6750 Section 3のWWW-Authenticateとドキュメント記載のエラーエンベロープ（error/code）を返す
+                BearerChallenge.respondProviderFailure(call, "Service token is not valid or has expired")
             }
         }
     }

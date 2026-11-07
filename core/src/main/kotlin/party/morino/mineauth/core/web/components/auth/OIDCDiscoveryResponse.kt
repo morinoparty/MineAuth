@@ -120,6 +120,8 @@ data class OIDCDiscoveryResponse(
                 add("profile")
                 // プラグインAPIをユーザートークンで呼ぶには plugin スコープが必須（AuthenticationHandler で検査）
                 add("plugin")
+                // OIDC Core Section 11: 認可エンドポイントが受理するので公開する（リフレッシュトークンは要求の有無によらず発行する）
+                add("offline_access")
                 if (emailEnabled) add("email")
                 if (rolesEnabled) add("roles")
             }
