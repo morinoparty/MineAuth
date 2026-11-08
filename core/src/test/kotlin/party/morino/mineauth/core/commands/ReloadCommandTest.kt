@@ -68,7 +68,7 @@ class ReloadCommandTest {
     /** 送信したメッセージを画面に表示される文字列へ変換する */
     private fun renderedMessages(): List<String> = messages.map { MiniMessage.miniMessage().deserialize(it).displayedText() }
 
-    // PlainTextComponentSerializerはMockBukkitのプロバイダーを読み込んで初期化に失敗するため、自前で連結する
+    // PlainTextComponentSerializerはPaper実行環境のプロバイダーを読み込んで初期化に失敗するため、自前で連結する
     private fun Component.displayedText(): String =
         (this as? TextComponent)?.content().orEmpty() + children().joinToString("") { it.displayedText() }
 

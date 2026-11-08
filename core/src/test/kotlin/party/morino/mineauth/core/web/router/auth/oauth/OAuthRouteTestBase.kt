@@ -47,7 +47,7 @@ import java.util.logging.Logger
  * OAuthエンドポイントのルートテストの共通基盤
  *
  * テストごとに実際のSQLiteへ接続し、Koinにはモックのプラグインとテスト用の鍵で作ったVerifierを登録する。
- * MockBukkitとOpenTelemetry SDKには依存しない
+ * BukkitサーバーとOpenTelemetry SDKには依存しない
  */
 abstract class OAuthRouteTestBase {
 

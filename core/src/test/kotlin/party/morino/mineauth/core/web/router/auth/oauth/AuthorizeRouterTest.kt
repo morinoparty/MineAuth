@@ -55,7 +55,7 @@ import kotlin.test.assertTrue
 
 /**
  * 認可エンドポイントのルーティングのテスト
- * MockBukkitは使わず、Koinにモックのプラグインを登録し、DBとBukkitに触れるOAuthServiceをモックする
+ * Bukkitサーバーは使わず、Koinにモックのプラグインを登録し、DBとBukkitに触れるOAuthServiceをモックする
  */
 class AuthorizeRouterTest {
     @TempDir

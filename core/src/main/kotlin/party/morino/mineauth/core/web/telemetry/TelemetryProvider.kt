@@ -173,7 +173,7 @@ object TelemetryProvider : KoinComponent {
             plugin.logger.fine("Could not resolve host name for resource attributes: ${e.message}")
         }
 
-        // Minecraftサーバー情報（MockBukkit等ではサーバー未初期化の場合があるためガード）
+        // Minecraftサーバー情報（テスト環境などではサーバー未初期化の場合があるためガード）
         try {
             builder.put(TelemetryAttributes.MINECRAFT_VERSION, Bukkit.getMinecraftVersion())
             builder.put(TelemetryAttributes.MINECRAFT_SERVER_BRAND, Bukkit.getName())

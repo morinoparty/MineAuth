@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 /**
  * WebServerの統合テスト
  * 実際のApplication.module()を使用してHTTPエンドポイントをテストする
- * MineAuthTestがKoinとMockBukkitを初期化する
+ * MineAuthTestがKoinとBukkitのスタブを初期化する
  */
 @ExtendWith(MineAuthTest::class)
 class WebServerIntegrationTest {

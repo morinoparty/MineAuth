@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  * AuthorizePageRendererのテンプレート選択のテスト
  * プラグインディレクトリの web/authorize.html の有無と内容で、使うHTMLが切り替わることを確認する
  *
- * MockBukkitは使わず、Koinにモックのプラグインと一時ディレクトリを登録する
+ * Bukkitサーバーは使わず、Koinにモックのプラグインと一時ディレクトリを登録する
  */
 class AuthorizePageOverrideTest {
     @TempDir

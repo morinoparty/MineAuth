@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  * ConfigLoaderのserver.baseUrl検証と、config.jsonの解釈失敗のテスト
  * 不正なbaseUrlでは以前の設定を残して失敗し、解釈できないconfig.jsonではパーサーが引用した内容が例外に残らないことを確認する
  *
- * MockBukkitは使わず、Koinにモックのプラグインと一時ディレクトリを登録する
+ * Bukkitサーバーは使わず、Koinにモックのプラグインと一時ディレクトリを登録する
  */
 class ConfigLoaderTest {
     @TempDir

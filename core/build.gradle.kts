@@ -42,7 +42,6 @@ dependencies {
     testImplementation(libs.bundles.junit.jupiter)
     testImplementation(libs.bundles.koin.test)
     testImplementation(libs.mockk)
-    testImplementation(libs.mock.bukkit)
     testImplementation(libs.ktor.server.test.host)
     // OpenTelemetryのテスト用（InMemorySpanExporter / InMemoryMetricReader）
     testImplementation(libs.opentelemetry.sdk.testing)

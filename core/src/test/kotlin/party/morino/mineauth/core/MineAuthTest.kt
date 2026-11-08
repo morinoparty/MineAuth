@@ -2,6 +2,8 @@ package party.morino.mineauth.core
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import java.io.File
 import java.util.UUID
 import java.util.logging.Logger
@@ -12,8 +14,7 @@ import org.junit.jupiter.api.extension.ExtensionContext
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.getOrNull
 import org.koin.dsl.module
-import org.mockbukkit.mockbukkit.MockBukkit
-import org.mockbukkit.mockbukkit.ServerMock
+import org.bukkit.Bukkit
 import party.morino.mineauth.api.config.PluginDirectory
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
@@ -30,14 +31,13 @@ import party.morino.mineauth.core.web.router.auth.oauth.TokenStateValidator
 
 /**
  * MineAuthのテスト用拡張機能
- * KoinとMockBukkitのセットアップを統合する
+ * KoinとBukkitのMockKスタブのセットアップを統合する
  */
 class MineAuthTest :
     BeforeAllCallback,
     AfterAllCallback {
 
     companion object {
-        lateinit var server: ServerMock
         // テスト用リソースディレクトリ
         val testResourcesDir: File = File("src/test/resources/plugins/mineauth")
         val pluginDirectoryMock = PluginDirectoryMock()
@@ -45,15 +45,13 @@ class MineAuthTest :
 
     /**
      * テスト開始前に呼び出されるメソッド
-     * KoinとMockBukkitの初期化を行う
+     * KoinとBukkitスタブの初期化を行う
      * @param context 拡張機能のコンテキスト
      */
     override fun beforeAll(context: ExtensionContext) {
-        // MockBukkitの初期化（既にモックされていればスキップ）
-        if (MockBukkit.isMocked()) {
-            return
-        }
-        server = MockBukkit.mock()
+        // Bukkit.getOnlinePlayers()などの静的呼び出しをMockKで差し替える（オンラインプレイヤーは空）
+        mockkStatic(Bukkit::class)
+        every { Bukkit.getOnlinePlayers() } returns emptyList()
 
         // MineAuthをモック（プラグインのロードをスキップ）
         val mockPlugin = mockk<MineAuth>(relaxed = true)
@@ -79,7 +77,6 @@ class MineAuthTest :
                     observability = ObservabilityConfig(enabled = false)
                 )
             }
-            single<ServerMock> { server }
             // リフレッシュトークンローテーションのreuse grace period用キャッシュ
             single { RefreshTokenResponseCache() }
             // 認可コードのリプレイ検知用の使用済み記録
@@ -101,12 +98,12 @@ class MineAuthTest :
 
     /**
      * テスト終了後に呼び出されるメソッド
-     * MockBukkitとKoinのクリーンアップを行う
+     * BukkitスタブとKoinのクリーンアップを行う
      * @param context 拡張機能のコンテキスト
      */
     override fun afterAll(context: ExtensionContext) {
-        // MockBukkitのクリーンアップ
-        MockBukkit.unmock()
+        // Bukkitの静的モックを解除
+        unmockkStatic(Bukkit::class)
         // Koinのクリーンアップ
         GlobalContext.stopKoin()
     }

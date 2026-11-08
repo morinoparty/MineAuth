@@ -45,7 +45,7 @@ import kotlin.test.assertTrue
  * Application.module()のBearer認証プロバイダのテスト
  * 実際のvalidateブロックを通して、種別の絞り込みと状態の検証が適用されることを確認する
  *
- * テレメトリを無効にした設定を使うため、OpenTelemetry SDKとMockBukkitは初期化しない
+ * テレメトリを無効にした設定を使うため、OpenTelemetry SDKは初期化しない
  */
 class WebServerBearerAuthTest : OAuthRouteTestBase() {
 
@@ -66,7 +66,7 @@ class WebServerBearerAuthTest : OAuthRouteTestBase() {
     }
 
     @AfterEach
-    fun unmockBukkit() {
+    fun unmockkBukkit() {
         unmockkStatic(Bukkit::class)
     }
 

@@ -44,8 +44,8 @@ class IntrospectRouterTest : OAuthRouteTestBase() {
     private val playerUniqueId = "00000000-0000-0000-0000-000000000001"
 
     @BeforeEach
-    fun mockBukkit() {
-        // usernameの解決だけをモックする（MockBukkitは初期化しない）
+    fun mockkBukkit() {
+        // usernameの解決だけをモックする（Bukkitサーバーは初期化しない）
         val offlinePlayer = mockk<OfflinePlayer>()
         every { offlinePlayer.name } returns "Steve"
         mockkStatic(Bukkit::class)
@@ -53,7 +53,7 @@ class IntrospectRouterTest : OAuthRouteTestBase() {
     }
 
     @AfterEach
-    fun unmockBukkit() {
+    fun unmockkBukkit() {
         unmockkStatic(Bukkit::class)
     }
 
