@@ -24,6 +24,8 @@ micrometer = "1.17.2"
 opentelemetry = "1.67.0"
 opentelemetry-instrumentation = "2.30.0-alpha-SNAPSHOT"
 allure = "2.35.5"
+# JitPack は最初にビルドしたタグの成果物を使い続けるので、必ず正確なタグを指定する
+fukurou = "v2.2.1"
 
 
 [libraries]
@@ -105,6 +107,7 @@ koin-test = { group = "io.insert-koin", name = "koin-test", version.ref = "koinV
 koin-test-junit5 = { group = "io.insert-koin", name = "koin-test-junit5", version.ref = "koinVersion" }
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.54.1.0" }
 ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", version.ref = "ktor" }
+fukurou = { group = "com.github.morinoparty", name = "fukurou", version.ref = "fukurou" }
 
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "3.1.0" }

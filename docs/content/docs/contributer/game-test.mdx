@@ -1,0 +1,78 @@
+---
+title: Game Tests
+description: In-game tests that start a real Paper server with MineAuth through fukurou
+---
+
+The game tests start a real Paper server with the MineAuth plugin JAR and drive it from JUnit. They use the Kotlin harness of [fukurou](https://github.com/morinoparty/fukurou). The sources live in `core/src/gameTest/` (package `party.morino.mineauth.core.gametest`).
+
+## What the Game Tests Cover
+
+The unit tests cover the logic of MineAuth. The game tests cover only what needs a real server:
+
+- Paper downloads the `libraries` listed in `plugin.yml`, and MineAuth is enabled with them. fukurou checks the server log and fails the run when a plugin is not enabled.
+- The relocated Ktor and Jetty server answers on a real server. `/.well-known/openid-configuration` returns an `issuer` equal to `server.baseUrl`, and `/.well-known/jwks.json` publishes a key.
+- `/mineauth reload` run from the console (RCON) reports `Reloaded`, and the endpoints answer again with the same key.
+
+| File | Role |
+|------|------|
+| `MineAuthServer.kt` | The fukurou `GameServerExtension`. It starts one Paper server with the MineAuth shadow JAR, LuckPerms (a hard dependency) and a `plugins/MineAuth/config.json` that sets a free HTTP port and `baseUrl` `http://127.0.0.1:<port>`. No player joins. |
+| `MineAuthHttpClient.kt` | Calls the HTTP server and waits until it returns `200`. |
+| `MineAuthGameTest.kt` | The tests. |
+
+A player-driven login is not tested. Creating an OAuth client (`/mineauth client create`) opens a dialog, and fukurou can only send keyboard input, so the authorization code flow cannot be completed from chat commands.
+
+## Gradle Setup
+
+| Item | Description |
+|------|-------------|
+| `gameTest` source set | `core/src/gameTest/kotlin` and `core/src/gameTest/resources`. It does not depend on the main classes; the tests talk to the server over HTTP and RCON. |
+| `:core:gameTest` task | Builds `shadowJar` and passes its path as `-Dfukurou.plugin.mineauth`. Every Gradle property that starts with `fukurou.` is passed to the test JVM as a system property. |
+| `junit-platform.properties` | The settings fukurou requires (class order, no parallel execution, a 15-minute timeout per test). |
+
+`:core:gameTest` is not part of `check`, `build` or `test`, so `./gradlew build` and `:core:test` do not start a server.
+
+## CI
+
+`.github/workflows/game_test.yml` runs the game tests on every pull request and on manual dispatch (`workflow_dispatch`).
+
+1. It sets up Java, pnpm and Node.js in the same way as the pull request check, because the authorization page is built during `processResources`.
+2. `morinoparty/fukurou/setup` installs Xvfb, xdotool and xmodmap and restores the fukurou cache.
+3. It runs `./gradlew :core:gameTest -Pfukurou.acceptEula=true -Pfukurou.minecraftVersion=<version> -Pfukurou.outDir=$RUNNER_TEMP/fukurou-out`.
+4. It uploads the output directory (`result.json`, the harness log and the server log) as the `fukurou-paper-<version>` artifact, even when the tests fail.
+
+The workflow uses no secrets and does not publish the fukurou viewer.
+
+<Callout type="warn">
+`-Pfukurou.acceptEula=true` means that you accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). fukurou downloads and runs the Minecraft server and does not start anything without it.
+</Callout>
+
+## Running Locally
+
+fukurou requires Linux on x86_64 with Xvfb, xdotool and xmodmap on `PATH`, even though these tests use no client. On Debian or Ubuntu, install the packages with:
+
+```bash
+sudo apt-get install --no-install-recommends -y \
+  xvfb xdotool x11-xserver-utils libgl1 libgl1-mesa-dri libglx-mesa0 libegl1 libopenal1 \
+  libvulkan1 mesa-vulkan-drivers libxrandr2 libxinerama1 libxcursor1 libxi6
+```
+
+Then run the tests. pnpm is also required, because the build includes the authorization page.
+
+```bash
+./gradlew :core:gameTest -Pfukurou.acceptEula=true
+```
+
+| Property | Description |
+|----------|-------------|
+| `fukurou.acceptEula` | Must be `true`. Setting it means that you accept the Minecraft EULA. |
+| `fukurou.minecraftVersion` | The Minecraft version of the server. The default is `DEFAULT_MINECRAFT_VERSION` in `MineAuthServer.kt`, which is kept equal to the `paper-api` version in `gradle/libs.versions.toml`. |
+| `fukurou.missingHost` | `skip` skips the tests instead of failing when Xvfb, xdotool or xmodmap is missing. Use it to check that the game tests compile on a machine without these packages. |
+| `fukurou.keepWork` | `true` keeps the server directory after the run for debugging. |
+
+By default, fukurou keeps its caches in `core/.fukurou-work/` and writes the results to `core/fukurou-out/`. Both directories are ignored by Git.
+
+## Adding Game Tests
+
+Each run starts a real server, which takes minutes. Add a game test only when the behavior cannot be checked by a unit test, for example when it depends on how Paper loads the plugin. Prefer adding an assertion to an existing test over adding a new test, and do not add players unless the test needs a client.
+
+When `paper-api` is updated to a new Minecraft version, update `DEFAULT_MINECRAFT_VERSION` and the LuckPerms build in `MineAuthServer.kt` and `MINECRAFT_VERSION` in `game_test.yml` together.
