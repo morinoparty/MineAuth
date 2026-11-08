@@ -11,7 +11,7 @@ The unit tests cover the logic of MineAuth. The game tests cover only what needs
 
 - Paper downloads the `libraries` listed in `plugin.yml`, and MineAuth is enabled with them. fukurou checks the server log and fails the run when a plugin is not enabled.
 - The relocated Ktor and Jetty server answers on a real server. `/.well-known/openid-configuration` returns an `issuer` equal to `server.baseUrl`, and `/.well-known/jwks.json` publishes a key.
-- `/mineauth reload` run from the console (RCON) reports `Reloaded`, and the endpoints answer again with the same key.
+- `/mineauth reload` run from the console (RCON) restarts the HTTP server, and the endpoints answer again with the same key. The command runs asynchronously and its messages are not part of the RCON reply, so the test waits for Ktor's `Responding at` line in the server log and checks that the restart-failure error was not logged.
 
 | File | Role |
 |------|------|

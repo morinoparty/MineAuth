@@ -39,9 +39,12 @@ class MineAuthGameTest {
         // reload の前に公開していた鍵（このテストだけを実行した場合は起動を待つ）
         val keyIdsBefore = keyIdsOf(arena.http.awaitJson(JWKS_PATH))
 
-        // RCON のコンソールから実行する。ReloadCommand は設定とHTTPサーバーの両方を戻せたときだけ Reloaded を返す
-        val response = server.command("mineauth reload").requireText()
-        assertTrue("Reloaded" in response, "unexpected reload response: $response")
+        // コマンドは Cloud のコルーチン上で非同期に実行され、RCON の応答には結果が載らないため、サーバーログで完了を待つ
+        val beforeReload = server.mark()
+        server.command("mineauth reload")
+        // 起動時の Responding at は印より前にあるので、印の後に出る行は reload による再起動を示す
+        server.awaitLog(RESTARTED, after = beforeReload)
+        server.assertNoLog(RESTART_FAILED, after = beforeReload)
 
         // HTTP サーバーが作り直された後も応答し、発行済みトークンを検証できるよう同じ鍵を公開し続ける
         val keyIdsAfter = assertEndpointsAnswer(arena)
@@ -79,5 +82,11 @@ class MineAuthGameTest {
 
         // jwks_uri のエンドポイント
         const val JWKS_PATH = "/.well-known/jwks.json"
+
+        // Ktor が HTTP サーバーの起動を終えたときのログ（relocate 後のロガー名でも本文は変わらない）
+        val RESTARTED = Regex("""Responding at http://""")
+
+        // ReloadCommand が HTTP サーバーを起動し直せなかったときのログ
+        val RESTART_FAILED = Regex("""could not be started after /mineauth reload""")
     }
 }
