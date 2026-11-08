@@ -33,14 +33,14 @@ A player-driven login is not tested. Creating an OAuth client (`/mineauth client
 
 ## CI
 
-`.github/workflows/game_test.yml` runs the game tests on every pull request and on manual dispatch (`workflow_dispatch`).
+The `game-test` job in `.github/workflows/preview.yml` runs the game tests on every pull request and on manual dispatch (`workflow_dispatch`). It runs in parallel with the Gradle build and has only the `contents: read` and `checks: write` permissions.
 
-1. It sets up Java, pnpm and Node.js in the same way as the pull request check, because the authorization page is built during `processResources`.
+1. It sets up Java, pnpm and Node.js in the same way as the Gradle build job, because the authorization page is built during `processResources`.
 2. `morinoparty/fukurou/setup` installs Xvfb, xdotool and xmodmap and restores the fukurou cache.
-3. It runs `./gradlew :core:gameTest -Pfukurou.acceptEula=true -Pfukurou.minecraftVersion=<version> -Pfukurou.outDir=$RUNNER_TEMP/fukurou-out`.
+3. It runs `./gradlew :core:gameTest -Pfukurou.acceptEula=true -Pfukurou.minecraftVersion=<version> -Pfukurou.outDir=$RUNNER_TEMP/fukurou-out`. As with the unit tests, a failure does not stop the later jobs. The result is reported as the `Game test report` check and in the preview comment.
 4. It uploads the output directory (`result.json`, the harness log and the server log) as the `fukurou-paper-<version>` artifact, even when the tests fail.
 
-The workflow uses no secrets and does not publish the fukurou viewer.
+The `upload-s3` job then builds the fukurou viewer from that artifact with `morinoparty/fukurou/ui` (without its own upload) and publishes it next to the other reports. The preview comment links it as **In-game Tests (fukurou)** in the reports table. It also lists the game test counts as an **In-game (fukurou)** row in the test summary table. Dependabot pull requests have no access to the upload secrets, so they get neither the upload nor the comment.
 
 <Callout type="warn">
 `-Pfukurou.acceptEula=true` means that you accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). fukurou downloads and runs the Minecraft server and does not start anything without it.
@@ -75,4 +75,4 @@ By default, fukurou keeps its caches in `core/.fukurou-work/` and writes the res
 
 Each run starts a real server, which takes minutes. Add a game test only when the behavior cannot be checked by a unit test, for example when it depends on how Paper loads the plugin. Prefer adding an assertion to an existing test over adding a new test, and do not add players unless the test needs a client.
 
-When `paper-api` is updated to a new Minecraft version, update `DEFAULT_MINECRAFT_VERSION` and the LuckPerms build in `MineAuthServer.kt` and `MINECRAFT_VERSION` in `game_test.yml` together.
+When `paper-api` is updated to a new Minecraft version, update `DEFAULT_MINECRAFT_VERSION` and the LuckPerms build in `MineAuthServer.kt` and `MINECRAFT_VERSION` of the `game-test` job in `preview.yml` together.
