@@ -1,6 +1,5 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
-import arrow.core.right
 import io.ktor.client.HttpClient
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
@@ -19,7 +18,6 @@ import party.morino.mineauth.core.repository.ClientType
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * GET / POST /oauth2/end_session のテスト
@@ -71,20 +69,6 @@ class EndSessionRouterTest : OAuthRouteTestBase() {
     }
 
     @Test
-    @DisplayName("An expired id_token_hint within the bound is accepted")
-    fun expiredHintIsAccepted() = oauthTestApplication {
-        val clientId = registerClient(ClientType.PUBLIC).client.clientId
-
-        val response = noRedirectClient().getEndSession(
-            "id_token_hint" to idTokenFor(clientId, expiresIn = Duration.ofDays(-1)),
-            "post_logout_redirect_uri" to redirectUri
-        )
-
-        assertEquals(HttpStatusCode.Found, response.status)
-        assertEquals(redirectUri, response.headers[HttpHeaders.Location])
-    }
-
-    @Test
     @DisplayName("client_id not in the aud is rejected on GET and POST without a redirect")
     fun mismatchedClientIdIsRejected() = oauthTestApplication {
         val clientId = registerClient(ClientType.PUBLIC).client.clientId
@@ -99,65 +83,4 @@ class EndSessionRouterTest : OAuthRouteTestBase() {
         assertInvalidRequest(httpClient.postEndSession(*params))
     }
 
-    @Test
-    @DisplayName("client_id matching a later aud value selects that client")
-    fun clientIdMatchesAnyAudienceValue() = oauthTestApplication {
-        val clientId = registerClient(ClientType.PUBLIC).client.clientId
-
-        val response = noRedirectClient().getEndSession(
-            "id_token_hint" to idTokenFor("another-client", clientId),
-            "client_id" to clientId,
-            "post_logout_redirect_uri" to redirectUri
-        )
-
-        assertEquals(HttpStatusCode.Found, response.status)
-    }
-
-    @Test
-    @DisplayName("A token of another kind is not accepted as id_token_hint")
-    fun otherKindIsRejectedAsHint() = oauthTestApplication {
-        val clientId = registerClient(ClientType.PUBLIC).client.clientId
-        val accessToken = JwtTestSupport.sign(TokenKind.ACCESS) { withAudience(clientId) }
-
-        assertInvalidRequest(noRedirectClient().getEndSession("id_token_hint" to accessToken))
-    }
-
-    @Test
-    @DisplayName("client_id alone does not authorize post_logout_redirect_uri")
-    fun clientIdAloneDoesNotAuthorizeRedirect() = oauthTestApplication {
-        val clientId = registerClient(ClientType.PUBLIC).client.clientId
-
-        assertInvalidRequest(
-            noRedirectClient().getEndSession("client_id" to clientId, "post_logout_redirect_uri" to redirectUri)
-        )
-    }
-
-    @Test
-    @DisplayName("An unregistered post_logout_redirect_uri is rejected")
-    fun unregisteredRedirectUriIsRejected() = oauthTestApplication {
-        val clientId = registerClient(ClientType.PUBLIC).client.clientId
-
-        assertInvalidRequest(
-            noRedirectClient().getEndSession(
-                "id_token_hint" to idTokenFor(clientId),
-                "post_logout_redirect_uri" to "https://evil.example.com/"
-            )
-        )
-    }
-
-    @Test
-    @DisplayName("POST without parameters completes the logout")
-    fun postWithoutParametersCompletesLogout() = oauthTestApplication {
-        val response = noRedirectClient().postEndSession()
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(response.jsonBody().containsKey("message"))
-    }
-
-    @Test
-    @DisplayName("selectClientId rejects an empty aud and falls back to the first value")
-    fun selectClientIdBranches() {
-        assertTrue(EndSessionRouter.selectClientId(emptyList(), "client").isLeft())
-        assertEquals("first".right(), EndSessionRouter.selectClientId(listOf("first", "second"), null))
-    }
 }

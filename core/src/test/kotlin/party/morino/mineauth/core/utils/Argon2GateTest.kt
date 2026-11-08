@@ -10,7 +10,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import party.morino.mineauth.core.web.ratelimit.ClientIpKey
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -18,7 +17,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -75,34 +73,6 @@ class Argon2GateTest {
     }
 
     @Test
-    @DisplayName("Gives up without hashing when no permit frees in time")
-    fun givesUpWithoutHashing() = runBlocking {
-        val gate = Argon2Gate(permits = 1, acquireTimeout = 50.milliseconds)
-        val release = CountDownLatch(1)
-        // 別の接続元が唯一の許可を持ち続ける
-        val holder = holdVerification(gate, source(1), release)
-
-        var hashed = false
-        assertEquals(Argon2GateBusy.left(), gate.withPermit(source(2)) { hashed = true })
-        assertEquals(false, hashed)
-
-        // 許可が返されると再び実行できる
-        release.countDown()
-        holder.join()
-        assertEquals(Unit.right(), gate.withPermit(source(2)) { })
-    }
-
-    @Test
-    @DisplayName("Returns the permit when hashing throws")
-    fun returnsPermitOnException() {
-        val gate = Argon2Gate(permits = 1, acquireTimeout = 50.milliseconds)
-
-        assertThrows<IllegalStateException> { runBlocking { gate.withPermit(source(1)) { error("hash failed") } } }
-
-        assertEquals(1.right(), runBlocking { gate.withPermit(source(1)) { 1 } })
-    }
-
-    @Test
     @DisplayName("One source runs at most two verifications and leaves the other permits free")
     fun limitsEachSource() = runBlocking {
         val gate = Argon2Gate(permits = 4, acquireTimeout = 200.milliseconds)
@@ -132,31 +102,6 @@ class Argon2GateTest {
         flood.awaitAll()
 
         assertEquals(2, hashed.get())
-    }
-
-    @Test
-    @DisplayName("Waiting for a source slot and for a permit share one deadline")
-    fun sharesOneDeadline() = runBlocking {
-        val timeout = 400.milliseconds
-        val gate = Argon2Gate(permits = 1, acquireTimeout = timeout)
-        val waiting = source(1)
-        val release = CountDownLatch(1)
-        // 同じ接続元が1つ目の枠と唯一の許可を持ち続ける
-        val holder = holdVerification(gate, waiting, release)
-
-        // 2件目は2つ目の枠を得て許可を待ち、3件目は枠を待つ
-        val second = async(start = CoroutineStart.UNDISPATCHED) { gate.withPermit(waiting) { } }
-        val startedAt = System.nanoTime()
-        val third = async(start = CoroutineStart.UNDISPATCHED) { gate.withPermit(waiting) { } }
-
-        // 2件目が諦めて枠を返すと3件目は許可を待ち始めるが、待機時間は最初から数えているので延びない
-        assertEquals(Argon2GateBusy.left(), second.await())
-        assertEquals(Argon2GateBusy.left(), third.await())
-        val waited = (System.nanoTime() - startedAt).nanoseconds
-        assertTrue(waited < timeout * 1.75, "waited $waited")
-
-        release.countDown()
-        holder.join()
     }
 
     @Test

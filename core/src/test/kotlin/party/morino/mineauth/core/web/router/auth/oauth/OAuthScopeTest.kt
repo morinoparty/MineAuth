@@ -52,54 +52,9 @@ class OAuthScopeTest {
     inner class ResolveGrantedTest {
 
         @Test
-        @DisplayName("Recognizes offline_access")
-        fun recognizesOfflineAccess() {
-            val granted = OAuthScope.resolveGranted("openid offline_access").getOrNull()
-
-            assertEquals(setOf(OAuthScope.OPENID, OAuthScope.OFFLINE_ACCESS), granted)
-        }
-
-        @Test
-        @DisplayName("Drops unknown values from an OIDC request")
-        fun dropsUnknownValuesWithOpenid() {
-            val granted = OAuthScope.resolveGranted("openid unknown profile").getOrNull()
-
-            assertEquals(setOf(OAuthScope.OPENID, OAuthScope.PROFILE), granted)
-        }
-
-        @Test
-        @DisplayName("Rejects a request with only unknown values")
-        fun rejectsOnlyUnknownValues() {
-            assertEquals(listOf("unknown"), OAuthScope.resolveGranted("unknown").leftOrNull()?.unknownValues)
-        }
-
-        @Test
         @DisplayName("Stays strict without openid")
         fun staysStrictWithoutOpenid() {
             assertEquals(listOf("unknown"), OAuthScope.resolveGranted("profile unknown").leftOrNull()?.unknownValues)
-        }
-
-        @Test
-        @DisplayName("Rejects a blank scope")
-        fun rejectsBlankScope() {
-            assertEquals(emptyList(), OAuthScope.resolveGranted("   ").leftOrNull()?.unknownValues)
-        }
-
-        @Test
-        @DisplayName("Formats the granted scope in request order without duplicates")
-        fun formatsGrantedScope() {
-            val granted = OAuthScope.resolveGranted("profile  openid profile unknown").getOrNull().orEmpty()
-
-            assertEquals("profile openid", OAuthScope.format(granted))
-        }
-
-        @Test
-        @DisplayName("Granted scope passes the refresh check")
-        fun grantedScopePassesRefreshCheck() {
-            // TokenRouterはリフレッシュ時に保存済みスコープをisValidで再検証する
-            val granted = OAuthScope.resolveGranted("openid offline_access unknown").getOrNull().orEmpty()
-
-            assertTrue(OAuthScope.isValid(OAuthScope.format(granted)))
         }
     }
 

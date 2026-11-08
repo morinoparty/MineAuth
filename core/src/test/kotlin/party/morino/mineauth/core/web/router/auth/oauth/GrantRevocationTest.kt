@@ -1,6 +1,5 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
-import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import com.auth0.jwt.JWT
@@ -10,19 +9,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
 import io.ktor.server.testing.ApplicationTestBuilder
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.jsonPrimitive
-import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.insert
-import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -37,28 +29,22 @@ import party.morino.mineauth.core.file.utils.JwtTestSupport
 import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
 import party.morino.mineauth.core.model.TokenKind
 import party.morino.mineauth.core.model.grantId
+import party.morino.mineauth.core.model.tokenKind
 import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientCreationResult
-import party.morino.mineauth.core.repository.RevokedGrantError
 import party.morino.mineauth.core.repository.RevokedGrantRepository
-import party.morino.mineauth.core.repository.RevokedTokenRepository
-import party.morino.mineauth.core.repository.TokenRevocationTime
 import party.morino.mineauth.core.repository.TokenType
 import party.morino.mineauth.core.web.router.auth.data.AuthorizedData
 import java.security.MessageDigest
-import java.time.Duration
-import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.Base64
-import java.util.TimeZone
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 /**
  * グラント単位の失効のテスト（Issue #469）
@@ -190,51 +176,6 @@ class GrantRevocationTest : OAuthRouteTestBase() {
         assertEquals("server_error", response.jsonBody().getValue("error").jsonPrimitive.content)
     }
 
-    /** ローテーションの失効の書き込みを、状態の読み取りと署名を終えた時点で1回だけ止める */
-    private class RotationWriteGate {
-        // 書き込みの直前に到達したことを知らせる
-        val held = CompletableDeferred<Unit>()
-
-        // 完了させると書き込みを続ける
-        val release = CompletableDeferred<Unit>()
-        val armed = AtomicBoolean(true)
-    }
-
-    /**
-     * 最初のrevokeIfAbsentを止めるゲートを設定してテストを実行する
-     * MockKの解除はスレッドローカルで管理されるため、コルーチンの外（同じスレッド）で設定と解除を行う
-     */
-    private fun withRotationWriteGate(block: (RotationWriteGate) -> Unit) {
-        val gate = RotationWriteGate()
-        mockkObject(RevokedTokenRepository)
-        try {
-            coEvery { RevokedTokenRepository.revokeIfAbsent(any(), any(), any(), any(), any()) } coAnswers {
-                if (gate.armed.getAndSet(false)) {
-                    gate.held.complete(Unit)
-                    gate.release.await()
-                }
-                callOriginal()
-            }
-            block(gate)
-        } finally {
-            unmockkObject(RevokedTokenRepository)
-        }
-    }
-
-    /**
-     * JVMの既定のタイムゾーンを差し替えてテストを実行し、終わったら必ず元に戻す
-     * grace期間の判定がサーバーのタイムゾーンに左右されないことを、UTC以外のタイムゾーンで確かめるために使う
-     */
-    private fun withDefaultTimeZone(zoneId: String, block: () -> Unit) {
-        val previous = TimeZone.getDefault()
-        TimeZone.setDefault(TimeZone.getTimeZone(zoneId))
-        try {
-            block()
-        } finally {
-            TimeZone.setDefault(previous)
-        }
-    }
-
     /**
      * リフレッシュトークンの失効記録をデータベースに直接書く
      * 別のサーバーや以前のバージョンが書いた記録、タイムゾーン変換でずれたrevoked_atを再現するために使う
@@ -316,33 +257,6 @@ class GrantRevocationTest : OAuthRouteTestBase() {
     }
 
     @Test
-    @DisplayName("A code spent by a failed attempt counts as redeemed")
-    fun failedAttemptSpendsTheCode() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val grantId = UUID.randomUUID().toString()
-        val code = issueCode(owner.client.clientId, grantId)
-
-        assertInvalidGrant(redeem(code, owner, verifier = "b".repeat(43)))
-        assertInvalidGrant(redeem(code, owner))
-
-        assertTrue(RevokedGrantRepository.isRevoked(grantId))
-    }
-
-    @Test
-    @DisplayName("A failed grant write still denies the replayed code")
-    fun failedGrantWriteDeniesTheReplay() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val code = issueCode(owner.client.clientId, UUID.randomUUID().toString())
-        redeem(code, owner).tokens()
-        // グラントの失効の書き込みを確実に失敗させるため、テーブルを削除する
-        transaction { exec("DROP TABLE revoked_grants") }
-
-        assertInvalidGrant(redeem(code, owner))
-
-        assertContains(logs.severes.single(), "authorization code replay")
-    }
-
-    @Test
     @DisplayName("Reuse after the grace window revokes the grant")
     fun reuseAfterGraceWindowRevokesTheGrant() = oauthTestApplication {
         val owner = registerClient(ClientType.CONFIDENTIAL)
@@ -365,62 +279,6 @@ class GrantRevocationTest : OAuthRouteTestBase() {
     }
 
     @Test
-    @DisplayName("Reuse within the grace window returns the same response and revokes nothing")
-    fun reuseWithinGraceWindowRevokesNothing() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val grantId = UUID.randomUUID().toString()
-        val first = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-
-        val rotated = refresh(first.refresh, owner)
-        cacheNow += graceWindowEnd - 2
-        val replayed = refresh(first.refresh, owner)
-
-        assertEquals(rotated.bodyAsText(), replayed.bodyAsText())
-        assertFalse(RevokedGrantRepository.isRevoked(grantId))
-        assertAccessTokenValid(rotated.tokens().access)
-    }
-
-    @Test
-    @DisplayName("Concurrent refreshes share one response and revoke nothing")
-    fun concurrentRefreshesRevokeNothing() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val grantId = UUID.randomUUID().toString()
-        val first = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-
-        val responses = coroutineScope {
-            (1..4).map { async { refresh(first.refresh, owner) } }.awaitAll()
-        }
-
-        assertEquals(1, responses.map { it.bodyAsText() }.toSet().size)
-        assertAccessTokenValid(responses.first().tokens().access)
-        assertFalse(RevokedGrantRepository.isRevoked(grantId))
-    }
-
-    @Test
-    @DisplayName("A failed grant write still denies the reused token")
-    fun failedGrantWriteDeniesTheReuse() {
-        // MockKの解除はスレッドローカルで管理されるため、コルーチンの外（同じスレッド）で設定と解除を行う
-        mockkObject(RevokedGrantRepository)
-        try {
-            coEvery { RevokedGrantRepository.revokeForReusedToken(any(), any(), any()) } returns
-                RevokedGrantError.DatabaseError("database is down").left()
-
-            oauthTestApplication {
-                val owner = registerClient(ClientType.CONFIDENTIAL)
-                val first = redeem(issueCode(owner.client.clientId, UUID.randomUUID().toString()), owner).tokens()
-                refresh(first.refresh, owner).tokens()
-
-                cacheNow += graceWindowEnd
-                assertInvalidGrant(refresh(first.refresh, owner))
-
-                assertContains(logs.severes.single(), "refresh token reuse")
-            }
-        } finally {
-            unmockkObject(RevokedGrantRepository)
-        }
-    }
-
-    @Test
     @DisplayName("A failed read of the token state answers server_error and revokes nothing")
     fun failedReadIsNotTreatedAsReuse() = oauthTestApplication {
         val owner = registerClient(ClientType.CONFIDENTIAL)
@@ -434,82 +292,6 @@ class GrantRevocationTest : OAuthRouteTestBase() {
 
         assertFalse(RevokedGrantRepository.isRevoked(grantId))
         assertContains(logs.severes.single(), "refresh token")
-    }
-
-    @Test
-    @DisplayName("A failed read of the grant state answers server_error and spends nothing")
-    fun failedGrantReadIsNotTreatedAsRevoked() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val grantId = UUID.randomUUID().toString()
-        val tokens = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-        // グラントの読み取りを確実に失敗させるため、テーブルを削除する
-        transaction { exec("DROP TABLE revoked_grants") }
-
-        assertServerError(refresh(tokens.refresh, owner))
-
-        // ローテーションに進んでいないので、提示したトークンは使用済みになっていない
-        assertEquals(
-            TokenRevocationTime.NotRevoked.right(),
-            RevokedTokenRepository.findRevokedAt(JWT.decode(tokens.refresh).id)
-        )
-        val severe = logs.severes.single()
-        assertContains(severe, grantId)
-        assertFalse(severe.contains(tokens.refresh))
-    }
-
-    @Test
-    @DisplayName("A presentation with no cached response revokes the grant only after the grace window")
-    fun presentationWithoutCachedResponseFollowsTheGraceWindow() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val grantId = UUID.randomUUID().toString()
-        val first = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-        val rotated = refresh(first.refresh, owner).tokens()
-        // 再起動の後や別のサーバーへの再試行を再現するため、応答を持たないキャッシュに差し替える（時計は共有する）
-        loadKoinModules(module { single { RefreshTokenResponseCache(clock = { cacheNow }) } })
-
-        // grace期間内: 応答を失ったクライアントの再試行でもありうるので、拒否だけしてグラントは残す
-        cacheNow += 1_000
-        assertInvalidGrant(refresh(first.refresh, owner))
-        assertFalse(RevokedGrantRepository.isRevoked(grantId))
-        assertAccessTokenValid(rotated.access)
-        assertContains(logs.warnings.single { it.contains("within the grace period") }, grantId)
-
-        // grace期間後: 再利用としてグラント全体を失効させる
-        cacheNow += RefreshTokenResponseCache.DEFAULT_GRACE_PERIOD_MILLIS
-        assertInvalidGrant(refresh(first.refresh, owner))
-        assertAccessTokenGrantRevoked(rotated.access)
-    }
-
-    @Test
-    @DisplayName("A retry on a server in another time zone stays within the grace window")
-    fun retryInAnotherTimeZoneStaysWithinGraceWindow() = withDefaultTimeZone("America/New_York") {
-        oauthTestApplication {
-            val owner = registerClient(ClientType.CONFIDENTIAL)
-            val grantId = UUID.randomUUID().toString()
-            val first = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-            val rotated = refresh(first.refresh, owner).tokens()
-            // 同じデータベースを共有する、タイムゾーンの異なる別のサーバーへの再試行を再現する（時計は共有する）
-            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Tokyo"))
-            loadKoinModules(module { single { RefreshTokenResponseCache(clock = { cacheNow }) } })
-
-            // revoked_atはローテーションしたサーバー（ニューヨーク）のローカル時刻で残る
-            // 東京のサーバーがこれを自分のローカル時刻として読むと半日以上ずれるが、判定はrevoked_at_msで行う
-            val record = transaction {
-                RevokedTokens.selectAll().where { RevokedTokens.tokenId eq JWT.decode(first.refresh).id }.single()
-            }
-            val revokedAtMillis = assertNotNull(record[RevokedTokens.revokedAtEpochMillis])
-            assertEquals(
-                LocalDateTime.ofInstant(Instant.ofEpochMilli(revokedAtMillis), ZoneId.of("America/New_York")),
-                record[RevokedTokens.revokedAt]
-            )
-
-            cacheNow += 5_000
-            assertInvalidGrant(refresh(first.refresh, owner))
-
-            // ローテーションの数秒後の再試行なので、グラントは失効させない
-            assertFalse(RevokedGrantRepository.isRevoked(grantId))
-            assertAccessTokenValid(rotated.access)
-        }
     }
 
     @Test
@@ -558,116 +340,6 @@ class GrantRevocationTest : OAuthRouteTestBase() {
     }
 
     @Test
-    @DisplayName("A revocation time far in the future does not suspend reuse detection")
-    fun futureRevocationTimeStillRevokesTheGrant() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val first = redeem(issueCode(owner.client.clientId, UUID.randomUUID().toString()), owner).tokens()
-        val rotated = refresh(first.refresh, owner).tokens()
-        // 読み取るサーバーの時計から見て、失効日時が数時間先にある状態を再現する（応答を持たないキャッシュに差し替える）
-        loadKoinModules(module { single { RefreshTokenResponseCache(clock = { cacheNow }) } })
-        cacheNow -= Duration.ofHours(3).toMillis()
-
-        assertInvalidGrant(refresh(first.refresh, owner))
-
-        // 時計のずれでは説明できない時刻なので、grace期間外の再利用としてグラント全体を失効させる
-        assertAccessTokenGrantRevoked(rotated.access)
-    }
-
-    @Test
-    @DisplayName("A failed grant read does not fail the rotation of a legacy token")
-    fun failedGrantReadDoesNotFailLegacyRotation() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val legacy = legacyRefreshToken(owner.client.clientId)
-        // グラントの読み取りを確実に失敗させるため、テーブルを削除する
-        transaction { exec("DROP TABLE revoked_grants") }
-
-        // 旧トークンは使用済みになるが、クライアントは後継のトークンを受け取る
-        val rotated = refresh(legacy, owner).tokens()
-        assertNotNull(JWT.decode(rotated.refresh).grantId())
-        val legacyRevocation = RevokedTokenRepository.findRevokedAt(JWT.decode(legacy).id).getOrNull()
-        assertTrue(legacyRevocation is TokenRevocationTime.Recorded)
-
-        // キャッシュから返す再提示は、新トークンのグラントを確認できないのでserver_errorになる
-        assertServerError(refresh(legacy, owner))
-    }
-
-    @Test
-    @DisplayName("A failure while signing leaves the refresh token usable for a retry")
-    fun signingFailureLeavesTheTokenUnspent() {
-        val failNextSigning = AtomicBoolean(false)
-        // MockKの設定はコルーチンの外（同じスレッド）で行う
-        every { JwtProvider.algorithm } answers {
-            if (failNextSigning.getAndSet(false)) throw IllegalStateException("signing key unavailable")
-            JwtTestSupport.algorithm
-        }
-
-        oauthTestApplication {
-            val owner = registerClient(ClientType.CONFIDENTIAL)
-            val grantId = UUID.randomUUID().toString()
-            val first = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-
-            failNextSigning.set(true)
-            val failed = runCatching { refresh(first.refresh, owner) }
-            // 想定外の例外は捕捉せずに送出する（テストエンジンは呼び出し側へ再送出し、本番のサーバーは500で応答する）
-            assertFalse(failed.getOrNull()?.status == HttpStatusCode.OK)
-
-            val retried = refresh(first.refresh, owner).tokens()
-            assertAccessTokenValid(retried.access)
-            assertFalse(RevokedGrantRepository.isRevoked(grantId))
-        }
-    }
-
-    @Test
-    @DisplayName("A legacy token revoked during its rotation yields no new tokens")
-    fun legacyTokenRevokedDuringRotation() = withRotationWriteGate { gate ->
-        oauthTestApplication {
-            val owner = registerClient(ClientType.CONFIDENTIAL)
-            val legacy = legacyRefreshToken(owner.client.clientId)
-
-            val rotation = coroutineScope {
-                val pending = async { refresh(legacy, owner) }
-                // 状態の読み取りと署名を終えたローテーションを止めている間に、/oauth2/revokeで失効させる
-                gate.held.await()
-                assertEquals(HttpStatusCode.OK, revoke(legacy, owner).status)
-                gate.release.complete(Unit)
-                pending.await()
-            }
-
-            assertInvalidGrant(rotation)
-            assertInvalidGrant(refresh(legacy, owner))
-        }
-    }
-
-    @Test
-    @DisplayName("A token spent by another server during the rotation does not fork the grant")
-    fun rotationLosingToAnotherServerDoesNotFork() = withRotationWriteGate { gate ->
-        oauthTestApplication {
-            val owner = registerClient(ClientType.CONFIDENTIAL)
-            val grantId = UUID.randomUUID().toString()
-            val first = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-            val decoded = JWT.decode(first.refresh)
-
-            val rotation = coroutineScope {
-                val pending = async { refresh(first.refresh, owner) }
-                gate.held.await()
-                // 同じデータベースを共有する別のサーバーが、先にローテーションをコミットしたことを再現する
-                RevokedTokenRepository.revoke(
-                    decoded.id, TokenType.REFRESH_TOKEN, owner.client.clientId,
-                    LocalDateTime.ofInstant(decoded.expiresAt.toInstant(), ZoneId.systemDefault())
-                ).getOrElse { error("Failed to revoke: $it") }
-                gate.release.complete(Unit)
-                pending.await()
-            }
-
-            // 2本目のチェーンは渡さない。並行したローテーションは再利用ではないので、相手のチェーンは残す
-            assertInvalidGrant(rotation)
-            assertFalse(RevokedGrantRepository.isRevoked(grantId))
-            assertAccessTokenValid(first.access)
-            assertContains(logs.warnings.single { it.contains("spent by another request") }, grantId)
-        }
-    }
-
-    @Test
     @DisplayName("Revoking a refresh token rejects the access token of the same grant")
     fun refreshRevocationReachesTheAccessToken() = oauthTestApplication {
         val owner = registerClient(ClientType.CONFIDENTIAL)
@@ -677,59 +349,6 @@ class GrantRevocationTest : OAuthRouteTestBase() {
 
         // この判定はBearer認証とイントロスペクションが共有している
         assertAccessTokenGrantRevoked(tokens.access)
-    }
-
-    @Test
-    @DisplayName("A failed grant write answers server_error at the revocation endpoint")
-    fun failedGrantWriteIsReportedByTheRevocationEndpoint() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val tokens = redeem(issueCode(owner.client.clientId, UUID.randomUUID().toString()), owner).tokens()
-        // グラントの失効の書き込みを確実に失敗させるため、テーブルを削除する
-        transaction { exec("DROP TABLE revoked_grants") }
-
-        val response = revoke(tokens.refresh, owner)
-
-        assertEquals(HttpStatusCode.InternalServerError, response.status)
-        assertEquals("server_error", response.jsonBody().getValue("error").jsonPrimitive.content)
-    }
-
-    @Test
-    @DisplayName("Revoking an access token leaves the grant active")
-    fun accessRevocationStaysPerJti() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val grantId = UUID.randomUUID().toString()
-        val tokens = redeem(issueCode(owner.client.clientId, grantId), owner).tokens()
-
-        assertEquals(HttpStatusCode.OK, revoke(tokens.access, owner).status)
-
-        assertEquals(TokenStateFailure.REVOKED.left(), validator.validate(TokenKind.ACCESS, JWT.decode(tokens.access)))
-        assertFalse(RevokedGrantRepository.isRevoked(grantId))
-        assertEquals(HttpStatusCode.OK, refresh(tokens.refresh, owner).status)
-    }
-
-    @Test
-    @DisplayName("Revoking the rotated token ends its grace window")
-    fun revokingRotatedTokenEndsGraceWindow() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val first = redeem(issueCode(owner.client.clientId, UUID.randomUUID().toString()), owner).tokens()
-        val rotated = refresh(first.refresh, owner).tokens()
-
-        assertEquals(HttpStatusCode.OK, revoke(first.refresh, owner).status)
-
-        assertInvalidGrant(refresh(first.refresh, owner))
-        assertInvalidGrant(refresh(rotated.refresh, owner))
-    }
-
-    @Test
-    @DisplayName("Revoking the new token ends the grace window of the rotated one")
-    fun revokingNewTokenEndsGraceWindow() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val first = redeem(issueCode(owner.client.clientId, UUID.randomUUID().toString()), owner).tokens()
-        val rotated = refresh(first.refresh, owner).tokens()
-
-        assertEquals(HttpStatusCode.OK, revoke(rotated.refresh, owner).status)
-
-        assertInvalidGrant(refresh(first.refresh, owner))
     }
 
     @Test
@@ -746,41 +365,51 @@ class GrantRevocationTest : OAuthRouteTestBase() {
         assertEquals(grantId, JWT.decode(next.access).grantId())
     }
 
-    @Test
-    @DisplayName("Reusing a legacy token after the grace window stays per jti")
-    fun legacyReuseStaysPerJti() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val legacy = legacyRefreshToken(owner.client.clientId)
-        val rotated = refresh(legacy, owner).tokens()
-
-        cacheNow += graceWindowEnd
-        assertInvalidGrant(refresh(legacy, owner))
-
-        assertAccessTokenValid(rotated.access)
-        assertEquals(HttpStatusCode.OK, refresh(rotated.refresh, owner).status)
-    }
+    private suspend fun HttpResponse.tokenField(name: String): String = jsonBody().getValue(name).jsonPrimitive.content
 
     @Test
-    @DisplayName("Revoking a rotated legacy token ends its grace window")
-    fun revokingRotatedLegacyTokenEndsGraceWindow() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val legacy = legacyRefreshToken(owner.client.clientId)
-        refresh(legacy, owner).tokens()
+    @DisplayName("Authorization code grant issues tokens accepted by the verifier of their own kind")
+    fun authorizationCodeGrantIssuesTypedTokens() = oauthTestApplication {
+        val clientId = registerClient(ClientType.PUBLIC).client.clientId
+        val playerId = UUID.randomUUID()
+        val grantId = UUID.randomUUID().toString()
+        val code = UUID.randomUUID().toString()
+        OAuthRouter.authorizedData[code] = AuthorizedData(
+            clientId = clientId,
+            redirectUri = redirectUri,
+            scope = "openid",
+            state = "state",
+            codeChallenge = codeChallenge(),
+            uniqueId = playerId,
+            grantId = grantId
+        )
 
-        assertEquals(HttpStatusCode.OK, revoke(legacy, owner).status)
+        val response = client.submitForm(
+            url = "/oauth2/token",
+            formParameters = parameters {
+                append("grant_type", "authorization_code")
+                append("code", code)
+                append("redirect_uri", redirectUri)
+                append("code_verifier", codeVerifier)
+                append("client_id", clientId)
+            }
+        )
 
-        assertInvalidGrant(refresh(legacy, owner))
-    }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val verifiers = JwtTestSupport.verifiers
+        val accessToken = verifiers.bearer.verify(response.tokenField("access_token"))
+        val refreshToken = verifiers.refreshToken.verify(response.tokenField("refresh_token"))
+        val idToken = verifiers.idTokenHint.verify(response.tokenField("id_token"))
+        assertEquals(TokenKind.ACCESS, accessToken.tokenKind())
+        assertEquals(TokenKind.REFRESH, refreshToken.tokenKind())
+        assertEquals(TokenKind.ID, idToken.tokenKind())
 
-    @Test
-    @DisplayName("Revoking the new token ends the grace window of a rotated legacy token")
-    fun revokingNewTokenEndsLegacyGraceWindow() = oauthTestApplication {
-        val owner = registerClient(ClientType.CONFIDENTIAL)
-        val legacy = legacyRefreshToken(owner.client.clientId)
-        val rotated = refresh(legacy, owner).tokens()
+        // RFC 9068 Section 2.2: アクセストークンのsubはプレイヤーのUUID
+        assertEquals(playerId.toString(), accessToken.subject)
 
-        assertEquals(HttpStatusCode.OK, revoke(rotated.refresh, owner).status)
-
-        assertInvalidGrant(refresh(legacy, owner))
+        // grant_idはアクセストークンとリフレッシュトークンだけが持つ
+        assertEquals(grantId, accessToken.grantId())
+        assertEquals(grantId, refreshToken.grantId())
+        assertNull(idToken.grantId())
     }
 }

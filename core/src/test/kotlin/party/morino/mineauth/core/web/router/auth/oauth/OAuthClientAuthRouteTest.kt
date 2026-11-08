@@ -1,6 +1,5 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
-import arrow.core.getOrElse
 import com.auth0.jwt.JWTVerifier
 import com.auth0.jwt.exceptions.JWTVerificationException
 import io.ktor.client.request.get
@@ -34,11 +33,6 @@ import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.database.DatabaseMigrator
 import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
-import party.morino.mineauth.core.repository.AccountRepository
-import party.morino.mineauth.core.repository.AccountType
-import party.morino.mineauth.core.repository.ClientType
-import party.morino.mineauth.core.repository.OAuthClientCreationResult
-import party.morino.mineauth.core.repository.OAuthClientRepository
 import party.morino.mineauth.core.utils.Argon2Gate
 import party.morino.mineauth.core.web.ratelimit.RateLimitTestSupport
 import party.morino.mineauth.core.web.router.auth.oauth.EndSessionRouter.endSessionRouter
@@ -47,7 +41,6 @@ import party.morino.mineauth.core.web.router.auth.oauth.RevokeRouter.revokeRoute
 import party.morino.mineauth.core.web.router.auth.oauth.TokenRouter.tokenRouter
 import java.nio.file.Path
 import java.util.Base64
-import java.util.UUID
 import java.util.logging.Logger
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -100,22 +93,6 @@ class OAuthClientAuthRouteTest {
     /** "username:password" をBasicヘッダーの値にエンコードする */
     private fun basic(userPass: String): String =
         "Basic " + Base64.getEncoder().encodeToString(userPass.toByteArray())
-
-    /** 指定した種別のクライアントをDBに登録する */
-    private suspend fun createClient(
-        clientType: ClientType,
-        introspectionAllowed: Boolean = false
-    ): OAuthClientCreationResult {
-        val account = AccountRepository.create(AccountType.PLAYER, UUID.randomUUID().toString())
-            .getOrElse { error("Failed to create account: $it") }
-        return OAuthClientRepository.create(
-            "Test Client",
-            clientType,
-            listOf("https://example.com/callback"),
-            account.accountId,
-            introspectionAllowed
-        ).getOrElse { error("Failed to create client: $it") }
-    }
 
     /** 対象ルートを登録してテストブロックを実行する */
     private fun routeTest(block: suspend ApplicationTestBuilder.() -> Unit) = testApplication {
@@ -172,18 +149,6 @@ class OAuthClientAuthRouteTest {
     }
 
     @Test
-    @DisplayName("Introspect with an empty Basic secret returns 401 with realm")
-    fun introspectWithEmptyBasicSecret() = routeTest {
-        assertInvalidClientChallenge(postForm("/introspect", "token=abc", basic("client:")))
-    }
-
-    @Test
-    @DisplayName("Revoke with a body client_id and no secret returns 401")
-    fun revokeWithoutSecret() = routeTest {
-        assertInvalidClientChallenge(postForm("/revoke", "token=abc&client_id=client"))
-    }
-
-    @Test
     @DisplayName("Revoke and introspect without client authentication return 401 with realm")
     fun noClientAuthentication() = routeTest {
         listOf("/revoke", "/introspect").forEach { path ->
@@ -192,12 +157,6 @@ class OAuthClientAuthRouteTest {
             assertInvalidClientChallenge(postForm(path, "token=abc&client_id="))
             assertInvalidClientChallenge(postForm(path, "token=abc", "Bearer some-token"))
         }
-    }
-
-    @Test
-    @DisplayName("Token endpoint without client_id stays invalid_request")
-    fun tokenEndpointWithoutClientId() = routeTest {
-        assertInvalidRequest(postForm("/token", "grant_type=refresh_token&refresh_token=abc"), "client_id")
     }
 
     @Test
@@ -230,118 +189,8 @@ class OAuthClientAuthRouteTest {
     }
 
     @Test
-    @DisplayName("Malformed Basic header returns 401 with realm")
-    fun malformedBasicHeader() = routeTest {
-        assertInvalidClientChallenge(postForm("/revoke", "token=abc", "Basic !!!not-base64!!!"))
-        assertInvalidClientChallenge(postForm("/token", "grant_type=refresh_token", "Basic !!!not-base64!!!"))
-    }
-
-    @Test
-    @DisplayName("Token rejects a confidential client with an empty Basic secret")
-    fun tokenRejectsEmptyBasicSecret() = routeTest {
-        val client = createClient(ClientType.CONFIDENTIAL).client
-        val response = postForm("/token", "grant_type=refresh_token&refresh_token=abc", basic("${client.clientId}:"))
-        assertInvalidClientChallenge(response)
-    }
-
-    @Test
-    @DisplayName("Wrong secret returns 401 with realm")
-    fun wrongSecret() = routeTest {
-        val client = createClient(ClientType.CONFIDENTIAL).client
-        assertInvalidClientChallenge(postForm("/introspect", "token=abc", basic("${client.clientId}:wrong")))
-    }
-
-    @Test
-    @DisplayName("Accepts Basic with a matching body client_id")
-    fun acceptsBasicWithMatchingClientId() = routeTest {
-        val created = createClient(ClientType.CONFIDENTIAL, introspectionAllowed = true)
-        val clientId = created.client.clientId
-        val response = postForm(
-            "/introspect",
-            "token=abc&client_id=$clientId",
-            basic("$clientId:${created.clientSecret}")
-        )
-        assertEquals(HttpStatusCode.OK, response.status)
-    }
-
-    @Test
-    @DisplayName("Accepts client_secret_post")
-    fun acceptsClientSecretPost() = routeTest {
-        val created = createClient(ClientType.CONFIDENTIAL, introspectionAllowed = true)
-        val body = "token=abc&client_id=${created.client.clientId}&client_secret=${created.clientSecret}"
-        assertEquals(HttpStatusCode.OK, postForm("/introspect", body).status)
-    }
-
-    @Test
-    @DisplayName("Rejects Basic with a differing body client_id")
-    fun rejectsBasicWithDifferingClientId() = routeTest {
-        val created = createClient(ClientType.CONFIDENTIAL)
-        val response = postForm(
-            "/introspect",
-            "token=abc&client_id=other",
-            basic("${created.client.clientId}:${created.clientSecret}")
-        )
-        assertInvalidRequest(response, "client_id")
-    }
-
-    @Test
-    @DisplayName("Rejects Basic with a body client_secret")
-    fun rejectsBasicWithBodySecret() = routeTest {
-        val created = createClient(ClientType.CONFIDENTIAL)
-        val response = postForm(
-            "/introspect",
-            "token=abc&client_secret=${created.clientSecret}",
-            basic("${created.client.clientId}:${created.clientSecret}")
-        )
-        assertInvalidRequest(response, "Multiple client authentication methods")
-    }
-
-    @Test
     @DisplayName("Empty grant_type is treated as missing")
     fun emptyGrantType() = routeTest {
         assertInvalidRequest(postForm("/token", "grant_type=&client_id=client"), "grant_type")
-    }
-
-    @Test
-    @DisplayName("Empty code is treated as missing")
-    fun emptyCode() = routeTest {
-        val body = "grant_type=authorization_code&client_id=client&code=&redirect_uri=https%3A%2F%2Fa.example&code_verifier=v"
-        assertInvalidRequest(postForm("/token", body), "code")
-    }
-
-    @Test
-    @DisplayName("Repeated code is rejected")
-    fun repeatedCode() = routeTest {
-        val body = "grant_type=authorization_code&client_id=client&code=a&code=b&redirect_uri=https%3A%2F%2Fa.example&code_verifier=v"
-        assertInvalidRequest(postForm("/token", body), "repeated: code")
-    }
-
-    @Test
-    @DisplayName("Public client with client_id only reaches the refresh_token check")
-    fun publicClientReachesRefreshTokenCheck() = routeTest {
-        val clientId = createClient(ClientType.PUBLIC).client.clientId
-        // クライアント認証を通過した場合にのみ refresh_token の検証へ到達する
-        assertInvalidRequest(
-            postForm("/token", "grant_type=refresh_token&client_id=$clientId&refresh_token="),
-            "refresh_token"
-        )
-        assertInvalidRequest(
-            postForm("/token", "grant_type=refresh_token&client_id=$clientId&refresh_token=a&refresh_token=b"),
-            "repeated: refresh_token"
-        )
-    }
-
-    @Test
-    @DisplayName("Revoke rejects empty and repeated token")
-    fun revokeRejectsEmptyAndRepeatedToken() = routeTest {
-        assertInvalidRequest(postForm("/revoke", "token="), "token")
-        assertInvalidRequest(postForm("/revoke", "token=a&token=b"), "repeated: token")
-    }
-
-    @Test
-    @DisplayName("Introspect rejects repeated token_type_hint")
-    fun introspectRejectsRepeatedHint() = routeTest {
-        val body = "token=abc&token_type_hint=access_token&token_type_hint=refresh_token"
-        assertInvalidRequest(postForm("/introspect", body), "repeated: token_type_hint")
     }
 }

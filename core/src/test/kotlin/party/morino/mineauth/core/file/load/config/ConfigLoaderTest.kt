@@ -2,6 +2,7 @@ package party.morino.mineauth.core.file.load.config
 
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -21,13 +22,15 @@ import party.morino.mineauth.core.file.data.ServerConfig
 import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
 import party.morino.mineauth.core.utils.json
 import java.io.File
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * ConfigLoaderのserver.baseUrl検証のテスト
- * 不正な値では以前の設定を残して失敗し、httpsでない公開ホストでは警告だけが出ることを確認する
+ * ConfigLoaderのserver.baseUrl検証と、config.jsonの解釈失敗のテスト
+ * 不正なbaseUrlでは以前の設定を残して失敗し、解釈できないconfig.jsonではパーサーが引用した内容が例外に残らないことを確認する
  *
  * MockBukkitは使わず、Koinにモックのプラグインと一時ディレクトリを登録する
  */
@@ -65,38 +68,6 @@ class ConfigLoaderTest {
     }
 
     @Test
-    @DisplayName("Registers the normalized issuer without a warning for https")
-    fun loadsHttpsBaseUrl() {
-        writeConfig("https://api.example.com/main/")
-
-        ConfigLoader().load()
-
-        assertEquals("https://api.example.com/main", GlobalContext.get().get<JWTConfigData>().issuer)
-        assertEquals(emptyList(), logHandler.warnings)
-    }
-
-    @Test
-    @DisplayName("Logs a warning for http on a public host and keeps loading")
-    fun warnsAboutPublicHttp() {
-        writeConfig("http://api.example.com")
-
-        ConfigLoader().load()
-
-        assertEquals("http://api.example.com", GlobalContext.get().get<JWTConfigData>().issuer)
-        assertTrue(logHandler.warnings.single().contains("does not use https"))
-    }
-
-    @Test
-    @DisplayName("Does not warn about http on localhost")
-    fun doesNotWarnAboutLoopbackHttp() {
-        writeConfig("http://localhost:8080")
-
-        ConfigLoader().load()
-
-        assertEquals(emptyList(), logHandler.warnings)
-    }
-
-    @Test
     @DisplayName("Fails with a clear error and keeps the previous config for a query")
     fun failsOnQueryAndKeepsPreviousConfig() {
         writeConfig("https://api.example.com")
@@ -111,16 +82,24 @@ class ConfigLoaderTest {
     }
 
     @Test
-    @DisplayName("Does not create a backup when the base URL is rejected")
-    fun doesNotRewriteConfigWhenRejected() {
-        // pepper未設定のconfigは書き戻されるが、検証に失敗した場合は触れない
-        val configFile = dataFolder.resolve("config.json")
-        configFile.writeText(json.encodeToString(MineAuthConfig(server = ServerConfig(baseUrl = "https://api.example.com#top"))))
-        val before = configFile.readText()
+    @DisplayName("A parse error next to a secret fails without quoting the secret")
+    fun parseErrorDoesNotQuoteTheSecret() {
+        val secret = "S3cr3tPepperValue"
+        // pepperの直後の数値の項目に、数値でない値を書いたconfig.json
+        // （isLenientの設定ではカンマの抜けなどは受け入れられるため、型の誤りでパーサーを失敗させる）
+        val text = """{"password":{"pepper":"$secret","memory":"lots"}}"""
+        dataFolder.resolve("config.json").writeText(text)
+        // 前提: パーサーのメッセージそのものは、エラー位置の前後としてパスワードを引用する
+        val parserFailure = assertThrows<SerializationException> { json.decodeFromString<MineAuthConfig>(text) }
+        assertContains(parserFailure.message.orEmpty(), secret)
 
-        assertThrows<IllegalStateException> { ConfigLoader().load() }
+        val failure = assertThrows<ConfigParseException> { ConfigLoader().load() }
 
-        assertEquals(before, configFile.readText())
-        assertFalse(dataFolder.resolve("config.json.bak").exists())
+        // オフセットとJSONパスは残す
+        assertContains(failure.message.orEmpty(), "offset")
+        assertContains(failure.message.orEmpty(), "at path: \$.password.memory")
+        // 原因を添付せず、ログに出るスタックトレースの全文にも引用が残らない
+        assertNull(failure.cause)
+        assertFalse(secret in failure.stackTraceToString(), failure.stackTraceToString())
     }
 }

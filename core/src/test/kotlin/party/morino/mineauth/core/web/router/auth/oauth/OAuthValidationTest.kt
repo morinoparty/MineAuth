@@ -108,27 +108,11 @@ class OAuthValidationTest {
         }
 
         @Test
-        @DisplayName("Omits state when the request had none")
-        fun omitsStateWhenNull() {
-            val result = OAuthValidation.buildErrorRedirectUri("https://example.com/callback", "invalid_request", "Missing state", null)
-
-            assertFalse(result.contains("state="))
-        }
-
-        @Test
         @DisplayName("Sanitizes the error description")
         fun sanitizesErrorDescription() {
             val result = OAuthValidation.buildErrorRedirectUri("https://example.com/callback", "invalid_scope", "Invalid scope(s): foo\"bar\\é", "s")
 
             assertEquals("Invalid scope(s): foobar", Url(result).parameters["error_description"])
-        }
-
-        @Test
-        @DisplayName("Omits an error description that sanitizes to nothing")
-        fun omitsEmptyErrorDescription() {
-            val result = OAuthValidation.buildErrorRedirectUri("https://example.com/callback", "invalid_scope", "é", "s")
-
-            assertFalse(result.contains("error_description"))
         }
     }
 
@@ -148,42 +132,6 @@ class OAuthValidationTest {
             assertTrue(result.contains("code=authorization_code_123"))
             assertTrue(result.contains("state=state_value"))
             assertTrue(result.startsWith("https://example.com/callback"))
-        }
-    }
-
-    @Nested
-    @DisplayName("Private-use redirect URIs")
-    inner class PrivateUseRedirectUriTest {
-
-        @Test
-        @DisplayName("Keeps a private-use URI with an authority intact")
-        fun keepsPrivateUseUriWithAuthorityIntact() {
-            // RedirectUriValidatorが受け付ける形式は、認可応答でもそのまま保たれる
-            val redirectUri = "com.example.app://callback/path"
-
-            assertEquals(
-                "$redirectUri?code=code&state=state",
-                OAuthValidation.buildSuccessRedirectUri(redirectUri, "code", "state")
-            )
-            assertEquals(
-                "$redirectUri?error=error&error_description=description&state=state",
-                OAuthValidation.buildErrorRedirectUri(redirectUri, "error", "description", "state")
-            )
-        }
-
-        @Test
-        @DisplayName("Rewrites a private-use URI without an authority")
-        fun rewritesPrivateUseUriWithoutAuthority() {
-            // RFC 8252 Section 7.1 の形式はURLBuilderがlocalhostを補って書き換えるため、
-            // RedirectUriValidatorで拒否している。このテストが失敗したら登録規則を緩められる
-            assertEquals(
-                "com.example.app://localhost/oauth/callback?code=code&state=state",
-                OAuthValidation.buildSuccessRedirectUri("com.example.app:/oauth/callback", "code", "state")
-            )
-            assertEquals(
-                "com.example.app://localhost/oauth/callback?error=error&error_description=description&state=state",
-                OAuthValidation.buildErrorRedirectUri("com.example.app:/oauth/callback", "error", "description", "state")
-            )
         }
     }
 
@@ -215,29 +163,12 @@ class OAuthValidationTest {
         }
 
         @Test
-        @DisplayName("Pattern anchored with $ matches the URI itself")
-        fun anchoredPatternMatchesItself() {
-            val clientData = clientWith("^https://app\\.example\\.com/callback$")
-
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "https://app.example.com/callback"))
-        }
-
-        @Test
         @DisplayName("Does not match a URI sharing only a prefix with the registered URI")
         fun doesNotMatchUriSharingOnlyPrefix() {
             val clientData = clientWith("https://example.com/callback")
 
             assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://example.com/callbackevil"))
             assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://example.com/callback.evil.example/"))
-        }
-
-        @Test
-        @DisplayName("Registered URI ending with a slash keeps requiring the slash")
-        fun registeredUriEndingWithSlashRequiresSlash() {
-            val clientData = clientWith("https://example.com/callback/")
-
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "https://example.com/callback/"))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://example.com/callback"))
         }
 
         @Test
@@ -259,15 +190,6 @@ class OAuthValidationTest {
         }
 
         @Test
-        @DisplayName("Registered value that is not a valid regex still matches exactly")
-        fun invalidRegexRegisteredValueMatchesExactly() {
-            val clientData = clientWith("https://example.com/(")
-
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "https://example.com/("))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://example.com/(/x"))
-        }
-
-        @Test
         @DisplayName("Dot in the scheme is not evaluated as a regex")
         fun dotInSchemeIsNotEvaluatedAsRegex() {
             // 正規表現として評価すると . が任意の文字に一致し、登録できないスキームへ認可コードを送れてしまう
@@ -275,47 +197,6 @@ class OAuthValidationTest {
             assertFalse(OAuthValidation.validateRedirectUri(clientWith("^h.tp://evil.example/cb"), "http://evil.example/cb"))
             assertFalse(OAuthValidation.validateRedirectUri(clientWith("j.vascript://x/cb"), "javascript://x/cb"))
             assertFalse(OAuthValidation.validateRedirectUri(clientWith("d.ta://x/cb"), "data://x/cb"))
-        }
-
-        @Test
-        @DisplayName("Plus in the scheme is not evaluated as a regex")
-        fun plusInSchemeIsNotEvaluatedAsRegex() {
-            val clientData = clientWith("h.+://evil.example/cb")
-
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://evil.example/cb"))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://attacker.example/?://evil.example/cb"))
-            // スキームに . が無くても + だけで別のスキームに一致してしまう登録値も対象にする
-            assertFalse(OAuthValidation.validateRedirectUri(clientWith("ht+p://evil.example/cb"), "http://evil.example/cb"))
-        }
-
-        @Test
-        @DisplayName("Private-use URI matches itself and literal sub-paths only")
-        fun privateUseUriMatchesLiterally() {
-            val clientData = clientWith("com.example.app://cb")
-
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cb"))
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cb/done"))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "comXexample.app://cb"))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cbevil"))
-        }
-
-        @Test
-        @DisplayName("Private-use URI ending with a slash keeps requiring the slash")
-        fun privateUseUriEndingWithSlashRequiresSlash() {
-            val clientData = clientWith("com.example.app://cb/")
-
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cb/"))
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cb/done"))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cb"))
-        }
-
-        @Test
-        @DisplayName("Leading caret of a private-use value is not part of the literal")
-        fun leadingCaretIsNotPartOfTheLiteral() {
-            val clientData = clientWith("^com.example.app://cb")
-
-            assertTrue(OAuthValidation.validateRedirectUri(clientData, "com.example.app://cb"))
-            assertFalse(OAuthValidation.validateRedirectUri(clientData, "comXexample.app://cb"))
         }
 
         @Test

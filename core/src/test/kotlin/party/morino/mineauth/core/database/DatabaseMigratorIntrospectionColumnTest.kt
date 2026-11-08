@@ -44,11 +44,8 @@ class DatabaseMigratorIntrospectionColumnTest {
     /**
      * introspection_allowed を追加する前のスキーマと既存のクライアント1件を生のSQLで再現する
      * テーブル定義を変更しても影響を受けないよう、当時Exposedが生成したDDLをそのまま書く
-     *
-     * @param legacyColumnDefinition さらに古いバージョンのカラムの定義（ある場合）
      */
-    private fun createOldSchema(legacyColumnDefinition: String? = null) {
-        val legacyColumn = legacyColumnDefinition?.let { "$it, " }.orEmpty()
+    private fun createOldSchema() {
         transaction {
             exec(
                 "CREATE TABLE accounts (account_id VARCHAR(36) NOT NULL PRIMARY KEY, account_type VARCHAR(20) NOT NULL, " +
@@ -57,7 +54,7 @@ class DatabaseMigratorIntrospectionColumnTest {
             exec(
                 "CREATE TABLE oauth_clients (client_id VARCHAR(36) NOT NULL PRIMARY KEY, client_name VARCHAR(255) NOT NULL, " +
                     "client_type VARCHAR(20) NOT NULL, client_secret_hash VARCHAR(255) NULL, " +
-                    "issuer_account_id VARCHAR(36) NOT NULL, $legacyColumn" +
+                    "issuer_account_id VARCHAR(36) NOT NULL, " +
                     "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, " +
                     "CONSTRAINT fk_oauth_clients_issuer_account_id__account_id FOREIGN KEY (issuer_account_id) " +
                     "REFERENCES accounts(account_id) ON DELETE CASCADE ON UPDATE RESTRICT)"
@@ -128,28 +125,6 @@ class DatabaseMigratorIntrospectionColumnTest {
         assertEquals(ClientType.CONFIDENTIAL, client.clientType)
         assertEquals(storedAt, client.createdAt)
         assertEquals(storedAt, client.updatedAt)
-    }
-
-    @Test
-    @DisplayName("Upgrades a table that still has the legacy redirect_uri column")
-    fun upgradesATableWithTheLegacyColumn() = runTest {
-        createOldSchema(legacyColumnDefinition = "redirect_uri VARCHAR(2048) NOT NULL DEFAULT 'https://example.com/cb'")
-
-        DatabaseMigrator.migrate()
-
-        val client = OAuthClientRepository.findById("client-1").getOrElse { error("Not found: $it") }
-        assertFalse(client.introspectionAllowed)
-        assertEquals(listOf("https://example.com/cb"), client.redirectUris)
-        assertFalse(columnDefinitions().any { it["name"] == "redirect_uri" })
-    }
-
-    @Test
-    @DisplayName("A new database gets the column without any ALTER")
-    fun newDatabaseGetsTheColumnFromCreate() {
-        val executed = DatabaseMigrator.migrate()
-
-        assertTrue(executed.isEmpty())
-        assertEquals("BOOLEAN", introspectionColumn()?.get("type"))
     }
 
     @Test

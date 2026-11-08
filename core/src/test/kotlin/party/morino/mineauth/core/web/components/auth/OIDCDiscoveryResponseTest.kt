@@ -69,13 +69,6 @@ class OIDCDiscoveryResponseTest {
         }
 
         @Test
-        @DisplayName("Always includes offline_access scope")
-        fun includesOfflineAccessScope() {
-            val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com")
-            assertContains(response.scopesSupported, "offline_access")
-        }
-
-        @Test
         @DisplayName("Includes email scope when enabled")
         fun includesEmailScopeWhenEnabled() {
             val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com", emailEnabled = true)

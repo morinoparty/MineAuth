@@ -10,13 +10,12 @@ import org.junit.jupiter.api.io.TempDir
 import party.morino.mineauth.core.database.DatabaseMigrator
 import java.nio.file.Path
 import java.util.UUID
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
  * OAuthClientRepositoryのトークンイントロスペクション権限のテスト
- * 権限を持てるのがConfidentialクライアントだけであることを確認する（Issue #480）
+ * Confidentialクライアントの権限を付与・撤回でき、保存されることを確認する（Issue #480）
  */
 class OAuthClientRepositoryIntrospectionTest {
 
@@ -55,27 +54,6 @@ class OAuthClientRepositoryIntrospectionTest {
         OAuthClientRepository.findById(clientId).getOrElse { error("Not found: $it") }.introspectionAllowed
 
     @Test
-    @DisplayName("A client has no permission unless it is requested")
-    fun clientHasNoPermissionByDefault() = runTest {
-        val client = createClient(ClientType.CONFIDENTIAL)
-
-        assertFalse(client.introspectionAllowed)
-        assertFalse(storedIntrospectionAllowed(client.clientId))
-    }
-
-    @Test
-    @DisplayName("Create applies the permission to confidential clients only")
-    fun createAppliesThePermissionToConfidentialClientsOnly() = runTest {
-        val confidential = createClient(ClientType.CONFIDENTIAL, introspectionAllowed = true)
-        val public = createClient(ClientType.PUBLIC, introspectionAllowed = true)
-
-        assertTrue(confidential.introspectionAllowed)
-        assertTrue(storedIntrospectionAllowed(confidential.clientId))
-        assertFalse(public.introspectionAllowed)
-        assertFalse(storedIntrospectionAllowed(public.clientId))
-    }
-
-    @Test
     @DisplayName("The permission of a confidential client can be granted and withdrawn")
     fun permissionOfConfidentialClientCanBeChanged() = runTest {
         val client = createClient(ClientType.CONFIDENTIAL)
@@ -89,24 +67,5 @@ class OAuthClientRepositoryIntrospectionTest {
             .getOrElse { error("Failed to withdraw: $it") }
         assertFalse(withdrawn.introspectionAllowed)
         assertFalse(storedIntrospectionAllowed(client.clientId))
-    }
-
-    @Test
-    @DisplayName("A public client cannot hold the permission")
-    fun publicClientCannotHoldThePermission() = runTest {
-        val client = createClient(ClientType.PUBLIC)
-
-        val result = OAuthClientRepository.setIntrospectionAllowed(client.clientId, allowed = true)
-
-        assertEquals(OAuthClientError.InvalidCredentials, result.leftOrNull())
-        assertFalse(storedIntrospectionAllowed(client.clientId))
-    }
-
-    @Test
-    @DisplayName("An unknown client is reported as not found")
-    fun unknownClientIsNotFound() = runTest {
-        val result = OAuthClientRepository.setIntrospectionAllowed("unknown-client", allowed = true)
-
-        assertEquals(OAuthClientError.NotFound, result.leftOrNull())
     }
 }

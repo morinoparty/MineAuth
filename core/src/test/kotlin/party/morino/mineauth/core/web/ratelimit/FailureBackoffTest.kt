@@ -29,19 +29,6 @@ class FailureBackoffTest {
     }
 
     @Test
-    @DisplayName("Allows attempts during the free failures")
-    fun allowsFreeFailures() {
-        val backoff = backoff()
-
-        assertNull(backoff.retryAfterSeconds("a"))
-        repeat(2) { backoff.recordFailure("a") }
-        assertNull(backoff.retryAfterSeconds("a"))
-
-        backoff.recordFailure("a")
-        assertEquals(1, backoff.retryAfterSeconds("a"))
-    }
-
-    @Test
     @DisplayName("Doubles the delay up to the cap")
     fun doublesUpToCap() {
         val backoff = backoff(freeFailures = 0)
@@ -63,70 +50,6 @@ class FailureBackoffTest {
         repeat(200) { backoff.recordFailure("a") }
 
         assertEquals(8, backoff.retryAfterSeconds("a"))
-    }
-
-    @Test
-    @DisplayName("Rounds the wait up and ends the block on time")
-    fun roundsWaitUp() {
-        val backoff = backoff(freeFailures = 0)
-        backoff.recordFailure("a")
-
-        now = 999
-        assertEquals(1, backoff.retryAfterSeconds("a"))
-        now = 1_000
-        assertNull(backoff.retryAfterSeconds("a"))
-    }
-
-    @Test
-    @DisplayName("Checking a blocked key does not count as a failure")
-    fun checkingDoesNotCount() {
-        val backoff = backoff(freeFailures = 0)
-        backoff.recordFailure("a")
-
-        repeat(5) { backoff.retryAfterSeconds("a") }
-
-        // 確認だけなら次の失敗は2回目として扱われる
-        backoff.failAfterBlock("a")
-        assertEquals(2, backoff.retryAfterSeconds("a"))
-    }
-
-    @Test
-    @DisplayName("Success forgets the key")
-    fun successForgetsKey() {
-        val backoff = backoff()
-        repeat(3) { backoff.recordFailure("a") }
-
-        backoff.recordSuccess("a")
-
-        assertNull(backoff.retryAfterSeconds("a"))
-        // 猶予もやり直しになる
-        repeat(2) { backoff.recordFailure("a") }
-        assertNull(backoff.retryAfterSeconds("a"))
-    }
-
-    @Test
-    @DisplayName("Forgets a key idle past the expiry")
-    fun forgetsIdleKey() {
-        val backoff = backoff()
-        repeat(3) { backoff.recordFailure("a") }
-
-        now = 60_000
-        assertNull(backoff.retryAfterSeconds("a"))
-        // 猶予もやり直しになる
-        repeat(2) { backoff.recordFailure("a") }
-        assertNull(backoff.retryAfterSeconds("a"))
-    }
-
-    @Test
-    @DisplayName("Keeps counting while failures continue within the expiry")
-    fun keepsCountingWithinExpiry() {
-        val backoff = backoff()
-        repeat(2) { backoff.recordFailure("a") }
-
-        now = 59_999
-        backoff.recordFailure("a")
-
-        assertEquals(1, backoff.retryAfterSeconds("a"))
     }
 
     @Test

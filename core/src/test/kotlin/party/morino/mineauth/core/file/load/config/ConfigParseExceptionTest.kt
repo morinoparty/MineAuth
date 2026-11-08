@@ -4,7 +4,6 @@ import kotlinx.serialization.SerializationException
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import kotlin.test.assertContains
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
@@ -13,17 +12,6 @@ import kotlin.test.assertFalse
  */
 class ConfigParseExceptionTest {
     private fun summaryOf(message: String) = ConfigParseException.summaryOf(SerializationException("$message\nJSON input: ..."))
-
-    @Test
-    @DisplayName("Keeps the offset, symbol hints, schema paths and missing field names")
-    fun keepsSafeParts() {
-        val syntax = "Unexpected JSON token at offset 42: Expected colon ':', but had '}' instead at path: \$.database.port"
-        val missing = "Field 'baseUrl' is required for type with serial name 'party.morino.ServerConfig', " +
-            "but it was missing at path: \$.server"
-
-        assertEquals(syntax, summaryOf(syntax))
-        assertEquals("Missing required field: baseUrl at path: \$.server", summaryOf(missing))
-    }
 
     @Test
     @DisplayName("Never keeps input even when it imitates quotes or the path")

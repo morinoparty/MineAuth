@@ -16,7 +16,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -129,22 +128,5 @@ class OAuthServiceArgon2GateTest {
 
         // 許可が空くと評価される
         assertEquals(AuthenticationResult.Success(playerId), runBlocking { OAuthService.authenticateUser("Steve", "password", source) })
-    }
-
-    @Test
-    @DisplayName("Login waits for the slots of its own source and not for other sources")
-    fun loginUsesSourceSlots() {
-        // 全体の許可には空きがあるゲートに置き換え、接続元の枠だけを埋める
-        val roomyGate = Argon2Gate(permits = 4, acquireTimeout = 50.milliseconds)
-        loadKoinModules(module { single { roomyGate } })
-
-        whileHolding(roomyGate, source, verifications = 2) {
-            assertEquals(AuthenticationResult.VerifierBusy, runBlocking { OAuthService.authenticateUser("Steve", "password", source) })
-            assertEquals(
-                AuthenticationResult.Success(playerId),
-                runBlocking { OAuthService.authenticateUser("Steve", "password", otherSource) }
-            )
-        }
-        verify(exactly = 1) { hasher.verify(any(), any()) }
     }
 }

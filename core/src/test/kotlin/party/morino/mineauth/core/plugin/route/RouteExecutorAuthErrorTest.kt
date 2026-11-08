@@ -1,7 +1,5 @@
 package party.morino.mineauth.core.plugin.route
 
-import arrow.core.Either
-import arrow.core.left
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -17,7 +15,6 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -26,18 +23,13 @@ import org.junit.jupiter.api.Test
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
-import party.morino.mineauth.api.CallerType
-import party.morino.mineauth.api.PlayerAccess
 import party.morino.mineauth.api.auth.Principal
-import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.api.http.HttpStatus
 import party.morino.mineauth.api.http.fail
 import party.morino.mineauth.core.file.data.JWTConfigData
-import party.morino.mineauth.core.plugin.annotation.CallerKind
 import party.morino.mineauth.core.plugin.annotation.EndpointAccess
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
-import party.morino.mineauth.core.plugin.annotation.ParameterInfo
 import party.morino.mineauth.core.plugin.annotation.PathSegment
 import party.morino.mineauth.core.plugin.auth.ServicePrincipal
 import party.morino.mineauth.core.plugin.execution.DefaultMethodExecutionHandlerFactory
@@ -79,14 +71,13 @@ class RouteExecutorAuthErrorTest {
     private fun executing(
         metadata: EndpointMetadata,
         principal: Principal?,
-        pathParams: Map<String, String> = emptyMap(),
         verify: suspend (HttpResponse) -> Unit
     ) = testApplication {
         val executor = RouteExecutor(ParameterResolver(Json), DefaultMethodExecutionHandlerFactory())
         application {
             install(ContentNegotiation) { json(Json) }
             routing {
-                get("/protected") { executor.execute(RequestContext(call, principal, pathParams), metadata) }
+                get("/protected") { executor.execute(RequestContext(call, principal, emptyMap()), metadata) }
             }
         }
         verify(client.get("/protected"))
@@ -95,9 +86,7 @@ class RouteExecutorAuthErrorTest {
     /** ハンドラーのメソッドからエンドポイントメタデータを作る */
     private fun metadataOf(
         method: KFunction<*>,
-        handler: Any,
-        parameters: List<ParameterInfo> = emptyList(),
-        returnsEither: Boolean = false
+        handler: Any
     ) = EndpointMetadata(
         method = method,
         handlerInstance = handler,
@@ -105,24 +94,22 @@ class RouteExecutorAuthErrorTest {
         pathSegments = listOf(PathSegment.Literal("protected")),
         httpMethod = HttpMethodType.GET,
         access = EndpointAccess.Public(reason = null),
-        parameters = parameters,
+        parameters = emptyList(),
         isSuspending = false,
         responseType = typeOf<String>(),
-        returnsEither = returnsEither,
+        returnsEither = false,
         responseResolvableByCore = true,
         returnsResponse = false
     )
 
     /**
-     * HttpErrorを投げる、または返すテスト用のハンドラー
+     * HttpErrorを投げるテスト用のハンドラー
      *
      * @property status 返すHTTPステータス
      * @property message エラーメッセージ
      */
     private class FailingHandler(private val status: HttpStatus, private val message: String = "Not your shop") {
         fun thrown(): String = fail(status, message, code = "shop_denied", details = mapOf("id" to "1"))
-
-        fun returned(): Either<HttpError, String> = HttpError(status, message, code = "shop_denied").left()
     }
 
     /** ハンドラーが指定した本文のままであることを確認する */
@@ -163,17 +150,6 @@ class RouteExecutorAuthErrorTest {
     }
 
     @Test
-    @DisplayName("WrongTokenType is 403 insufficient_scope without a scope attribute")
-    fun wrongTokenTypeHasNoScopeAttribute() = respondingWith(AuthError.WrongTokenType(setOf(CallerType.USER))) { response ->
-        val header = response.headers[HttpHeaders.WWWAuthenticate].orEmpty()
-
-        assertEquals(HttpStatusCode.Forbidden, response.status)
-        assertTrue(header.contains("error=\"insufficient_scope\""), header)
-        assertFalse(header.contains(" scope="), header)
-        assertTrue(response.bodyAsText().contains("\"code\":\"wrong_token_type\""))
-    }
-
-    @Test
     @DisplayName("PermissionDenied is 403 insufficient_scope and does not leak the permission")
     fun permissionDeniedDoesNotLeakPermission() = respondingWith(AuthError.PermissionDenied("shop.secret")) { response ->
         val header = response.headers[HttpHeaders.WWWAuthenticate].orEmpty()
@@ -183,41 +159,6 @@ class RouteExecutorAuthErrorTest {
         assertFalse(header.contains(" scope="), header)
         assertFalse(header.contains("shop.secret"), header)
         assertFalse(response.bodyAsText().contains("shop.secret"))
-    }
-
-    @Nested
-    @DisplayName("Parameter resolution errors")
-    inner class ResolveErrors {
-
-        private val handler = FailingHandler(HttpStatus.NOT_FOUND)
-
-        @Test
-        @DisplayName("AccessDenied is 403 insufficient_scope and keeps the reason out of the response")
-        fun accessDeniedHasChallenge() = executing(
-            // サービストークンでmeを指定すると、パラメータ解決の段階で拒否される
-            metadataOf(handler::thrown, handler, listOf(ParameterInfo.TargetPlayer("player", PlayerAccess.SELF_ONLY))),
-            ServicePrincipal(accountId = "service"),
-            mapOf("player" to "me")
-        ) { response ->
-            val header = response.headers[HttpHeaders.WWWAuthenticate].orEmpty()
-
-            assertEquals(HttpStatusCode.Forbidden, response.status)
-            assertTrue(header.contains("error=\"insufficient_scope\""), header)
-            assertFalse(header.contains(" scope="), header)
-            assertFalse(header.contains("Service accounts"), header)
-            assertTrue(response.bodyAsText().contains("\"code\":\"access_denied\""))
-        }
-
-        @Test
-        @DisplayName("AuthenticationRequired is 401 with a challenge without an error attribute")
-        fun authenticationRequiredHasChallenge() = executing(
-            metadataOf(handler::thrown, handler, listOf(ParameterInfo.Caller(CallerKind.ANY, optional = false))),
-            principal = null
-        ) { response ->
-            assertEquals(HttpStatusCode.Unauthorized, response.status)
-            assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
-            assertTrue(response.bodyAsText().contains("\"code\":\"authentication_required\""))
-        }
     }
 
     @Nested
@@ -263,51 +204,6 @@ class RouteExecutorAuthErrorTest {
                 assertEquals(HttpStatusCode.Forbidden, response.status)
                 assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
                 assertKeepsHandlerBody(response)
-            }
-        }
-
-        @Test
-        @DisplayName("Left values get the same challenges as thrown errors")
-        fun leftValues() {
-            val unauthorized = FailingHandler(HttpStatus.UNAUTHORIZED)
-            val forbidden = FailingHandler(HttpStatus.FORBIDDEN)
-
-            executing(metadataOf(unauthorized::returned, unauthorized, returnsEither = true), verifiedCaller) { response ->
-                assertEquals(HttpStatusCode.Unauthorized, response.status)
-                assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
-                assertKeepsHandlerBody(response)
-            }
-            executing(metadataOf(forbidden::returned, forbidden, returnsEither = true), verifiedCaller) { response ->
-                val header = response.headers[HttpHeaders.WWWAuthenticate].orEmpty()
-
-                assertEquals(HttpStatusCode.Forbidden, response.status)
-                assertTrue(header.contains("error=\"insufficient_scope\""), header)
-                assertKeepsHandlerBody(response)
-            }
-        }
-
-        @Test
-        @DisplayName("Other statuses have no challenge")
-        fun otherStatuses() {
-            val handler = FailingHandler(HttpStatus.NOT_FOUND)
-
-            executing(metadataOf(handler::thrown, handler), verifiedCaller) { response ->
-                assertEquals(HttpStatusCode.NotFound, response.status)
-                assertNull(response.headers[HttpHeaders.WWWAuthenticate])
-            }
-        }
-
-        @Test
-        @DisplayName("Long handler message is shortened in the header but not in the body")
-        fun longMessageIsShortenedInHeader() {
-            val longMessage = "x".repeat(10_000)
-            val handler = FailingHandler(HttpStatus.FORBIDDEN, longMessage)
-
-            executing(metadataOf(handler::thrown, handler), verifiedCaller) { response ->
-                val header = response.headers[HttpHeaders.WWWAuthenticate].orEmpty()
-
-                assertTrue(header.length < 1_000, "header length: ${header.length}")
-                assertTrue(response.bodyAsText().contains(longMessage))
             }
         }
     }

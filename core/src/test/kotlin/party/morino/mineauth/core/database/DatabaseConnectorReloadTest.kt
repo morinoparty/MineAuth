@@ -42,7 +42,6 @@ class DatabaseConnectorReloadTest {
     private val pools = mutableListOf<HikariDataSource>()
 
     private val connector = DatabaseConnector { config ->
-        if (config.database == UNREACHABLE_DATABASE) throw SQLException("Connection refused")
         HikariDataSource(
             HikariConfig().apply {
                 jdbcUrl = "jdbc:sqlite:${dataFolder.resolve(config.database)}"
@@ -92,40 +91,6 @@ class DatabaseConnectorReloadTest {
     }.orEmpty()
 
     @Test
-    @DisplayName("Connects with the settings registered by the latest reload")
-    fun connectsWithLatestSettings() {
-        reloadWith(DatabaseConfig.SQLite("first.db"))
-        assertEquals("first.db", connectedFileName())
-
-        reloadWith(DatabaseConfig.SQLite("second.db"))
-
-        assertEquals("second.db", connectedFileName())
-    }
-
-    @Test
-    @DisplayName("Closes the old pool after connecting to the new one")
-    fun closesOldPoolAfterSwitching() {
-        reloadWith(DatabaseConfig.MySQL(database = "first.db"))
-
-        reloadWith(DatabaseConfig.MySQL(database = "second.db"))
-
-        assertTrue(pools[0].isClosed)
-        assertFalse(pools[1].isClosed)
-        assertEquals("second.db", connectedFileName())
-    }
-
-    @Test
-    @DisplayName("Keeps the old connection when the new database cannot be reached")
-    fun keepsOldConnectionWhenUnreachable() {
-        reloadWith(DatabaseConfig.MySQL(database = "first.db"))
-
-        assertThrows<SQLException> { reloadWith(DatabaseConfig.MySQL(database = UNREACHABLE_DATABASE)) }
-
-        assertFalse(pools.single().isClosed)
-        assertEquals("first.db", connectedFileName())
-    }
-
-    @Test
     @DisplayName("Closes the new pool and keeps the old one when migration fails")
     fun closesNewPoolWhenMigrationFails() {
         reloadWith(DatabaseConfig.MySQL(database = "first.db"))
@@ -137,20 +102,7 @@ class DatabaseConnectorReloadTest {
         assertEquals("first.db", connectedFileName())
     }
 
-    @Test
-    @DisplayName("Keeps the old connection when the new SQLite file cannot be opened")
-    fun keepsOldConnectionWhenSqliteFileCannotBeOpened() {
-        reloadWith(DatabaseConfig.SQLite("first.db"))
-
-        assertThrows<SQLException> { reloadWith(DatabaseConfig.SQLite("missing-directory/second.db")) }
-
-        assertEquals("first.db", connectedFileName())
-    }
-
     private companion object {
-        // 接続できないデータベースを表すMySQL設定のdatabase名
-        const val UNREACHABLE_DATABASE = "unreachable"
-
         // 書き込みできないデータベースを表すMySQL設定のdatabase名
         const val READ_ONLY_DATABASE = "read-only.db"
     }

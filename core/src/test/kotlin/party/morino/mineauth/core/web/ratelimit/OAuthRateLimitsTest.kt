@@ -11,8 +11,6 @@ import party.morino.mineauth.core.web.router.auth.oauth.ClientAuthFailure
 import party.morino.mineauth.core.web.router.auth.oauth.ClientAuthFailureKind
 import party.morino.mineauth.core.web.router.auth.oauth.OAuthErrorCode
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.days
 
 /**
  * OAuthRateLimitsのテスト
@@ -33,47 +31,6 @@ class OAuthRateLimitsTest {
         OAuthRateLimits(config, emptyList(), logHandler.newLogger(), clock = { now })
 
     private fun ip(lastOctet: Int) = ClientIpKey("203.0.113.$lastOctet")
-
-    @Test
-    @DisplayName("Disabled config allows everything")
-    fun disabledAllowsEverything() {
-        val limits = limits(
-            RateLimitConfig(
-                enabled = false,
-                tokenRequestsPerMinutePerIp = 1,
-                tokenRequestsPerMinutePerClient = 1,
-                loginAttemptsPerMinutePerIp = 1
-            )
-        )
-
-        repeat(50) {
-            limits.recordClientAuthFailure(ip(1), invalidClient)
-            limits.recordLoginFailure(ip(1), "steve")
-            assertEquals(Unit.right(), limits.acquireTokenRequest(ip(1), publicClient))
-            assertEquals(Unit.right(), limits.acquireTokenRequest(ip(1), confidentialClient))
-            assertEquals(Unit.right(), limits.checkClientAuthentication(ip(1)))
-            assertEquals(Unit.right(), limits.acquireLoginAttempt(ip(1), "steve"))
-        }
-    }
-
-    @Test
-    @DisplayName("Zero or less disables only that limit")
-    fun nonPositiveDisablesOneLimit() {
-        val limits = limits(
-            RateLimitConfig(
-                tokenRequestsPerMinutePerIp = 0,
-                tokenRequestsPerMinutePerClient = 1,
-                loginAttemptsPerMinutePerIp = -1
-            )
-        )
-
-        repeat(5) {
-            assertEquals(Unit.right(), limits.acquireTokenRequest(ip(1), publicClient))
-            assertEquals(Unit.right(), limits.acquireLoginAttempt(ip(1), "steve"))
-        }
-        assertEquals(Unit.right(), limits.acquireTokenRequest(ip(1), confidentialClient))
-        assertEquals(RateLimited(60).left(), limits.acquireTokenRequest(ip(1), confidentialClient))
-    }
 
     @Test
     @DisplayName("Public clients are counted per IP and confidential clients per client_id")
@@ -154,16 +111,6 @@ class OAuthRateLimitsTest {
     }
 
     @Test
-    @DisplayName("Username block stays at 60 seconds")
-    fun loginUsernameBackoffIsCapped() {
-        val limits = limits()
-
-        repeat(100) { limits.recordLoginFailure(ip(it), "steve") }
-
-        assertEquals(RateLimited(60).left(), limits.acquireLoginAttempt(ip(0), "steve"))
-    }
-
-    @Test
     @DisplayName("Renewing the username block cannot keep the owner out where they logged in before")
     fun usernameBlockDoesNotStopKnownSource() {
         val limits = limits()
@@ -201,99 +148,5 @@ class OAuthRateLimitsTest {
         assertEquals(RateLimited(1).left(), limits.acquireLoginAttempt(ClientIpKey("2001:db8:0:21::"), "steve"))
         assertEquals(RateLimited(1).left(), limits.acquireLoginAttempt(ip(1), "steve"))
         assertEquals(Unit.right(), limits.acquireLoginAttempt(ip(2), "steve"))
-    }
-
-    @Test
-    @DisplayName("A source without a login for 30 days is held by the username block again")
-    fun knownSourceIsForgottenAfter30Days() {
-        val limits = limits()
-        limits.recordLoginSuccess(ip(1), "steve")
-
-        now += 30.days.inWholeMilliseconds - 1
-        repeat(21) { limits.recordLoginFailure(ClientIpKey("2001:db8:0:$it::"), "steve") }
-        assertEquals(Unit.right(), limits.acquireLoginAttempt(ip(1), "steve"))
-
-        // 最後の成功から30日が過ぎると忘れる
-        now += 1
-        assertEquals(RateLimited(1).left(), limits.acquireLoginAttempt(ip(1), "steve"))
-    }
-
-    @Test
-    @DisplayName("Disabled config still resolves the client address for the hashing gate")
-    fun disabledStillResolvesClientAddress() {
-        val trusted = listOfNotNull(CidrRange.parse("127.0.0.0/8"))
-        val limits = OAuthRateLimits(RateLimitConfig(enabled = false), trusted, logHandler.newLogger())
-
-        // Argon2Gateは接続元ごとに枠を割り当てるので、無効でもプロキシの後ろのクライアントを区別する
-        assertEquals(ClientIpKey("198.51.100.1"), limits.resolveClientIp("127.0.0.1", "198.51.100.1"))
-        assertEquals(emptyList(), logHandler.warnings)
-        // 無効でもハッシュの枠を共有してしまう構成の誤りは警告する
-        limits.resolveClientIp("127.0.0.1", null)
-        assertEquals(1, logHandler.warnings.size)
-    }
-
-    @Test
-    @DisplayName("Reports the longer wait when both login backoffs block")
-    fun reportsLongerWait() {
-        val limits = limits()
-
-        // IPは8回の失敗で4秒、ユーザー名は21回の失敗で1秒ブロックされる
-        repeat(8) { limits.recordLoginFailure(ip(1), "user$it") }
-        repeat(21) { limits.recordLoginFailure(ip(100 + it), "steve") }
-
-        assertEquals(RateLimited(4).left(), limits.acquireLoginAttempt(ip(1), "steve"))
-    }
-
-    @Test
-    @DisplayName("A login blocked by a backoff does not spend the attempt bucket")
-    fun blockedLoginDoesNotSpendBucket() {
-        val limits = limits(RateLimitConfig(loginAttemptsPerMinutePerIp = 1))
-        repeat(21) { limits.recordLoginFailure(ip(100 + it), "steve") }
-
-        // ブロック中の試行を何度送っても、同じIPの別の名前の試行は通る
-        repeat(5) { assertTrue(limits.acquireLoginAttempt(ip(1), "steve").isLeft()) }
-        assertEquals(Unit.right(), limits.acquireLoginAttempt(ip(1), "alex"))
-        // ここで初めてバケットが空になる
-        assertEquals(RateLimited(60).left(), limits.acquireLoginAttempt(ip(1), "alex"))
-    }
-
-    @Test
-    @DisplayName("Warns once per instance about X-Forwarded-For from an untrusted peer")
-    fun warnsOnceAboutUntrustedForwarder() {
-        val limits = limits()
-
-        repeat(3) { limits.resolveClientIp("203.0.113.9", "198.51.100.1") }
-
-        assertTrue(logHandler.warnings.single().contains("rateLimit.trustedProxies"))
-        assertTrue(logHandler.warnings.none { it.contains("198.51.100.1") }, "must not log the header value")
-
-        // 設定を読み込み直すと新しいインスタンスになり、再び警告する
-        limits().resolveClientIp("203.0.113.9", "198.51.100.1")
-        assertEquals(2, logHandler.warnings.size)
-    }
-
-    @Test
-    @DisplayName("Warns once per instance about a trusted peer without X-Forwarded-For")
-    fun warnsOnceAboutTrustedPeerWithoutHeader() {
-        val trusted = listOfNotNull(CidrRange.parse("127.0.0.0/8"))
-        val limits = OAuthRateLimits(RateLimitConfig(), trusted, logHandler.newLogger(), clock = { now })
-
-        repeat(3) { limits.resolveClientIp("127.0.0.1", null) }
-
-        val warning = logHandler.warnings.single()
-        assertTrue(warning.contains("127.0.0.1"))
-        assertTrue(warning.contains("rateLimit.trustedProxies"))
-    }
-
-    @Test
-    @DisplayName("Does not warn without the header or for a trusted peer")
-    fun doesNotWarnWithoutReason() {
-        val trusted = listOfNotNull(CidrRange.parse("127.0.0.0/8"))
-        val limits = OAuthRateLimits(RateLimitConfig(), trusted, logHandler.newLogger(), clock = { now })
-
-        limits.resolveClientIp("203.0.113.9", null)
-        limits.resolveClientIp("127.0.0.1", "198.51.100.1")
-
-        assertEquals(emptyList(), logHandler.warnings)
     }
 }

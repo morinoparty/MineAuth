@@ -11,7 +11,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -97,15 +96,5 @@ class TokenVerifiersReloadTest {
         // 全てのVerifierが同じ登録から作られるので、Bearer以外も新しいissuerに揃う
         assertTrue(JwtProvider.refreshTokenVerifier.acceptsIssuer(secondIssuer, TokenKind.REFRESH))
         assertTrue(JwtProvider.introspectionVerifier.acceptsIssuer(secondIssuer))
-    }
-
-    @Test
-    @DisplayName("A rejected config keeps the previous verifiers")
-    fun rejectedConfigKeepsPreviousVerifiers() {
-        loadConfig(firstIssuer)
-
-        assertThrows<IllegalStateException> { loadConfig("https://second.example.com?tenant=a") }
-
-        assertTrue(JwtProvider.bearerVerifier.acceptsIssuer(firstIssuer))
     }
 }

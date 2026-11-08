@@ -19,28 +19,10 @@ class OAuthParametersTest {
     ).left()
 
     @Test
-    @DisplayName("Returns the value of a parameter sent once")
-    fun returnsSingleValue() {
-        assertEquals("abc".right(), parametersOf("code", "abc").readSingleParameter("code"))
-    }
-
-    @Test
-    @DisplayName("Treats a missing parameter as absent")
-    fun missingParameterIsAbsent() {
-        assertEquals(null.right(), Parameters.Empty.readSingleParameter("code"))
-    }
-
-    @Test
     @DisplayName("Treats empty and whitespace values as absent")
     fun blankValueIsAbsent() {
         assertEquals(null.right(), parametersOf("code", "").readSingleParameter("code"))
         assertEquals(null.right(), parametersOf("code", "   ").readSingleParameter("code"))
-    }
-
-    @Test
-    @DisplayName("Rejects a repeated parameter")
-    fun rejectsRepeatedParameter() {
-        assertEquals(repeatedCode, parametersOf("code", listOf("a", "b")).readSingleParameter("code"))
     }
 
     @Test

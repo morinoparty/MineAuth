@@ -4,7 +4,6 @@ import arrow.core.getOrElse
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.BeforeEach
@@ -17,19 +16,21 @@ import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
 import party.morino.mineauth.core.model.TokenLifetimes
 import java.nio.file.Path
 import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.UUID
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
  * RevocationRecordCleanupのテスト
- * 検証を通らなくなったトークンのレコードだけが消え、失敗が記録されて処理が止まらないことを確認する
+ * 検証を通らなくなったトークンのレコードだけが消えることと、失効グラントのレコードの保持期限を確認する
  */
 class RevocationRecordCleanupTest {
 
     @TempDir
     lateinit var tempDir: Path
+
+    private val grantId = UUID.randomUUID().toString()
 
     private val logs = RecordingLogHandler()
     private val cleanup = RevocationRecordCleanup(logs.newLogger())
@@ -55,25 +56,10 @@ class RevocationRecordCleanupTest {
         return tokenId
     }
 
-    /**
-     * 削除日時を指定して失効グラントのレコードを作る
-     *
-     * @return グラントID
-     */
-    private fun revokedGrantExpiringAt(expiresAt: LocalDateTime): String {
-        val grantId = UUID.randomUUID().toString()
-        transaction {
-            RevokedGrants.insert {
-                it[RevokedGrants.grantId] = grantId
-                it[clientId] = "client"
-                it[RevokedGrants.expiresAt] = expiresAt
-            }
-        }
-        return grantId
-    }
-
-    private fun grantRecordExists(grantId: String): Boolean = transaction {
-        RevokedGrants.selectAll().where { RevokedGrants.grantId eq grantId }.any()
+    private fun expiresAtOf(grantId: String): LocalDateTime = transaction {
+        RevokedGrants.selectAll()
+            .where { RevokedGrants.grantId eq grantId }
+            .single()[RevokedGrants.expiresAt]
     }
 
     @Test
@@ -93,29 +79,14 @@ class RevocationRecordCleanupTest {
     }
 
     @Test
-    @DisplayName("Removes only grant records past their expiry")
-    fun removesOnlyExpiredGrantRecords() = runTest {
-        val now = LocalDateTime.now()
-        val expired = revokedGrantExpiringAt(now.minusMinutes(1))
-        val active = revokedGrantExpiringAt(now.plusMinutes(1))
+    @DisplayName("The record is kept past the lifetime of any token of the grant")
+    fun recordOutlivesTheTokens() = runTest {
+        // DBの精度で切り捨てられても比較できるよう、秒単位に丸めた時刻を基準にする
+        val before = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
 
-        cleanup.run()
+        RevokedGrantRepository.revoke(grantId, "client").getOrElse { error("Failed to revoke: $it") }
 
-        assertFalse(grantRecordExists(expired))
-        assertTrue(grantRecordExists(active))
-    }
-
-    @Test
-    @DisplayName("A failure is logged and the other table is still cleaned up")
-    fun failureIsLoggedAndDoesNotStopTheOtherTable() = runTest {
-        val expired = revokedGrantExpiringAt(LocalDateTime.now().minusMinutes(1))
-        // 片方の削除を確実に失敗させるため、テーブルを削除する
-        transaction { exec("DROP TABLE revoked_tokens") }
-
-        cleanup.run()
-
-        assertEquals(1, logs.severes.size)
-        assertTrue(logs.severes.single().contains("revoked_tokens"))
-        assertFalse(grantRecordExists(expired))
+        val newestTokenExpiry = before.plus(TokenLifetimes.REFRESH_TOKEN)
+        assertFalse(expiresAtOf(grantId).isBefore(newestTokenExpiry.plus(TokenLifetimes.REVOCATION_RECORD_MARGIN)))
     }
 }

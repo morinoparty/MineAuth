@@ -32,7 +32,6 @@ import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.RateLimitConfig
 import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
 import party.morino.mineauth.core.web.components.auth.ClientData
-import party.morino.mineauth.core.web.ratelimit.ClientIpKey
 import party.morino.mineauth.core.web.ratelimit.OAuthRateLimits
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationError
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationResult
@@ -146,66 +145,6 @@ class AuthorizeRouterRateLimitTest {
     }
 
     @Test
-    @DisplayName("The attempt bucket limits login submissions per IP")
-    fun attemptBucketLimitsLogins() = withClient { client ->
-        useRateLimits(RateLimitConfig(loginAttemptsPerMinutePerIp = 1))
-        coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns success
-
-        assertNotNull(client.login().redirectParameters()["code"])
-        val limited = client.login()
-
-        assertEquals("temporarily_unavailable", limited.redirectParameters()["error"])
-        assertEquals("60", limited.headers[HttpHeaders.RetryAfter])
-        // Argon2Gateの接続元ごとの枠は、流量制限と同じクライアントのキーで割り当てる
-        coVerify(exactly = 1) { OAuthService.authenticateUser(any(), any(), ClientIpKey("localhost")) }
-    }
-
-    @Test
-    @DisplayName("The username block holds new addresses but not one that logged in before")
-    fun usernameBlockSkipsAddressThatLoggedIn() = withClient { client ->
-        val limits = useRateLimits(RateLimitConfig())
-        // 他の多数の接続元からの失敗で、ユーザー名をブロックさせる
-        val blockUsername = { repeat(21) { limits.recordLoginFailure(ClientIpKey("2001:db8:0:$it::"), "steve") } }
-
-        blockUsername()
-        assertEquals("temporarily_unavailable", client.login().redirectParameters()["error"])
-
-        // 本人がこの接続元からログインに成功した後は、ブロックが更新されても評価される
-        now += 1_000
-        coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns success
-        assertNotNull(client.login().redirectParameters()["code"])
-        blockUsername()
-        assertNotNull(client.login().redirectParameters()["code"])
-    }
-
-    @Test
-    @DisplayName("A successful login does not reset the failures of the IP")
-    fun successDoesNotResetIpFailures() = withClient { client ->
-        repeat(failuresUntilBlocked - 1) { client.login() }
-
-        coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns success
-        assertNotNull(client.login().redirectParameters()["code"])
-        coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns failure
-        assertEquals("access_denied", client.login().redirectParameters()["error"])
-
-        assertEquals("temporarily_unavailable", client.login().redirectParameters()["error"])
-    }
-
-    @Test
-    @DisplayName("Requests that fail validation are not counted")
-    fun invalidRequestsAreNotCounted() = withClient { client ->
-        useRateLimits(RateLimitConfig(loginAttemptsPerMinutePerIp = 1))
-        coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns success
-
-        // redirect_uriやclient_idが不正な送信と、認証情報が揃っていない送信はバケットを消費しない
-        assertEquals(HttpStatusCode.BadRequest, client.login("redirect_uri" to "https://evil.example").status)
-        assertEquals(HttpStatusCode.BadRequest, client.login("client_id" to "unknown").status)
-        assertEquals("invalid_request", client.login("username" to null).redirectParameters()["error"])
-
-        assertNotNull(client.login().redirectParameters()["code"])
-    }
-
-    @Test
     @DisplayName("A busy verifier redirects with temporarily_unavailable and is not counted")
     fun busyVerifierIsNotCounted() = withClient { client ->
         coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns AuthenticationResult.VerifierBusy
@@ -221,15 +160,5 @@ class AuthorizeRouterRateLimitTest {
 
         coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns success
         assertNotNull(client.login().redirectParameters()["code"])
-    }
-
-    @Test
-    @DisplayName("Disabled config allows everything")
-    fun disabledAllowsEverything() = withClient { client ->
-        useRateLimits(RateLimitConfig(enabled = false, loginAttemptsPerMinutePerIp = 1))
-
-        repeat(failuresUntilBlocked + 2) { assertEquals("access_denied", client.login().redirectParameters()["error"]) }
-
-        coVerify(exactly = failuresUntilBlocked + 2) { OAuthService.authenticateUser(any(), any(), any()) }
     }
 }

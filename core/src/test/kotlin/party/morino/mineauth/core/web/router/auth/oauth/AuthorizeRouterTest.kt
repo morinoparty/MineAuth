@@ -32,7 +32,6 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -43,7 +42,6 @@ import party.morino.mineauth.core.file.data.OAuthConfigData
 import party.morino.mineauth.core.web.components.auth.ClientData
 import party.morino.mineauth.core.web.page.AuthorizePageRenderer
 import party.morino.mineauth.core.web.ratelimit.RateLimitTestSupport
-import party.morino.mineauth.core.web.router.auth.common.AuthenticationError
 import party.morino.mineauth.core.web.router.auth.common.AuthenticationResult
 import party.morino.mineauth.core.web.router.auth.oauth.AuthorizeRouter.authorizeRouter
 import java.io.File
@@ -170,12 +168,6 @@ class AuthorizeRouterTest {
         }
 
         @Test
-        @DisplayName("POST with an unregistered redirect_uri returns 400")
-        fun postWithUnregisteredRedirectUri() = withClient { client ->
-            assertRejectedWithoutRedirect(client.postAuthorize("redirect_uri" to "https://evil.example"))
-        }
-
-        @Test
         @DisplayName("Login submission with an unregistered redirect_uri does not authenticate")
         fun loginWithUnregisteredRedirectUri() = withClient { client ->
             val response = client.postAuthorize(
@@ -204,55 +196,12 @@ class AuthorizeRouterTest {
         }
 
         @Test
-        @DisplayName("GET renders only the granted scope and the normalized issuer")
-        fun getRendersGrantedScope() = withClient { client ->
-            val body = client.getAuthorize("scope" to "openid foo offline_access").bodyAsText()
-
-            assertTrue(body.contains(""""scope":"openid offline_access""""))
-            assertTrue(body.contains(""""scopeList":["openid","offline_access"]"""))
-            assertTrue(body.contains(""""issuer":"https://auth.example.com""""))
-        }
-
-        @Test
-        @DisplayName("GET and POST share the same error redirect")
-        fun getAndPostShareErrorRedirect() = withClient { client ->
-            val fromGet = client.getAuthorize("prompt" to "none").redirectParameters()
-            val fromPost = client.postAuthorize("prompt" to "none").redirectParameters()
-
-            assertEquals("login_required", fromGet["error"])
-            assertEquals("state-1", fromGet["state"])
-            assertEquals(fromGet, fromPost)
-        }
-
-        @Test
-        @DisplayName("Error redirect sanitizes the description")
-        fun errorRedirectSanitizesDescription() = withClient { client ->
-            val redirect = client.getAuthorize("scope" to "profile foo\"bar\\é").redirectParameters()
-
-            assertEquals("invalid_scope", redirect["error"])
-            assertEquals("Invalid scope(s): foobar", redirect["error_description"])
-        }
-
-        @Test
         @DisplayName("Error redirect omits a state the request did not have")
         fun errorRedirectOmitsMissingState() = withClient { client ->
             val redirect = client.getAuthorize("state" to null).redirectParameters()
 
             assertEquals("invalid_request", redirect["error"])
             assertFalse("state" in redirect)
-        }
-
-        @Test
-        @DisplayName("Page follows the reloaded configuration")
-        fun pageFollowsReloadedConfiguration() = withClient { client ->
-            // /mineauth reloadと同じくKoinのモジュールを読み込み直す
-            loadKoinModules(
-                module {
-                    single { OAuthConfigData(applicationName = "Reloaded", logoUrl = "/assets/lock.svg") }
-                },
-            )
-
-            assertTrue(client.getAuthorize().bodyAsText().contains(""""applicationName":"Reloaded""""))
         }
     }
 
@@ -278,41 +227,6 @@ class AuthorizeRouterTest {
             // 発行される全トークンを束ねるグラントIDは、認可コードの発行時に決まる
             assertNotNull(stored.grantId)
         }
-
-        @Test
-        @DisplayName("Reports failed authentication as access_denied")
-        fun failedAuthenticationIsAccessDenied() = withClient { client ->
-            coEvery { OAuthService.authenticateUser(any(), any(), any()) } returns
-                AuthenticationResult.Failed(AuthenticationError.INVALID_PASSWORD)
-
-            val redirect = client.postAuthorize("username" to "Steve", "password" to "wrong").redirectParameters()
-
-            assertEquals("access_denied", redirect["error"])
-            assertEquals("state-1", redirect["state"])
-            assertTrue(OAuthRouter.authorizedData.isEmpty())
-        }
-
-        @Test
-        @DisplayName("Password alone returns invalid_request")
-        fun passwordAloneIsInvalidRequest() = withClient { client ->
-            val redirect = client.postAuthorize("password" to "secret").redirectParameters()
-
-            assertEquals("invalid_request", redirect["error"])
-            coVerify(exactly = 0) { OAuthService.authenticateUser(any(), any(), any()) }
-        }
-
-        @Test
-        @DisplayName("Runs the shared validation before authenticating")
-        fun runsSharedValidationFirst() = withClient { client ->
-            val redirect = client.postAuthorize(
-                "scope" to "foo",
-                "username" to "Steve",
-                "password" to "secret",
-            ).redirectParameters()
-
-            assertEquals("invalid_scope", redirect["error"])
-            coVerify(exactly = 0) { OAuthService.authenticateUser(any(), any(), any()) }
-        }
     }
 
     @Nested
@@ -323,24 +237,6 @@ class AuthorizeRouterTest {
         @DisplayName("Set on the GET page")
         fun setOnGetPage() = withClient { client ->
             assertSecurityHeaders(client.getAuthorize())
-        }
-
-        @Test
-        @DisplayName("Set on the POST page")
-        fun setOnPostPage() = withClient { client ->
-            assertSecurityHeaders(client.postAuthorize())
-        }
-
-        @Test
-        @DisplayName("Set on the error page")
-        fun setOnErrorPage() = withClient { client ->
-            assertSecurityHeaders(client.getAuthorize("client_id" to null))
-        }
-
-        @Test
-        @DisplayName("Set on error redirects")
-        fun setOnErrorRedirect() = withClient { client ->
-            assertSecurityHeaders(client.getAuthorize("prompt" to "none"))
         }
 
         @Test

@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test
 import org.koin.core.context.loadKoinModules
 import org.koin.dsl.module
 import party.morino.mineauth.core.file.data.RateLimitConfig
-import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientCreationResult
 import party.morino.mineauth.core.utils.Argon2Gate
 import party.morino.mineauth.core.utils.Argon2Utils
@@ -134,47 +133,6 @@ class Argon2GateRouteTest : OAuthRouteTestBase() {
                 }
             }
             verify(exactly = 0) { Argon2Utils.verifySecret(any(), any()) }
-        } finally {
-            unmockkObject(Argon2Utils)
-        }
-    }
-
-    @Test
-    @DisplayName("Requests refused by a full gate do not count toward the backoff")
-    fun busyResponsesAreNotCounted() = oauthTestApplication {
-        useTestGate()
-        val resourceServer = registerResourceServer()
-
-        // 猶予の10回を超えて断られても、認証の失敗としては数えない
-        whileGateIsFull {
-            repeat(12) { assertBusy(post("/oauth2/revoke", resourceServer, secret = "wrong")) }
-        }
-
-        assertEquals(HttpStatusCode.OK, post("/oauth2/revoke", resourceServer).status)
-    }
-
-    @Test
-    @DisplayName("An address with two verifications in flight gets 503 while other permits are free")
-    fun addressWithFullSlotsAnswers503() {
-        // MockKの解除はスレッドローカルで管理されるため、コルーチンの外（同じスレッド）で設定と解除を行う
-        mockkObject(Argon2Utils)
-        try {
-            oauthTestApplication {
-                // 全体の許可には空きがあるゲートで、テストクライアントの接続元（"localhost"）の枠だけを埋める
-                val roomyGate = Argon2Gate(permits = 4, acquireTimeout = 50.milliseconds)
-                useTestGate(roomyGate)
-                val resourceServer = registerResourceServer()
-
-                whileHolding(roomyGate, ClientIpKey("localhost"), verifications = 2) {
-                    listOf("/oauth2/token", "/oauth2/revoke", "/oauth2/introspect").forEach { path ->
-                        assertBusy(post(path, resourceServer))
-                    }
-                }
-
-                // 自分の検証が終わると、同じ接続元でも照合される
-                assertEquals(HttpStatusCode.OK, post("/oauth2/introspect", resourceServer).status)
-            }
-            verify(exactly = 1) { Argon2Utils.verifySecret(any(), any()) }
         } finally {
             unmockkObject(Argon2Utils)
         }

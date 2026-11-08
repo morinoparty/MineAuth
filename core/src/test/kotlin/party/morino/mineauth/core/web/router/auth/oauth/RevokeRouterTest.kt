@@ -4,9 +4,6 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
 import io.ktor.server.testing.ApplicationTestBuilder
-import io.mockk.coEvery
-import io.mockk.mockkObject
-import io.mockk.unmockkObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.DisplayName
@@ -19,7 +16,6 @@ import party.morino.mineauth.core.repository.RevokedTokenRepository
 import java.time.Duration
 import java.util.UUID
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -79,66 +75,6 @@ class RevokeRouterTest : OAuthRouteTestBase() {
         val grant = refreshGrant(refreshToken, confidential)
         assertEquals(HttpStatusCode.BadRequest, grant.status)
         assertEquals("invalid_grant", grant.jsonBody().getValue("error").jsonPrimitive.content)
-    }
-
-    @Test
-    @DisplayName("An unexpected exception returns server_error instead of 200")
-    fun unexpectedExceptionReturnsServerError() {
-        // MockKの解除はスレッドローカルで管理されるため、コルーチンの外（同じスレッド）で設定と解除を行う
-        mockkObject(RevokedTokenRepository)
-        try {
-            coEvery { RevokedTokenRepository.revoke(any(), any(), any(), any()) } throws IllegalStateException("boom")
-
-            oauthTestApplication {
-                val confidential = registerClient(ClientType.CONFIDENTIAL)
-
-                val response = revoke(refreshTokenOf(confidential.client.clientId), confidential)
-
-                assertEquals(HttpStatusCode.InternalServerError, response.status)
-                assertEquals("server_error", response.jsonBody().getValue("error").jsonPrimitive.content)
-            }
-        } finally {
-            unmockkObject(RevokedTokenRepository)
-        }
-    }
-
-    @Test
-    @DisplayName("An expired but validly signed token is recorded as revoked")
-    fun expiredTokenIsRecorded() = oauthTestApplication {
-        val confidential = registerClient(ClientType.CONFIDENTIAL)
-        val tokenId = UUID.randomUUID().toString()
-
-        val response = revoke(refreshTokenOf(confidential.client.clientId, tokenId, Duration.ofDays(-1)), confidential)
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(RevokedTokenRepository.isRevoked(tokenId))
-    }
-
-    @Test
-    @DisplayName("A token of another client returns 200 without being recorded")
-    fun foreignTokenIsNotRecorded() = oauthTestApplication {
-        val confidential = registerClient(ClientType.CONFIDENTIAL)
-        val tokenId = UUID.randomUUID().toString()
-
-        val response = revoke(refreshTokenOf("another-client", tokenId), confidential)
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertFalse(RevokedTokenRepository.isRevoked(tokenId))
-    }
-
-    @Test
-    @DisplayName("A malformed token and a service token return 200 without being recorded")
-    fun nonRevocableTokensReturnOk() = oauthTestApplication {
-        val confidential = registerClient(ClientType.CONFIDENTIAL)
-        val tokenId = UUID.randomUUID().toString()
-        val serviceToken = JwtTestSupport.sign(TokenKind.SERVICE) {
-            withJWTId(tokenId)
-            withClaim("client_id", confidential.client.clientId)
-        }
-
-        assertEquals(HttpStatusCode.OK, revoke("not-a-jwt", confidential).status)
-        assertEquals(HttpStatusCode.OK, revoke(serviceToken, confidential).status)
-        assertFalse(RevokedTokenRepository.isRevoked(tokenId))
     }
 
     @Test

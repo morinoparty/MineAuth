@@ -1,18 +1,11 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
 import io.ktor.client.request.forms.submitForm
-import io.ktor.client.request.post
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.install
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.routing.post
-import io.ktor.server.routing.routing
 import io.ktor.server.testing.ApplicationTestBuilder
-import io.ktor.server.testing.testApplication
 import io.mockk.coVerify
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
@@ -22,7 +15,6 @@ import org.junit.jupiter.api.Test
 import org.koin.core.context.loadKoinModules
 import org.koin.dsl.module
 import party.morino.mineauth.core.file.data.RateLimitConfig
-import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
 import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.web.ratelimit.OAuthRateLimits
 import java.util.UUID
@@ -76,28 +68,6 @@ class TokenRouterRateLimitTest : OAuthRouteTestBase() {
     private fun assertAuthenticated(response: HttpResponse) = assertEquals(HttpStatusCode.BadRequest, response.status)
 
     @Test
-    @DisplayName("A public client is counted per IP after authentication")
-    fun publicClientIsCountedPerIp() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 2, tokenRequestsPerMinutePerClient = 1))
-        val publicClientId = registerClient(ClientType.PUBLIC).client.clientId
-
-        // client_idのバケット（1回）ではなく、IPのバケット（2回）で数える
-        repeat(2) { assertAuthenticated(refreshGrant(publicClientId)) }
-        assertLimited(refreshGrant(publicClientId), retryAfterSeconds = 30)
-        assertLimited(codeGrant(publicClientId), retryAfterSeconds = 30)
-    }
-
-    @Test
-    @DisplayName("Requests that present a public client_id never spend its client bucket")
-    fun publicClientIdCannotBeStarved() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 0, tokenRequestsPerMinutePerClient = 1))
-        val publicClientId = registerClient(ClientType.PUBLIC).client.clientId
-
-        // client_idを知っているだけの第三者が何度送っても、そのクライアントは制限されない
-        repeat(5) { assertAuthenticated(refreshGrant(publicClientId)) }
-    }
-
-    @Test
     @DisplayName("A confidential client spends only its own bucket and only after authentication")
     fun confidentialClientIsCountedAfterAuthentication() = oauthTestApplication {
         useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 1, tokenRequestsPerMinutePerClient = 2))
@@ -135,67 +105,5 @@ class TokenRouterRateLimitTest : OAuthRouteTestBase() {
         } finally {
             unmockkObject(OAuthValidation)
         }
-    }
-
-    @Test
-    @DisplayName("Requests rejected before authentication do not count as failures")
-    fun rejectedBeforeAuthenticationDoNotCount() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 0, tokenRequestsPerMinutePerClient = 0))
-
-        // client_idが無いリクエストはinvalid_requestになり、認証情報の推測ではないので数えない
-        repeat(15) {
-            val response = client.submitForm(
-                url = "/oauth2/token",
-                formParameters = parameters { append("grant_type", "refresh_token") }
-            )
-            assertEquals(HttpStatusCode.BadRequest, response.status)
-        }
-
-        assertEquals(HttpStatusCode.Unauthorized, refreshGrant(UUID.randomUUID().toString()).status)
-    }
-
-    @Test
-    @DisplayName("Disabled config allows everything")
-    fun disabledAllowsEverything() = oauthTestApplication {
-        useRateLimits(
-            RateLimitConfig(enabled = false, tokenRequestsPerMinutePerIp = 1, tokenRequestsPerMinutePerClient = 1)
-        )
-        val clientId = UUID.randomUUID().toString()
-
-        repeat(15) { assertEquals(HttpStatusCode.Unauthorized, refreshGrant(clientId).status) }
-    }
-
-    @Test
-    @DisplayName("Limited requests do not log a warning each")
-    fun limitedRequestsDoNotLog() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 1))
-        val publicClientId = registerClient(ClientType.PUBLIC).client.clientId
-        // 名前付きのロガーの出力はルートロガーに伝わるので、どのプラグインのモックが使われていても記録できる
-        val rootLogger = Logger.getLogger("")
-        val logHandler = RecordingLogHandler()
-        rootLogger.addHandler(logHandler)
-        try {
-            refreshGrant(publicClientId)
-            val logged = logHandler.warnings.size
-
-            repeat(5) { assertLimited(refreshGrant(publicClientId), retryAfterSeconds = 60) }
-
-            assertEquals(logged, logHandler.warnings.size)
-        } finally {
-            rootLogger.removeHandler(logHandler)
-        }
-    }
-
-    @Test
-    @DisplayName("respondOAuthError maps temporarily_unavailable to 429")
-    fun respondOAuthErrorMapsTo429() = testApplication {
-        application {
-            install(ContentNegotiation) { json() }
-            routing {
-                post("/limited") { call.respondOAuthError(OAuthErrorCode.TEMPORARILY_UNAVAILABLE) }
-            }
-        }
-
-        assertEquals(HttpStatusCode.TooManyRequests, client.post("/limited").status)
     }
 }

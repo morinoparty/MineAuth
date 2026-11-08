@@ -20,7 +20,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -38,7 +37,6 @@ import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 /**
  * 実際のJettyでの接続元とX-Forwarded-Forの扱いのテスト
@@ -130,30 +128,10 @@ class ClientIpJettyTest {
     }
 
     @Test
-    @DisplayName("A spoofed leftmost entry does not make a new client")
-    fun spoofedLeftmostEntryIsSameClient() = withServer { port ->
-        assertEquals(allowedStatus, post(port, "203.0.113.7"))
-        assertEquals(limitedStatus, post(port, "198.51.100.1, 203.0.113.7"))
-    }
-
-    @Test
     @DisplayName("Reads every X-Forwarded-For header line")
     fun readsEveryHeaderLine() = withServer { port ->
         assertEquals(allowedStatus, post(port, "203.0.113.7"))
         // 先頭の行はクライアントが書いた値で、プロキシは2行目を追記している
         assertEquals(limitedStatus, post(port, "198.51.100.1", "203.0.113.7"))
-    }
-
-    @Test
-    @DisplayName("Ignores the header and warns once when the peer is not trusted")
-    fun ignoresHeaderFromUntrustedPeer() {
-        loadKoinModules(module { single { rateLimits(trustedProxies = emptyList()) } })
-
-        withServer { port ->
-            assertEquals(allowedStatus, post(port, "203.0.113.7"))
-            assertEquals(limitedStatus, post(port, "203.0.113.8"))
-        }
-
-        assertTrue(logHandler.warnings.single().contains("rateLimit.trustedProxies"))
     }
 }

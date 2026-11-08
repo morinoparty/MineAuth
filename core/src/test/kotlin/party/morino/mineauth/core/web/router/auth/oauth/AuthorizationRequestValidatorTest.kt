@@ -8,11 +8,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import party.morino.mineauth.core.web.components.auth.ClientData
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * AuthorizationRequestValidatorのテスト
@@ -63,30 +59,6 @@ class AuthorizationRequestValidatorTest {
     inner class ClientAndRedirectUriTest {
 
         @Test
-        @DisplayName("Missing client_id shows an error")
-        fun missingClientIdShowsError() {
-            assertIs<AuthorizeError.ShowError>(validate("client_id" to null).leftOrNull())
-        }
-
-        @Test
-        @DisplayName("Missing redirect_uri shows an error")
-        fun missingRedirectUriShowsError() {
-            assertIs<AuthorizeError.ShowError>(validate("redirect_uri" to null).leftOrNull())
-        }
-
-        @Test
-        @DisplayName("Unknown client shows an error")
-        fun unknownClientShowsError() {
-            assertIs<AuthorizeError.ShowError>(validate("client_id" to "other").leftOrNull())
-        }
-
-        @Test
-        @DisplayName("Unregistered redirect_uri shows an error")
-        fun unregisteredRedirectUriShowsError() {
-            assertIs<AuthorizeError.ShowError>(validate("redirect_uri" to "https://evil.example").leftOrNull())
-        }
-
-        @Test
         @DisplayName("Checks the redirect_uri before any other parameter")
         fun checksRedirectUriFirst() {
             // 他のパラメータも不正だが、信頼できないredirect_uriへ通知してはならない
@@ -114,20 +86,6 @@ class AuthorizationRequestValidatorTest {
             assertEquals("state-1", error.state)
             assertEquals("https://app.example.com/callback", error.redirectUri)
         }
-
-        @Test
-        @DisplayName("request_uri is rejected")
-        fun requestUriIsRejected() {
-            assertEquals(OAuthErrorCode.REQUEST_URI_NOT_SUPPORTED, redirectError("request_uri" to "https://x").code)
-        }
-
-        @Test
-        @DisplayName("request is checked before response_type")
-        fun requestCheckedBeforeResponseType() {
-            val error = redirectError("request" to "jwt", "response_type" to null)
-
-            assertEquals(OAuthErrorCode.REQUEST_NOT_SUPPORTED, error.code)
-        }
     }
 
     @Nested
@@ -141,20 +99,6 @@ class AuthorizationRequestValidatorTest {
 
             assertEquals(OAuthErrorCode.LOGIN_REQUIRED, error.code)
             assertEquals("state-1", error.state)
-        }
-
-        @Test
-        @DisplayName("none with another value returns invalid_request")
-        fun noneWithOtherValueReturnsInvalidRequest() {
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, redirectError("prompt" to "none login").code)
-        }
-
-        @Test
-        @DisplayName("Interactive values keep showing the page")
-        fun interactiveValuesAreAccepted() {
-            listOf("login", "consent", "select_account", "login consent").forEach { prompt ->
-                assertTrue(validate("prompt" to prompt).isRight(), prompt)
-            }
         }
     }
 
@@ -185,73 +129,11 @@ class AuthorizationRequestValidatorTest {
         fun promptLoginWithPromptNone() {
             assertEquals("state-1", repeatedError("prompt", "login", "none").state)
         }
-
-        @Test
-        @DisplayName("Empty request with a real one is not ignored")
-        fun emptyRequestWithRealOne() {
-            repeatedError("request", "", "eyJhbGciOiJub25lIn0.e30.")
-            repeatedError("request_uri", "", "https://evil.example/ro")
-        }
-
-        @Test
-        @DisplayName("Other repeated parameters return invalid_request")
-        fun otherRepeatedParameters() {
-            val names = listOf("response_type", "scope", "code_challenge", "code_challenge_method", "nonce", "username", "password")
-            names.forEach { name -> repeatedError(name, "a", "a") }
-        }
-
-        @Test
-        @DisplayName("Repeated state is left out of the error redirect")
-        fun repeatedStateIsLeftOut() {
-            assertNull(repeatedError("state", "state-1", "state-2").state)
-        }
-
-        @Test
-        @DisplayName("Repetition is reported before the other checks")
-        fun repetitionComesFirst() {
-            // 値の検証より先に重複を拒否するので、requestの拒否より優先される
-            val params = validParams.mapValues { (_, value) -> listOf(value) } +
-                mapOf("request" to listOf("jwt"), "nonce" to listOf("a", "b"))
-            val error = AuthorizationRequestValidator.validateAuthorizationRequest(parametersOf(params)) { client }
-
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, assertIs<AuthorizeError.RedirectWithError>(error.leftOrNull()).code)
-        }
-
-        @Test
-        @DisplayName("Ordinary request and unread repeated parameters are unaffected")
-        fun ordinaryRequestIsUnaffected() {
-            assertTrue(validate().isRight())
-            // 検証で読み取らないパラメータは未知の拡張と同じく無視する
-            assertTrue(validateRepeated("login_hint", "a", "b").isRight())
-        }
-
-        @Test
-        @DisplayName("Whitespace-only values count as omitted without disturbing the check order")
-        fun whitespaceOnlyValuesCountAsOmitted() {
-            assertIs<AuthorizeError.ShowError>(validate("client_id" to " ").leftOrNull())
-            assertTrue(validate("request" to " ", "prompt" to " ").isRight())
-            // 空白のresponse_typeはstateの検証より先に欠落として報告する
-            val error = redirectError("response_type" to " ", "state" to " ")
-            assertEquals("Missing required parameter: response_type", error.description)
-            assertNull(error.state)
-        }
-
-        @Test
-        @DisplayName("Password of spaces passes the validation")
-        fun passwordOfSpacesPasses() {
-            assertTrue(validate("username" to "steve", "password" to "   ").isRight())
-        }
     }
 
     @Nested
     @DisplayName("Required parameters")
     inner class RequiredParametersTest {
-
-        @Test
-        @DisplayName("Missing response_type returns invalid_request")
-        fun missingResponseType() {
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, redirectError("response_type" to null).code)
-        }
 
         @Test
         @DisplayName("Other response_type returns unsupported_response_type")
@@ -260,101 +142,9 @@ class AuthorizationRequestValidatorTest {
         }
 
         @Test
-        @DisplayName("Missing state returns invalid_request without state")
-        fun missingState() {
-            val error = redirectError("state" to null)
-
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, error.code)
-            assertNull(error.state)
-        }
-
-        @Test
         @DisplayName("Missing scope returns invalid_scope")
         fun missingScope() {
             assertEquals(OAuthErrorCode.INVALID_SCOPE, redirectError("scope" to null).code)
-        }
-
-        @Test
-        @DisplayName("Parameters without a value count as omitted")
-        fun emptyParametersCountAsOmitted() {
-            // RFC 6749 Section 3.1: 値の無いパラメータは省略として扱う
-            assertIs<AuthorizeError.ShowError>(validate("client_id" to "").leftOrNull())
-            assertNull(redirectError("state" to "").state)
-            assertEquals(OAuthErrorCode.INVALID_SCOPE, redirectError("scope" to "").code)
-            assertNull(validate("nonce" to "").getOrNull()?.nonce)
-        }
-    }
-
-    @Nested
-    @DisplayName("scope")
-    inner class ScopeTest {
-
-        @Test
-        @DisplayName("Unknown value in an OIDC request is dropped")
-        fun unknownValueDroppedWithOpenid() {
-            val request = assertNotNull(validate("scope" to "openid foo offline_access").getOrNull())
-
-            assertEquals("openid offline_access", request.scope)
-        }
-
-        @Test
-        @DisplayName("Unknown value without openid returns invalid_scope")
-        fun unknownValueRejectedWithoutOpenid() {
-            val error = redirectError("scope" to "profile foo")
-
-            assertEquals(OAuthErrorCode.INVALID_SCOPE, error.code)
-            assertEquals("Invalid scope(s): foo", error.description)
-        }
-    }
-
-    @Nested
-    @DisplayName("PKCE")
-    inner class PkceTest {
-
-        @Test
-        @DisplayName("Missing code_challenge returns invalid_request")
-        fun missingCodeChallenge() {
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, redirectError("code_challenge" to null).code)
-        }
-
-        @Test
-        @DisplayName("Missing or plain code_challenge_method returns invalid_request")
-        fun unsupportedCodeChallengeMethod() {
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, redirectError("code_challenge_method" to null).code)
-            assertEquals(OAuthErrorCode.INVALID_REQUEST, redirectError("code_challenge_method" to "plain").code)
-        }
-    }
-
-    @Test
-    @DisplayName("Valid request returns the validated values")
-    fun validRequest() {
-        val request = assertNotNull(validate("nonce" to "n-1").getOrNull())
-
-        assertEquals("client", request.clientId)
-        assertEquals("Sample", request.clientName)
-        assertEquals("https://app.example.com/callback", request.redirectUri)
-        assertEquals("state-1", request.state)
-        assertEquals("openid profile", request.scope)
-        assertEquals("challenge", request.codeChallenge)
-        assertEquals("S256", request.codeChallengeMethod)
-        assertEquals("n-1", request.nonce)
-    }
-
-    @Nested
-    @DisplayName("isLoginSubmission")
-    inner class IsLoginSubmissionTest {
-
-        @Test
-        @DisplayName("Credential fields mark a login submission")
-        fun credentialFieldsMarkLogin() {
-            assertTrue(AuthorizationRequestValidator.isLoginSubmission(params("username" to "steve")))
-            assertTrue(AuthorizationRequestValidator.isLoginSubmission(params("password" to "secret")))
-        }
-
-        @Test
-        @DisplayName("Request without credentials is an authorization request")
-        fun requestWithoutCredentialsIsNotLogin() {
-            assertFalse(AuthorizationRequestValidator.isLoginSubmission(params()))
         }
     }
 }

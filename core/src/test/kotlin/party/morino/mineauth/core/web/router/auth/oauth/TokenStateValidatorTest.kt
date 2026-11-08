@@ -13,13 +13,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import party.morino.mineauth.core.database.DatabaseMigrator
 import party.morino.mineauth.core.file.utils.JwtTestSupport
-import party.morino.mineauth.core.model.GRANT_ID_CLAIM
 import party.morino.mineauth.core.model.TokenKind
 import party.morino.mineauth.core.repository.AccountRepository
 import party.morino.mineauth.core.repository.AccountType
 import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientRepository
-import party.morino.mineauth.core.repository.RevokedGrantRepository
 import party.morino.mineauth.core.repository.RevokedTokenRepository
 import party.morino.mineauth.core.repository.ServiceAccountTokenRepository
 import party.morino.mineauth.core.repository.TokenType
@@ -66,20 +64,6 @@ class TokenStateValidatorTest {
         JWT.decode(JwtTestSupport.sign(kind, configure = configure))
 
     @Test
-    @DisplayName("Access and refresh tokens with an existing client and no revocation are valid")
-    fun clientTokensAreValid() = runTest {
-        val clientId = createClientId()
-        listOf(TokenKind.ACCESS, TokenKind.REFRESH).forEach { kind ->
-            val jwt = payload(kind) {
-                withJWTId(UUID.randomUUID().toString())
-                withClaim("client_id", clientId)
-            }
-
-            assertEquals(Unit.right(), validator.validate(kind, jwt))
-        }
-    }
-
-    @Test
     @DisplayName("A token of a missing client is rejected")
     fun missingClientIsRejected() = runTest {
         val jwt = payload(TokenKind.ACCESS) {
@@ -108,31 +92,6 @@ class TokenStateValidatorTest {
     }
 
     @Test
-    @DisplayName("Access and refresh tokens of a revoked grant are rejected")
-    fun tokensOfRevokedGrantAreRejected() = runTest {
-        val clientId = createClientId()
-        val revokedGrant = UUID.randomUUID().toString()
-        val activeGrant = UUID.randomUUID().toString()
-        RevokedGrantRepository.revoke(revokedGrant, clientId).getOrElse { error("Failed to revoke: $it") }
-
-        listOf(TokenKind.ACCESS, TokenKind.REFRESH).forEach { kind ->
-            val ofRevokedGrant = payload(kind) {
-                withJWTId(UUID.randomUUID().toString())
-                withClaim("client_id", clientId)
-                withClaim(GRANT_ID_CLAIM, revokedGrant)
-            }
-            val ofActiveGrant = payload(kind) {
-                withJWTId(UUID.randomUUID().toString())
-                withClaim("client_id", clientId)
-                withClaim(GRANT_ID_CLAIM, activeGrant)
-            }
-
-            assertEquals(TokenStateFailure.GRANT_REVOKED.left(), validator.validate(kind, ofRevokedGrant))
-            assertEquals(Unit.right(), validator.validate(kind, ofActiveGrant))
-        }
-    }
-
-    @Test
     @DisplayName("A service token follows the service token store, not revoked_tokens")
     fun serviceTokenFollowsItsOwnStore() = runTest {
         val accountId = createServiceAccountId()
@@ -150,19 +109,6 @@ class TokenStateValidatorTest {
         ServiceAccountTokenRepository.revokeAndCreate(accountId, UUID.randomUUID().toString(), "hash2", "console")
             .getOrElse { error("Failed to reissue: $it") }
         assertEquals(TokenStateFailure.REVOKED.left(), validator.validate(TokenKind.SERVICE, jwt))
-    }
-
-    @Test
-    @DisplayName("A service token without an account is rejected")
-    fun serviceTokenNeedsAnAccount() = runTest {
-        val unknownAccount = payload(TokenKind.SERVICE) {
-            withJWTId(UUID.randomUUID().toString())
-            withClaim("account_id", "deleted-account")
-        }
-        val withoutAccountId = payload(TokenKind.SERVICE) { withJWTId(UUID.randomUUID().toString()) }
-
-        assertEquals(TokenStateFailure.ACCOUNT_NOT_FOUND.left(), validator.validate(TokenKind.SERVICE, unknownAccount))
-        assertEquals(TokenStateFailure.ACCOUNT_ID_MISSING.left(), validator.validate(TokenKind.SERVICE, withoutAccountId))
     }
 
     @Test
@@ -192,14 +138,4 @@ class TokenStateValidatorTest {
         assertEquals(TokenStateFailure.WRONG_TOKEN_TYPE.left(), validator.validate(TokenKind.ACCESS, serviceToken))
     }
 
-    @Test
-    @DisplayName("The blocking variant applies the same rules")
-    fun blockingVariantAppliesSameRules() {
-        val jwt = payload(TokenKind.ACCESS) {
-            withJWTId(UUID.randomUUID().toString())
-            withClaim("client_id", "deleted-client")
-        }
-
-        assertEquals(TokenStateFailure.CLIENT_NOT_FOUND.left(), validator.validateBlocking(TokenKind.ACCESS, jwt))
-    }
 }

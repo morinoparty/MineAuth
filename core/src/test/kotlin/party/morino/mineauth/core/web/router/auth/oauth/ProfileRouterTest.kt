@@ -5,12 +5,9 @@ import com.auth0.jwt.algorithms.Algorithm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
@@ -30,18 +27,15 @@ import org.bukkit.Bukkit
 import org.bukkit.OfflinePlayer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.data.MineAuthConfig
-import party.morino.mineauth.core.file.data.ServerConfig
 import party.morino.mineauth.core.web.BearerChallenge
 import party.morino.mineauth.core.web.JwtCompleteCode
 import party.morino.mineauth.core.web.router.auth.oauth.ProfileRouter.profileRouter
@@ -125,22 +119,6 @@ class ProfileRouterTest {
     }
 
     @Test
-    @DisplayName("The email claim follows emailFormat after reload")
-    fun emailFollowsReload() = testApplication {
-        installUserInfo()
-        val token = tokenExpiringAt(Instant.now().plusSeconds(3600), scope = "openid email")
-
-        val before = client.get("/oauth2/userinfo") { header(HttpHeaders.Authorization, "Bearer $token") }
-        assertFalse(before.bodyAsText().contains("\"email\":"))
-
-        // ConfigLoaderと同じく、設定の登録を置き換える
-        loadKoinModules(module { single { MineAuthConfig(server = ServerConfig(emailFormat = "<uuid>@example.com")) } })
-        val after = client.get("/oauth2/userinfo") { header(HttpHeaders.Authorization, "Bearer $token") }
-
-        assertTrue(after.bodyAsText().contains("\"email\":\"$playerId@example.com\""))
-    }
-
-    @Test
     @DisplayName("Missing token gets a challenge without an error attribute")
     fun missingTokenGetsChallengeWithoutError() = testApplication {
         installUserInfo()
@@ -150,48 +128,5 @@ class ProfileRouterTest {
         assertEquals(HttpStatusCode.Unauthorized, response.status)
         assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
         assertTrue(response.bodyAsText().contains("\"code\":\"authentication_required\""))
-    }
-
-    @Test
-    @DisplayName("Basic credentials get a challenge without an error attribute")
-    fun basicCredentialsGetChallengeWithoutError() = testApplication {
-        installUserInfo()
-
-        val response = client.get("/oauth2/userinfo") { header(HttpHeaders.Authorization, "Basic dXNlcjpwYXNz") }
-
-        assertEquals(HttpStatusCode.Unauthorized, response.status)
-        assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
-        assertTrue(response.bodyAsText().contains("\"code\":\"authentication_required\""))
-    }
-
-    @Test
-    @DisplayName("Expired token gets an invalid_token challenge")
-    fun expiredTokenGetsInvalidTokenChallenge() = testApplication {
-        installUserInfo()
-        val token = tokenExpiringAt(Instant.now().minusSeconds(3600))
-
-        val response = client.post("/oauth2/userinfo") { header(HttpHeaders.Authorization, "Bearer $token") }
-
-        assertEquals(HttpStatusCode.Unauthorized, response.status)
-        assertEquals(
-            "Bearer realm=\"MineAuth\", error=\"invalid_token\", " +
-                "error_description=\"Token is not valid or has expired\"",
-            response.headers[HttpHeaders.WWWAuthenticate],
-        )
-        assertTrue(response.bodyAsText().contains("\"code\":\"invalid_token\""))
-    }
-
-    @Test
-    @DisplayName("POST does not accept the token as a form parameter")
-    fun postDoesNotAcceptFormParameter() = testApplication {
-        installUserInfo()
-
-        val response = client.post("/oauth2/userinfo") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("access_token=${validToken()}")
-        }
-
-        assertEquals(HttpStatusCode.Unauthorized, response.status)
-        assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
     }
 }

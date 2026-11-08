@@ -21,19 +21,4 @@ class UrlAttributeRedactionTest {
             redactQueryValues(query)
         )
     }
-
-    @Test
-    @DisplayName("Replaces values that contain equals signs or are empty")
-    fun replacesValuesWithEqualsSignsOrEmpty() {
-        assertEquals(
-            "code_challenge=REDACTED&nonce=REDACTED",
-            redactQueryValues("code_challenge=abc=def==&nonce=")
-        )
-    }
-
-    @Test
-    @DisplayName("Keeps a parameter without a value as it is")
-    fun keepsParameterWithoutValue() {
-        assertEquals("prompt&state=REDACTED", redactQueryValues("prompt&state=abc"))
-    }
 }

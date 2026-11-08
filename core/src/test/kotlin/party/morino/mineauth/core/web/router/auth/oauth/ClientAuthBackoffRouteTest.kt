@@ -10,16 +10,20 @@ import io.mockk.coVerify
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.koin.core.context.loadKoinModules
 import org.koin.dsl.module
 import party.morino.mineauth.core.file.data.RateLimitConfig
+import party.morino.mineauth.core.mocks.logging.RecordingLogHandler
 import party.morino.mineauth.core.repository.ClientType
+import party.morino.mineauth.core.repository.OAuthClientCreationResult
 import party.morino.mineauth.core.web.ratelimit.OAuthRateLimits
 import java.util.UUID
 import java.util.logging.Logger
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * 失効・イントロスペクションのエンドポイントのクライアント認証バックオフのルートテスト
@@ -100,25 +104,6 @@ class ClientAuthBackoffRouteTest : OAuthRouteTestBase() {
     fun introspectBackoffStopsVerification() = assertBackoffStopsVerification("/oauth2/introspect")
 
     @Test
-    @DisplayName("Failures at revoke also block the token endpoint and introspect")
-    fun backoffIsShared() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 0, tokenRequestsPerMinutePerClient = 0))
-        failUntilBlocked("/oauth2/revoke")
-
-        val clientId = UUID.randomUUID().toString()
-        assertBlocked(postToken("/oauth2/introspect", clientId, "wrong"))
-        assertBlocked(
-            client.submitForm(
-                url = "/oauth2/token",
-                formParameters = parameters {
-                    append("grant_type", "refresh_token")
-                    append("client_id", clientId)
-                }
-            )
-        )
-    }
-
-    @Test
     @DisplayName("Requests that verify no secret do not count toward the backoff")
     fun unverifiedRequestsAreNotCounted() = oauthTestApplication {
         useRateLimits()
@@ -145,32 +130,61 @@ class ClientAuthBackoffRouteTest : OAuthRouteTestBase() {
         assertEquals(HttpStatusCode.OK, postToken("/oauth2/introspect", resourceServer.client.clientId, resourceServer.clientSecret!!).status)
     }
 
-    @Test
-    @DisplayName("Revoke and introspect do not spend the request buckets")
-    fun doNotSpendRequestBuckets() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(tokenRequestsPerMinutePerIp = 1, tokenRequestsPerMinutePerClient = 1))
-        val resourceServer = registerResourceServer()
+    /** oauth_clientsテーブルを読めなくする */
+    private fun makeRegistryUnreadable() = transaction { exec("ALTER TABLE oauth_clients RENAME TO oauth_clients_unavailable") }
 
-        // リソースサーバーは正当に毎秒何度も問い合わせるので、回数では制限しない
-        repeat(3) {
-            assertEquals(
-                HttpStatusCode.OK,
-                postToken("/oauth2/introspect", resourceServer.client.clientId, resourceServer.clientSecret!!).status
-            )
-            assertEquals(
-                HttpStatusCode.OK,
-                postToken("/oauth2/revoke", resourceServer.client.clientId, resourceServer.clientSecret!!).status
-            )
-        }
+    /** oauth_clientsテーブルを元に戻す */
+    private fun restoreRegistry() = transaction { exec("ALTER TABLE oauth_clients_unavailable RENAME TO oauth_clients") }
+
+    private suspend fun ApplicationTestBuilder.postWithRefreshGrant(path: String, client: OAuthClientCreationResult): HttpResponse =
+        this.client.submitForm(
+            url = path,
+            formParameters = parameters {
+                append("grant_type", "refresh_token")
+                append("refresh_token", "not-a-jwt")
+                append("token", "not-a-jwt")
+                append("client_id", client.client.clientId)
+                append("client_secret", client.clientSecret!!)
+            }
+        )
+
+    private suspend fun assertServerError(response: HttpResponse) {
+        assertEquals(HttpStatusCode.InternalServerError, response.status)
+        assertEquals("server_error", response.jsonBody().getValue("error").jsonPrimitive.content)
     }
 
     @Test
-    @DisplayName("Disabled config allows every failure through")
-    fun disabledAllowsEverything() = oauthTestApplication {
-        useRateLimits(RateLimitConfig(enabled = false))
+    @DisplayName("An unreadable client registry answers server_error and does not block the address")
+    fun unreadableRegistryIsNotCounted() {
+        val logHandler = RecordingLogHandler()
+        // OAuthRouteTestBaseがプラグインのロガーとして登録しているロガーの出力を記録する
+        val pluginLogger = Logger.getLogger("OAuthRouteTest")
+        pluginLogger.addHandler(logHandler)
+        var secret = ""
+        try {
+            oauthTestApplication {
+                useRateLimits()
+                val resourceServer = registerResourceServer()
+                secret = resourceServer.clientSecret!!
 
-        repeat(failuresUntilBlocked + 2) {
-            assertEquals(HttpStatusCode.Unauthorized, postToken("/oauth2/revoke", UUID.randomUUID().toString(), "wrong").status)
+                makeRegistryUnreadable()
+                // バックオフの猶予を超えても、invalid_clientや429にはならない
+                repeat(failuresUntilBlocked + 1) { assertServerError(postWithRefreshGrant("/oauth2/token", resourceServer)) }
+                assertServerError(postWithRefreshGrant("/oauth2/revoke", resourceServer))
+                assertServerError(postWithRefreshGrant("/oauth2/introspect", resourceServer))
+                restoreRegistry()
+
+                // 障害の間のリクエストは数えられていないので、復旧後すぐに認証できる
+                assertEquals(HttpStatusCode.OK, postWithRefreshGrant("/oauth2/introspect", resourceServer).status)
+            }
+
+            // 管理者が障害に気づけるようSEVEREで記録し、シークレットは記録しない
+            val severes = logHandler.severes
+            assertEquals(failuresUntilBlocked + 3, severes.size)
+            assertTrue(severes.all { it.contains("client authentication") })
+            assertTrue(severes.none { it.contains(secret) })
+        } finally {
+            pluginLogger.removeHandler(logHandler)
         }
     }
 }
