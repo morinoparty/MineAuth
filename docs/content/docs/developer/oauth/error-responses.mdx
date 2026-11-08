@@ -1,9 +1,9 @@
 ---
 title: Error Responses
-description: Token endpoint error response specification
+description: OAuth endpoint error response specification
 ---
 
-Token endpoint error responses comply with RFC 6749 Section 5.2.
+Error responses from the token endpoint comply with RFC 6749 Section 5.2. The revocation and introspection endpoints use the same format. Authorization endpoint errors are described in [Authorization Endpoint Errors](#authorization-endpoint-errors).
 
 ## Error Response Format
 
@@ -14,16 +14,54 @@ Token endpoint error responses comply with RFC 6749 Section 5.2.
 }
 ```
 
+The `error_description` value contains only the characters allowed by RFC 6749 (`%x20-21 / %x23-5B / %x5D-7E`). Any other character, such as `"`, `\`, a control character, or a non-ASCII character, is removed. This applies to every OAuth endpoint, including values copied from the request. If no characters remain, `error_description` is omitted.
+
 ## Error Codes
 
 | Error Code | HTTP Status | Description |
 |------------|-------------|-------------|
 | `invalid_request` | 400 | Missing required parameters, invalid parameter values, duplicate parameters, etc. |
-| `invalid_client` | 401 | Client authentication failed (unknown client_id, invalid client_secret, etc.) |
+| `invalid_client` | 401 | Client authentication failed (unknown client_id, invalid client_secret, no client authentication where it is required, etc.) |
 | `invalid_grant` | 400 | Invalid authorization code, expired, invalid code_verifier, etc. |
-| `unauthorized_client` | 400 | Client is not authorized to use this grant type |
+| `unauthorized_client` | 400 | Client is not authorized to use this grant type. The introspection endpoint uses status `403` for this code. See [Permission](./introspect#permission) |
 | `unsupported_grant_type` | 400 | Server does not support this grant_type |
 | `invalid_scope` | 400 | Requested scope is invalid, unknown, or malformed |
+| `server_error` | 500 | The server could not complete the request, for example the client registration could not be read during client authentication, a token revocation could not be recorded, or the state of a refresh token could not be read. The client may retry. See [Client Authentication](#client-authentication) and [Server Errors](./refresh-token-rotation#server-errors) |
+| `temporarily_unavailable` | 429, 503 | The request was rate limited (429), or the server had no capacity to verify the client secret (503). See [Rate Limited](#rate-limited) and [Server Busy](#server-busy) |
+
+## Client Authentication
+
+The token, revocation (`/oauth2/revoke`) and introspection (`/oauth2/introspect`) endpoints share the same client authentication rules.
+
+Every `401 invalid_client` response carries this challenge, regardless of whether the client authenticated with the `Authorization` header or the request body:
+
+```http
+WWW-Authenticate: Basic realm="MineAuth", charset="UTF-8"
+```
+
+| Request | Result |
+|---------|--------|
+| Malformed `Authorization: Basic` header (invalid Base64, no colon, empty username) | `401 invalid_client`, even if the body contains valid credentials |
+| Confidential client with a missing or empty secret, at any of the three endpoints | `401 invalid_client` |
+| Public client with no secret, at the revocation or introspection endpoint | `401 invalid_client`, because these endpoints accept confidential clients only |
+| Public client sending `client_id` only, at the token endpoint | Accepted |
+| `Authorization: Basic` header together with a body `client_secret` | `400 invalid_request`, because only one authentication method is allowed per request |
+| `Authorization: Basic` header together with a body `client_id` equal to the Basic username | Accepted |
+| `Authorization: Basic` header together with a different body `client_id` | `400 invalid_request` |
+| No `Authorization: Basic` header and no `client_id`, at the revocation or introspection endpoint | `401 invalid_client`, because these endpoints require client authentication (RFC 6749 Section 5.2) |
+| No `Authorization: Basic` header and no `client_id`, at the token endpoint | `400 invalid_request`, because a public client only identifies itself with `client_id` |
+| The client registration cannot be read from the database, at any of the three endpoints | `500 server_error`. The credentials were not checked, so the request is not counted as a failed authentication and the client may retry |
+
+When the `Authorization: Basic` header is present, the Basic username is always used as the client ID.
+
+## Request Parameters
+
+The token endpoint applies these rules to every parameter it reads, including `client_id` and `client_secret`. The revocation and introspection endpoints apply them to `token`, `token_type_hint`, `client_id` and `client_secret`.
+
+- A parameter with an empty or whitespace-only value is treated as if it were omitted. If that parameter is required, the response is `400 invalid_request`. For example, `grant_type=` and `code=` both report a missing parameter.
+- A parameter that appears more than once is rejected with `400 invalid_request`, even when one of its values is empty.
+
+Parameters that an endpoint does not read for the current request are ignored, so repeating them is not an error. For example, the token endpoint does not read `code` when `grant_type=refresh_token`.
 
 ## Error Examples
 
@@ -43,6 +81,22 @@ grant_type=authorization_code&code=abc123
 }
 ```
 
+### Repeated Parameter
+
+```http
+POST /oauth2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&client_id=example-client&code=abc123&code=def456
+```
+
+```json
+{
+  "error": "invalid_request",
+  "error_description": "Parameter must not be repeated: code"
+}
+```
+
 ### Invalid Authorization Code
 
 ```json
@@ -54,19 +108,17 @@ grant_type=authorization_code&code=abc123
 
 ### Client Authentication Failed
 
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Basic realm="MineAuth", charset="UTF-8"
+Content-Type: application/json
+```
+
 ```json
 {
   "error": "invalid_client",
   "error_description": "Client authentication failed"
 }
-```
-
-### Invalid Scope
-
-Returned as a redirect from the authorization endpoint when requesting unknown scopes.
-
-```
-?error=invalid_scope&error_description=Invalid+scope(s):+admin&state=...
 ```
 
 ### Unsupported grant_type
@@ -78,6 +130,93 @@ Returned as a redirect from the authorization endpoint when requesting unknown s
 }
 ```
 
+### Rate Limited
+
+The token endpoint returns this response when client authentication is blocked after repeated failures, or when a request limit is exceeded after the client has authenticated. The revocation and introspection endpoints return it only in the first case. `Retry-After` gives the wait in seconds, and clients should not retry before it has passed.
+
+RFC 6749 defines `temporarily_unavailable` only for the authorization endpoint. MineAuth uses the same code at these JSON endpoints, with HTTP status 429.
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+Cache-Control: no-store
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "Too many requests. Retry later"
+}
+```
+
+See [Rate Limiting](/docs/administrator/config/rate-limit) for the limits.
+
+### Server Busy
+
+The token, revocation, and introspection endpoints return this response when no verification slot became free within about 2 seconds. Either the server is already running as many client secret verifications as it allows, or the client's address already has two verifications waiting or running. The secret was not checked, and the request does not count as a failed authentication. Clients can retry after `Retry-After`, which is always 1 second. A backend that sends many token requests at once from one address should limit itself to two concurrent requests that verify a client secret.
+
+```http
+HTTP/1.1 503 Service Unavailable
+Retry-After: 1
+Cache-Control: no-store
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "The server is busy. Retry later"
+}
+```
+
+See [Password Hashing Capacity](/docs/administrator/config/rate-limit#password-hashing-capacity).
+
+## Authorization Endpoint Errors
+
+The authorization endpoint reports errors in one of two ways, depending on whether the redirect URI can be trusted.
+
+When `client_id` or `redirect_uri` is missing, repeated, or invalid, the endpoint responds with `400 Bad Request` and a plain text message. It never redirects in this case, because doing so would make it an open redirector (RFC 6749 Section 4.1.2.1).
+
+Every other error is returned by redirecting to the validated `redirect_uri` with `error` and `error_description` in the query string. `state` is included when the request contained exactly one.
+
+| Error Code | Description |
+|------------|-------------|
+| `invalid_request` | A parameter is repeated, `response_type`, `state`, or `code_challenge` is missing, `code_challenge_method` is not `S256`, `prompt` combines `none` with another value, or a login submission lacks `username` or `password`. |
+| `unsupported_response_type` | `response_type` is present but is not `code`. |
+| `invalid_scope` | `scope` is missing or is not accepted. See [Scopes](./scopes#scope-validation). |
+| `login_required` | `prompt=none` was requested. MineAuth keeps no login session, so it cannot authenticate silently. |
+| `request_not_supported` | The `request` parameter is present. |
+| `request_uri_not_supported` | The `request_uri` parameter is present. |
+| `access_denied` | The player could not be authenticated. |
+| `temporarily_unavailable` | There were too many login attempts, or the server had no capacity to check the password, so the password was not evaluated. See [Login Rate Limits](./authorization#login-rate-limits). |
+
+See [Authorization Endpoint](./authorization#validation-order) for the order of these checks.
+
+### Invalid Scope
+
+```
+?error=invalid_scope&error_description=Invalid+scope(s):+admin&state=...
+```
+
+### Missing state
+
+`state` is required by MineAuth. The error redirect has no `state` parameter, because the request did not contain one.
+
+```
+?error=invalid_request&error_description=Missing+required+parameter:+state
+```
+
+### Repeated Parameter
+
+```
+?error=invalid_request&error_description=Parameter+must+not+be+repeated:+prompt&state=...
+```
+
+When `state` itself is repeated, the error redirect has no `state` parameter.
+
 ## References
 
+- [RFC 6749 - Authorization Error Response](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1)
 - [RFC 6749 - Error Response](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2)
+- [OpenID Connect Core 1.0 - Authentication Error Response](https://openid.net/specs/openid-connect-core-1_0.html#AuthError)

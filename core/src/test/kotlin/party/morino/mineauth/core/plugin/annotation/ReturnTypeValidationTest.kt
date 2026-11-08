@@ -13,7 +13,7 @@ import party.morino.mineauth.core.plugin.serialization.SampleResponseDto
 /**
  * 戻り値型のシリアライズ可能性検証（[AnnotationProcessor.analyzeReturnType]）のテスト
  *
- * MockBukkitを必要としないハンドラー（@PlayerParam/@Callerなし）で
+ * Bukkitサーバーを必要としないハンドラー（@PlayerParam/@Callerなし）で
  * 登録時検証の主要な分岐を確認する。
  */
 class ReturnTypeValidationTest {

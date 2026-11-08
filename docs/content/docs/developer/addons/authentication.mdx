@@ -263,6 +263,40 @@ Authentication and routing failures produce JSON error responses with a machine-
 
 Handlers can return their own codes via `HttpError(status, message, code, details)` or the `fail()` helper — see [Registering Handlers](/docs/developer/addons/register-handler#error-handling).
 
+### WWW-Authenticate Header
+
+Authentication and authorization failures carry a `WWW-Authenticate` header as defined in RFC 6750 Section 3 and RFC 9110 Section 15.5.2. OAuth client libraries read this header, not the body, to decide whether to authenticate again or request more scopes.
+
+| Failure | Status | Body `code` | `WWW-Authenticate` |
+|---------|--------|-------------|--------------------|
+| No token, or an `Authorization` scheme other than `Bearer` | 401 | `authentication_required` | `Bearer realm="example.com"` |
+| No principal matches a non-nullable `@Caller` parameter | 401 | `authentication_required` | `Bearer realm="example.com"` |
+| Invalid token | 401 | `invalid_token` | `Bearer realm="example.com", error="invalid_token", error_description="..."` |
+| Missing scope | 403 | `insufficient_scope` | `Bearer realm="example.com", error="insufficient_scope", error_description="...", scope="plugin"` |
+| Token type not allowed | 403 | `wrong_token_type` | `Bearer realm="example.com", error="insufficient_scope", error_description="..."` |
+| Permission check failed | 403 | `access_denied` | `Bearer realm="example.com", error="insufficient_scope", error_description="..."` |
+| `@PlayerParam` access policy denied the target | 403 | `access_denied` | `Bearer realm="example.com", error="insufficient_scope", error_description="..."` |
+
+The `realm` value is the `jwt.realm` setting described in the [server configuration](/docs/administrator/config/server). The token type, permission, and access policy failures omit the `scope` attribute because requesting another scope cannot resolve them, and permission names appear only in the server logs.
+
+An `HttpError` with status 401 or 403 from a handler, whether thrown or returned as `Left`, keeps its message, code, and details in the body, and MineAuth adds the header:
+
+| Handler error | `WWW-Authenticate` |
+|---------------|--------------------|
+| 401 | `Bearer realm="example.com"` |
+| 403, and the request carried a valid token | `Bearer realm="example.com", error="insufficient_scope", error_description="..."` |
+| 403, and the request carried no token (only possible on `@Public` endpoints) | `Bearer realm="example.com"` |
+
+In the header, `error_description` is the handler's message, limited to the first 256 characters allowed by RFC 6750. Other characters, such as non-ASCII text, are removed, and the attribute is omitted if nothing remains. The body always contains the complete message.
+
+MineAuth adds the header only to framework failures and `HttpError`. A handler that sets the status itself with `Response.of(body, status = HttpStatus.UNAUTHORIZED)` must also set `WWW-Authenticate` through the `headers` argument.
+
+### Failures While Validating a Token
+
+If the server fails unexpectedly while checking a token, for example because a database query fails, the request is rejected in the same way as an invalid token: `401`, the `invalid_token` body code, and the `error="invalid_token"` header. A client therefore cannot tell this failure apart from an invalid token.
+
+The server writes the error to its log at `SEVERE` without the token, and records `mineauth.auth.result=validation_error` on the `jwt.validate.*` span when tracing is enabled. Check these first if valid tokens start to be rejected.
+
 ## JWT Token Structure
 
 ### User Token Claims

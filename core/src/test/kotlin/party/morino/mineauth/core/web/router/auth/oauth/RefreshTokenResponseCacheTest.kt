@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import party.morino.mineauth.core.web.components.auth.TokenData
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -137,6 +138,19 @@ class RefreshTokenResponseCacheTest {
         // エントリは削除済みのため、次のリクエストで再試行できる
         val retry = cache.getOrIssue("token-a") { tokenData("retry").right() }
         assertEquals(tokenData("retry").right(), retry)
+    }
+
+    @Test
+    @DisplayName("The grace window tolerates small clock skew but not a start far in the future")
+    fun graceWindowIsTwoSided() {
+        val cache = RefreshTokenResponseCache(gracePeriodMillis = 60_000L, clock = { 1_000_000L })
+
+        assertTrue(cache.isWithinGracePeriod(1_000_000L - 60_000L))
+        assertFalse(cache.isWithinGracePeriod(1_000_000L - 60_001L))
+        // 少し未来の起点はサーバー間の時計のずれとして期間内にする
+        assertTrue(cache.isWithinGracePeriod(1_000_000L + 60_000L))
+        // grace期間を超えて未来の起点は、再利用の検知を止めないよう期間外にする
+        assertFalse(cache.isWithinGracePeriod(1_000_000L + 60_001L))
     }
 
     @Test

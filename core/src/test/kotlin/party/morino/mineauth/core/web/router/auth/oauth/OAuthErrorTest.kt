@@ -49,6 +49,24 @@ class OAuthErrorTest {
     }
 
     @Nested
+    @DisplayName("sanitizeErrorDescription")
+    inner class SanitizeErrorDescriptionTest {
+
+        @Test
+        @DisplayName("Drops quotes, backslashes, control and non-ASCII characters")
+        fun dropsForbiddenCharacters() {
+            assertEquals("foobar", sanitizeErrorDescription("foo\"bar\\\n\t\u007Fé😀"))
+        }
+
+        @Test
+        @DisplayName("Returns null when nothing remains")
+        fun returnsNullWhenNothingRemains() {
+            assertNull(sanitizeErrorDescription("\"é"))
+            assertNull(sanitizeErrorDescription(null))
+        }
+    }
+
+    @Nested
     @DisplayName("OAuthErrorResponse")
     inner class OAuthErrorResponseTest {
 

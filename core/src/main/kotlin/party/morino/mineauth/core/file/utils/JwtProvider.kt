@@ -1,19 +1,20 @@
 package party.morino.mineauth.core.file.utils
 
 import com.auth0.jwt.JWT
-import com.auth0.jwt.JWTVerifier
+import com.auth0.jwt.JWTCreator
 import com.auth0.jwt.algorithms.Algorithm
+import com.auth0.jwt.interfaces.JWTVerifier
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
-import party.morino.mineauth.core.file.data.JWTConfigData
+import party.morino.mineauth.core.model.TokenKind
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 
 /**
  * JWT署名・検証に使用するAlgorithmとVerifierを提供するユーティリティ
  *
- * KeyUtilsのキャッシュ済み鍵ペアとJWTConfigDataの発行者情報を組み合わせて構築する
- * 各プロパティはlazyで初期化され、スレッドセーフにキャッシュされる
+ * Algorithmは初回アクセス時にKeyUtilsのキャッシュ済み鍵ペアから構築する
+ * Verifierは種別ごとに分かれており、全種別を受け付ける汎用のVerifierは意図的に公開しない
  */
 object JwtProvider : KoinComponent {
 
@@ -30,49 +31,52 @@ object JwtProvider : KoinComponent {
     }
 
     /**
-     * 標準JWTVerifier（署名 + issuer + 有効期限を検証）
-     * トークンイントロスペクション、リフレッシュトークン検証等で使用
-     * issuerは自サーバーとtrustedIssuersのいずれかに一致すればよい（署名鍵は共有前提）
-     */
-    val verifier: JWTVerifier by lazy {
-        JWT.require(algorithm)
-            .withIssuer(*acceptedIssuers())
-            .build()
-    }
-
-    /**
-     * Bearerトークン認証用のJWTVerifier（標準Verifierに時刻ずれの許容を加えたもの）
+     * Bearerトークン認証用のVerifier（アクセストークン・サービストークン）
      *
      * 以前はissuerのURLからJWKSをHTTPで取得していたが、鍵はローカルにあるため直接検証する
      * ロードバランサ越しに自分自身へリクエストする必要がなくなり、起動直後や障害時も検証できる
      */
-    val bearerVerifier: JWTVerifier by lazy {
-        JWT.require(algorithm)
-            .withIssuer(*acceptedIssuers())
-            .acceptLeeway(BEARER_LEEWAY_SECONDS)
-            .build()
-    }
+    val bearerVerifier: JWTVerifier
+        get() = get<TokenVerifiers>().bearer
 
     /**
-     * 有効期限を無視するJWTVerifier（署名 + issuerのみ検証）
+     * refresh_tokenグラント用のVerifier（リフレッシュトークン）
+     */
+    val refreshTokenVerifier: JWTVerifier
+        get() = get<TokenVerifiers>().refreshToken
+
+    /**
+     * トークンイントロスペクション用のVerifier（アクセス・リフレッシュ・サービストークン）
+     */
+    val introspectionVerifier: JWTVerifier
+        get() = get<TokenVerifiers>().introspection
+
+    /**
+     * トークン失効用のVerifier（アクセス・リフレッシュトークン、期限切れにも猶予あり）
+     */
+    val revocationVerifier: JWTVerifier
+        get() = get<TokenVerifiers>().revocation
+
+    /**
+     * id_token_hint用のVerifier（ID Token、期限切れにも猶予あり）
+     */
+    val idTokenHintVerifier: JWTVerifier
+        get() = get<TokenVerifiers>().idTokenHint
+
+    /**
+     * 種別を示すtypヘッダーとtoken_typeクレームを設定済みのJWTビルダーを返す
+     * 発行側の種別指定をここに集約し、Verifier側の判定規則と食い違わないようにする
      *
-     * EndSessionのid_token_hint検証やRevokeの期限切れトークン処理で使用
-     * ログアウト時やトークン失効時はトークンが期限切れの可能性があるため
-     * acceptExpiresAtで期限切れを安全に許容しつつ、署名検証は常に実行する
+     * @param kind 発行するトークンの種別
+     * @return JWTビルダー
+     * @throws IllegalArgumentException 発行できない種別（UNKNOWN）を指定した場合
      */
-    val lenientVerifier: JWTVerifier by lazy {
-        JWT.require(algorithm)
-            .withIssuer(*acceptedIssuers())
-            .acceptExpiresAt(Long.MAX_VALUE)
-            .build()
+    fun newToken(kind: TokenKind): JWTCreator.Builder {
+        val typ = requireNotNull(kind.typ) { "Token kind $kind cannot be issued" }
+        val builder = JWT.create().withHeader(mapOf<String, Any>(TYP_HEADER to typ))
+        return kind.tokenTypeClaim?.let { builder.withClaim(TokenKind.TOKEN_TYPE_CLAIM, it) } ?: builder
     }
 
-    /**
-     * 検証時に受け付けるissuerの配列を返す
-     * JWT.require().withIssuer()がvarargを取るため配列に変換する
-     */
-    private fun acceptedIssuers(): Array<String> = get<JWTConfigData>().acceptedIssuers.toTypedArray()
-
-    // Bearerトークン検証で許容する時刻ずれ（秒）
-    private const val BEARER_LEEWAY_SECONDS = 3L
+    // JOSEヘッダーのtypパラメータ名
+    private const val TYP_HEADER = "typ"
 }

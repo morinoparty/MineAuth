@@ -161,6 +161,84 @@ jobs:
           path: ./gradle-artifacts
           retention-days: 1
 
+  # fukurou のゲームテスト（本物の Paper サーバーに shadowJar を入れて確かめる。gradle と並列実行）
+  game-test:
+    needs: setup
+    # master への push はキャッシュを書き込むためだけに走らせるので、ゲームテストは PR と手動実行で走らせる
+    if: ${{ github.event_name != 'push' }}
+    runs-on: ubuntu-24.04
+    # Gradle のビルド（認可画面のフロントエンドを含む）と、サーバー 1 台・プレイヤー無しのテスト
+    timeout-minutes: 30
+    # PR のコードを実行するジョブなので、テスト結果の check を作る以外の権限は渡さない
+    permissions:
+      contents: read
+      checks: write
+    outputs:
+      test_total: ${{ steps.publish-game-test-results.outputs.total }}
+      test_passed: ${{ steps.publish-game-test-results.outputs.passed }}
+      test_skipped: ${{ steps.publish-game-test-results.outputs.skipped }}
+      test_failed: ${{ steps.publish-game-test-results.outputs.failed }}
+    env:
+      # gradle/libs.versions.toml の paper（paper-api）と同じ Minecraft のバージョン
+      MINECRAFT_VERSION: "26.3"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+
+      # 認可画面（core/src/main/frontend）は Gradle の processResources で pnpm でビルドする
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        name: Install pnpm
+        with:
+          package_json_file: core/src/main/frontend/package.json
+          run_install: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '26'
+          cache: pnpm
+          cache-dependency-path: core/src/main/frontend/pnpm-lock.yaml
+
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
+        with:
+          cache-read-only: true
+
+      # Xvfb・xdotool・xmodmap を入れ、FUKUROU_WORK_DIR を設定して Paper の JAR などのキャッシュを復元する
+      - uses: morinoparty/fukurou/setup@d2834e454bd6541db83bb646465f3ef565b0675c # v2.2.1
+        with:
+          minecraft-version: ${{ env.MINECRAFT_VERSION }}
+
+      # fukurou.acceptEula=true は Minecraft の EULA（https://aka.ms/MinecraftEULA）への同意を意味する
+      # ユニットテストと同じく失敗しても後続を止めず、結果はプレビューのコメントと fukurou のビューアーで示す
+      - name: Run the game tests
+        continue-on-error: true
+        run: >-
+          ./gradlew :core:gameTest
+          -Pfukurou.acceptEula=true
+          -Pfukurou.minecraftVersion="$MINECRAFT_VERSION"
+          -Pfukurou.outDir="$RUNNER_TEMP/fukurou-out"
+
+      - name: Publish game test results
+        id: publish-game-test-results
+        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
+        if: success() || failure()
+        with:
+          check_name: Game test report
+          report_paths: './core/build/test-results/gameTest/TEST-*.xml'
+
+      # result.json とサーバーのログ。サーバーやクライアントの JAR は含まれない（fukurou/ui がこの名前で集める）
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: fukurou-paper-${{ env.MINECRAFT_VERSION }}
+          path: ${{ runner.temp }}/fukurou-out
+          retention-days: 1
+
   # Docs ビルドジョブ（gradle と並列実行）
   build-docs:
     needs: setup
@@ -235,7 +313,7 @@ jobs:
   # Bitwarden のアクセストークンが空になって失敗するため、Dependabot の PR ではスキップする
   # （後続の comment ジョブも needs 経由で自動的にスキップされる）
   upload-s3:
-    needs: [setup, build-gradle, build-docs]
+    needs: [setup, build-gradle, build-docs, game-test]
     # master への push はキャッシュを書き込むためだけに走らせるので、プレビューはアップロードしない
     if: ${{ github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
@@ -256,6 +334,15 @@ jobs:
           cp -r ./artifacts/gradle-artifacts/allure ./upload/ || echo "No Allure reports"
           mkdir -p ./upload/docs
           mv ./artifacts/docs-artifacts/* ./upload/docs/
+
+      # fukurou-paper-* の成果物から 1 枚のビューアーを作る。ほかのレポートと同じ S3 の場所へ下のステップで上げるので、ここでは公開しない
+      - name: Build fukurou viewer
+        continue-on-error: true
+        uses: morinoparty/fukurou/ui@d2834e454bd6541db83bb646465f3ef565b0675c # v2.2.1
+        with:
+          title: ${{ env.PROJECT_NAME }} in-game tests
+          output-dir: ${{ github.workspace }}/upload/fukurou
+          upload: "false"
 
       - name: Get secrets from Bitwarden
         uses: bitwarden/sm-action@v2
@@ -279,6 +366,10 @@ jobs:
           aws s3 cp ./upload/detekt $S3_BASE/detekt $S3_OPTS --recursive &
           aws s3 cp ./upload/allure $S3_BASE/allure $S3_OPTS --recursive &
           aws s3 cp ./upload/docs $S3_BASE/docs $S3_OPTS --recursive &
+          # ゲームテストが成果物を残せなかった場合はビューアーが無いので、ある場合だけ上げる
+          if [ -d ./upload/fukurou ]; then
+            aws s3 cp ./upload/fukurou $S3_BASE/fukurou $S3_OPTS --recursive &
+          fi
 
           # 全ての並列アップロードを待機
           wait
@@ -286,7 +377,7 @@ jobs:
 
   # コメント作成ジョブ
   comment:
-    needs: [setup, build-gradle, upload-s3]
+    needs: [setup, build-gradle, game-test, upload-s3]
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'opened' || github.event.action == 'synchronize' }}
     env:
@@ -314,6 +405,7 @@ jobs:
           DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
           DOCS_PREVIEW_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
           DOKKA_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
+          FUKUROU_VIEWER_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/fukurou/index.html"
           ATTESTATION_URL: "${{ needs.build-gradle.outputs.attestation_url }}"
           LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
@@ -365,12 +457,14 @@ jobs:
           | 📖 Dokka API | [Preview]($DOKKA_URL) |
           | 🧪 Allure Report | [Report]($ALLURE_REPORT_URL) |
           | 🧪 JUnit Report | [Report]($JUNIT_REPORT_URL) |
+          | 🎮 In-game Tests (fukurou) | [Viewer]($FUKUROU_VIEWER_URL) |
           | 🔍 Detekt Report | [Report]($DETEKT_REPORT_URL) |
 
           ### 🧪 Test Summary
-          | Tests | Passed | Skipped | Failed |
-          |-------|--------|---------|--------|
-          | ${{ needs.build-gradle.outputs.test_total }} | ${{ needs.build-gradle.outputs.test_passed }} ✅ | ${{ needs.build-gradle.outputs.test_skipped }} ⏭️ | ${{ needs.build-gradle.outputs.test_failed }} ❌ |
+          | Suite | Tests | Passed | Skipped | Failed |
+          |-------|-------|--------|---------|--------|
+          | Unit | ${{ needs.build-gradle.outputs.test_total }} | ${{ needs.build-gradle.outputs.test_passed }} ✅ | ${{ needs.build-gradle.outputs.test_skipped }} ⏭️ | ${{ needs.build-gradle.outputs.test_failed }} ❌ |
+          | In-game (fukurou) | ${{ needs.game-test.outputs.test_total }} | ${{ needs.game-test.outputs.test_passed }} ✅ | ${{ needs.game-test.outputs.test_skipped }} ⏭️ | ${{ needs.game-test.outputs.test_failed }} ❌ |
           EOF
 
       - name: Create PR comment

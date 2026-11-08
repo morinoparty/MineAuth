@@ -1,5 +1,6 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
+import io.ktor.http.Url
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -105,6 +106,14 @@ class OAuthValidationTest {
             assertTrue(result.contains("state=abc123"))
             assertTrue(result.startsWith("https://example.com/callback"))
         }
+
+        @Test
+        @DisplayName("Sanitizes the error description")
+        fun sanitizesErrorDescription() {
+            val result = OAuthValidation.buildErrorRedirectUri("https://example.com/callback", "invalid_scope", "Invalid scope(s): foo\"bar\\é", "s")
+
+            assertEquals("Invalid scope(s): foobar", Url(result).parameters["error_description"])
+        }
     }
 
     @Nested
@@ -130,6 +139,66 @@ class OAuthValidationTest {
     @DisplayName("validateRedirectUri")
     inner class ValidateRedirectUriTest {
 
+        // 1件の登録URIを持つクライアントを作る
+        private fun clientWith(registeredUri: String) = ClientData.PublicClientData(
+            clientId = "test-client",
+            clientName = "Test Client",
+            redirectUris = listOf(registeredUri)
+        )
+
+        @Test
+        @DisplayName("Regex pattern matches a URI equal to the pattern itself")
+        fun regexPatternMatchesItself() {
+            // 登録値が正規表現の場合は完全一致が成立しないため、(/.*)? の省略で一致する
+            val clientData = clientWith(
+                "https://([a-z0-9-]+-)?moripath\\.nikomaru\\.workers\\.dev/api/auth/oauth2/callback/MineAuth"
+            )
+
+            assertTrue(
+                OAuthValidation.validateRedirectUri(
+                    clientData,
+                    "https://pr-32-moripath.nikomaru.workers.dev/api/auth/oauth2/callback/MineAuth"
+                )
+            )
+        }
+
+        @Test
+        @DisplayName("Does not match a URI sharing only a prefix with the registered URI")
+        fun doesNotMatchUriSharingOnlyPrefix() {
+            val clientData = clientWith("https://example.com/callback")
+
+            assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://example.com/callbackevil"))
+            assertFalse(OAuthValidation.validateRedirectUri(clientData, "https://example.com/callback.evil.example/"))
+        }
+
+        @Test
+        @DisplayName("Rejects a redirect URI containing a fragment")
+        fun rejectsRedirectUriContainingFragment() {
+            // サブパスとして一致する値も、登録値と完全一致する値も拒否する
+            assertFalse(
+                OAuthValidation.validateRedirectUri(
+                    clientWith("https://example.com/callback"),
+                    "https://example.com/callback/x#fragment"
+                )
+            )
+            assertFalse(
+                OAuthValidation.validateRedirectUri(
+                    clientWith("https://example.com/callback#fragment"),
+                    "https://example.com/callback#fragment"
+                )
+            )
+        }
+
+        @Test
+        @DisplayName("Dot in the scheme is not evaluated as a regex")
+        fun dotInSchemeIsNotEvaluatedAsRegex() {
+            // 正規表現として評価すると . が任意の文字に一致し、登録できないスキームへ認可コードを送れてしまう
+            assertFalse(OAuthValidation.validateRedirectUri(clientWith("h.tp://evil.example/cb"), "http://evil.example/cb"))
+            assertFalse(OAuthValidation.validateRedirectUri(clientWith("^h.tp://evil.example/cb"), "http://evil.example/cb"))
+            assertFalse(OAuthValidation.validateRedirectUri(clientWith("j.vascript://x/cb"), "javascript://x/cb"))
+            assertFalse(OAuthValidation.validateRedirectUri(clientWith("d.ta://x/cb"), "data://x/cb"))
+        }
+
         @Test
         @DisplayName("Redirect URI with trailing slash matches subpath")
         fun redirectUriWithTrailingSlashMatchesSubpath() {
@@ -149,8 +218,8 @@ class OAuthValidationTest {
         @Test
         @DisplayName("Redirect URI without trailing slash matches with slash")
         fun redirectUriWithoutTrailingSlashMatchesWithSlash() {
-            // 登録URIに"/"がない場合、"/"が追加される
-            // ロジック: "https://example.com/callback" + "/" + ".*" → "https://example.com/callback/.*"
+            // 登録URIに"/"がない場合、サブパスを任意で許可する
+            // ロジック: "https://example.com/callback" + "(/.*)?" → "https://example.com/callback(/.*)?"
             val clientData = ClientData.PublicClientData(
                 clientId = "test-client",
                 clientName = "Test Client",
@@ -166,7 +235,7 @@ class OAuthValidationTest {
         @DisplayName("Regex pattern in redirect URI")
         fun regexPatternInRedirectUri() {
             // ワイルドカードを含むパターン
-            // ロジック: "https://\\w+-example.com/callback" + "/" + ".*"
+            // ロジック: "https://\\w+-example.com/callback" + "(/.*)?"
             val clientData = ClientData.PublicClientData(
                 clientId = "test-client",
                 clientName = "Test Client",

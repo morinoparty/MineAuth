@@ -1,4 +1,4 @@
-import { Fingerprint, KeyRound, type LucideIcon, Mail, ShieldCheck, UserRound } from "lucide-react";
+import { Fingerprint, KeyRound, type LucideIcon, Mail, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { css } from "styled-system/css";
 import { describeScope, type Messages } from "../i18n";
 
@@ -13,6 +13,7 @@ const scopeIcons: Record<string, LucideIcon> = {
   profile: UserRound,
   email: Mail,
   roles: ShieldCheck,
+  offline_access: RefreshCw,
 };
 
 /** 要求されているスコープをアイコンと説明文つきで列挙する */

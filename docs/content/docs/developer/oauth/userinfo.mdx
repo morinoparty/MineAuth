@@ -9,15 +9,20 @@ The UserInfo endpoint returns user information compliant with OpenID Connect Cor
 
 ```
 GET /oauth2/userinfo
+POST /oauth2/userinfo
 ```
+
+Both methods return the same claims, as OpenID Connect Core 1.0 Section 5.3 requires.
 
 ## Authentication
 
-Bearer token (access token) is required.
+Bearer token (access token) is required with either method, and it must be sent in the `Authorization` header.
 
 ```http
 Authorization: Bearer <access_token>
 ```
+
+MineAuth does not read the token from a form-encoded request body (the `access_token` parameter of RFC 6750 Section 2.2). A `POST` that sends the token only in its body is treated as a request without credentials.
 
 ## Response
 
@@ -95,7 +100,21 @@ The `roles` scope returns group names from [LuckPerms](https://luckperms.net/), 
 | `email_verified` | Boolean | Always `false` (generated addresses are not verified) |
 | `roles` | Array\<String\> | LuckPerms group names assigned to the player |
 
+## Error Responses
+
+A failed request receives a `WWW-Authenticate` header as defined in RFC 6750 Section 3, along with a JSON body containing `error` and `code`. OAuth client libraries can read the header to decide whether to authenticate again.
+
+| Case | Status | `WWW-Authenticate` | Body `code` |
+|------|--------|--------------------|-------------|
+| No token, or an `Authorization` scheme other than `Bearer` | 401 | `Bearer realm="example.com"` | `authentication_required` |
+| Expired, malformed, or revoked token | 401 | `Bearer realm="example.com", error="invalid_token", error_description="Token is not valid or has expired"` | `invalid_token` |
+
+The `realm` value is the `jwt.realm` setting described in the [server configuration](/docs/administrator/config/server).
+
+Earlier versions returned `invalid_token` for a request without a token, so clients that branch on the body `code` should also handle `authentication_required`.
+
 ## References
 
 - [OpenID Connect Core 1.0 - UserInfo Endpoint](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo)
+- [RFC 6750 - Bearer Token Usage: The WWW-Authenticate Response Header Field](https://datatracker.ietf.org/doc/html/rfc6750#section-3)
 - [Crafthead](https://crafthead.net/) - Minecraft avatar image API

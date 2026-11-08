@@ -50,6 +50,7 @@ A dialog will appear where you can enter the following information:
 | Client Name | Application name (e.g., "My Website") |
 | Client Type | `Public` or `Confidential` |
 | Redirect URI | OAuth callback URL (e.g., `http://localhost:3000/api/auth/callback/mineauth`). Enter one URI per line to register several (up to 10) |
+| Allow Token Introspection | Off by default, and shown only to players with `mineauth.client.introspection`. Lets a Confidential client use the [token introspection endpoint](/docs/developer/oauth/introspect). Turning it on for a Public client is rejected with an error |
 
 ### Client Types
 
@@ -80,6 +81,21 @@ Check detailed information of a specific client:
 /ma client info <clientId>
 ```
 
+### Manage Token Introspection
+
+A Confidential client can use the [token introspection endpoint](/docs/developer/oauth/introspect) only after you grant it the permission. Grant it to resource servers that need to check tokens, not to ordinary websites that only log users in, because an authorized client can read the metadata of tokens issued to any client.
+
+```
+/ma client introspection allow <clientId>
+/ma client introspection deny <clientId>
+```
+
+A change applies from the next request. Public clients cannot hold the permission. `/ma client info <clientId>` shows the current state.
+
+:::warning[Upgrading]
+Earlier versions let every Confidential client use this endpoint. After upgrading, every client receives `403 unauthorized_client` until you grant the permission. See [Upgrading](/docs/developer/oauth/introspect#upgrading).
+:::
+
 ### Manage Redirect URIs
 
 A client can have up to 10 redirect URIs. An authorization request is accepted when its `redirect_uri` matches any of them.
@@ -91,6 +107,22 @@ Add or remove a redirect URI of an existing client:
 ```
 
 The last remaining redirect URI cannot be removed.
+
+### Redirect URI Rules
+
+The dialog and `/ma client redirect add` apply the same rules. When a URI is rejected, the reason is shown in chat.
+
+- A URI containing a fragment (`#`) is rejected.
+- `https://` is accepted for any host.
+- `http://` is accepted only for the loopback hosts `localhost`, `127.0.0.1`, and `[::1]`. Other hosts must use `https://`, because authorization codes would otherwise be sent in cleartext.
+- An `http://` URI cannot contain user information before the host, such as `user@` in `http://user@localhost:3000/callback`. An `http://` value is also evaluated as a regular expression, so `http://.*@localhost/` would match `http://evil.example/@localhost/` and send the authorization code to `evil.example`. `https://` values are not restricted this way.
+- The schemes `javascript`, `data`, `file`, and `vbscript` are always rejected.
+- A custom scheme for a native app must be in reverse-domain form and contain a host, written in lower case, such as `com.example.app://callback`. Other custom schemes such as `myapp://callback` are rejected. A custom scheme value is compared as plain text and is never evaluated as a regular expression.
+- Regular expression patterns have additional rules. See [Redirect URI Patterns](/docs/developer/web-integration#redirect-uri-patterns).
+
+The single-slash form recommended by RFC 8252, such as `com.example.app:/callback`, is also rejected. MineAuth would rewrite it to `com.example.app://localhost/callback` when redirecting back to the app, so the app would not receive the response at the registered URI.
+
+These rules apply only when a URI is registered. URIs registered before these rules were introduced are not re-validated and keep working, and adding a URI to a client checks only the new URI. There are two exceptions. A registered URI containing `#` can no longer be used, because a `redirect_uri` containing `#` is rejected at authorization. A registered value whose scheme contains `.` or `+` is compared as plain text even if it was registered earlier, so it no longer matches any other scheme as a regular expression.
 
 ### Delete Client
 
@@ -121,6 +153,8 @@ Regenerating the secret will invalidate the old secret. Please update your appli
 | `/ma client create` | `mineauth.client.create` | Create OAuth client |
 | `/ma client list` | `mineauth.client.list` | List clients |
 | `/ma client info <id>` | `mineauth.client.info` | View client details |
+| `/ma client introspection allow <id>` | `mineauth.client.introspection` | Allow token introspection |
+| `/ma client introspection deny <id>` | `mineauth.client.introspection` | Deny token introspection |
 | `/ma client redirect add <id> <uri>` | `mineauth.client.redirect` | Add redirect URI |
 | `/ma client redirect remove <id> <uri>` | `mineauth.client.redirect` | Remove redirect URI |
 | `/ma client delete <id>` | `mineauth.client.delete` | Delete client |

@@ -39,6 +39,7 @@ const messages: Record<Locale, Messages> = {
       profile: "Profile information (name, avatar) access",
       email: "Email address access",
       roles: "Permission group information access",
+      offline_access: "Continued access after you sign in",
     },
   },
   ja: {
@@ -60,6 +61,7 @@ const messages: Record<Locale, Messages> = {
       profile: "プロフィール情報（名前、アバター）へのアクセス",
       email: "メールアドレスへのアクセス",
       roles: "権限グループ情報へのアクセス",
+      offline_access: "サインイン後も継続するアクセス",
     },
   },
 };
