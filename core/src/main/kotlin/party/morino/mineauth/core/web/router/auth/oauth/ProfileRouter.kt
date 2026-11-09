@@ -51,9 +51,11 @@ object ProfileRouter : KoinComponent {
         val scopeString = payload.getClaim("scope").asString() ?: ""
         val scopes = scopeString.split(" ").filter { it.isNotBlank() }
 
-        // emailFormatが設定されている場合、メールアドレスを生成
         // 設定は /mineauth reload で置き換わるため、ID Tokenと食い違わないようリクエストごとに取得する
-        val email = get<MineAuthConfig>().server.emailFormat?.let { format ->
+        val serverConfig = get<MineAuthConfig>().server
+
+        // emailFormatが設定されている場合、メールアドレスを生成
+        val email = serverConfig.emailFormat?.let { format ->
             UserInfoResponse.generateEmail(
                 emailFormat = format,
                 uuid = playerUniqueId.toString(),
@@ -73,6 +75,7 @@ object ProfileRouter : KoinComponent {
             sub = playerUniqueId.toString(),
             username = username,
             scopes = scopes,
+            pictureFormat = serverConfig.pictureFormat,
             email = email,
             roles = roles
         )

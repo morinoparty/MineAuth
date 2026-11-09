@@ -2,6 +2,7 @@ package party.morino.mineauth.core.web.components.auth
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import party.morino.mineauth.core.file.data.ServerConfig
 
 /**
  * OpenID Connect UserInfo Response
@@ -47,15 +48,13 @@ data class UserInfoResponse(
     val roles: List<String>? = null
 ) {
     companion object {
-        // Crafthead API - Minecraftスキンからアバター画像を取得
-        internal const val AVATAR_BASE_URL = "https://crafthead.net/avatar/"
-
         /**
          * スコープに基づいてUserInfoResponseを構築する
          *
          * @param sub Subject Identifier（UUID文字列）
          * @param username ユーザー名
          * @param scopes スコープのリスト
+         * @param pictureFormat プロフィール画像URLのフォーマット（server.pictureFormat）
          * @param email 生成されたメールアドレス（emailFormatが設定されている場合）
          * @param roles LuckPermsから取得したグループ名一覧（rolesスコープが必要）
          * @return スコープに応じたUserInfoResponse
@@ -64,6 +63,7 @@ data class UserInfoResponse(
             sub: String,
             username: String,
             scopes: List<String>,
+            pictureFormat: String = ServerConfig.DEFAULT_PICTURE_FORMAT,
             email: String? = null,
             roles: List<String>? = null
         ): UserInfoResponse {
@@ -77,7 +77,7 @@ data class UserInfoResponse(
             return UserInfoResponse(
                 sub = sub,
                 name = if (hasProfileScope) username else null,
-                picture = if (hasProfileScope) "$AVATAR_BASE_URL$sub" else null,
+                picture = if (hasProfileScope) generatePicture(pictureFormat, sub, username) else null,
                 preferredUsername = if (hasProfileScope) username else null,
                 email = if (hasEmailScope) email else null,
                 emailVerified = if (hasEmailScope) false else null,
@@ -94,7 +94,32 @@ data class UserInfoResponse(
          * @return 生成されたメールアドレス
          */
         fun generateEmail(emailFormat: String, uuid: String, username: String): String {
-            return emailFormat
+            return replacePlaceholders(emailFormat, uuid, username)
+        }
+
+        /**
+         * pictureFormatからプロフィール画像URLを生成する
+         * UserInfoとID Tokenで同じ値を返すため、両方からこの関数を使う
+         *
+         * @param pictureFormat 画像URLフォーマット（例: "https://crafthead.net/avatar/<uuid>"）
+         * @param uuid プレイヤーのUUID
+         * @param username プレイヤー名
+         * @return 生成された画像URL
+         */
+        fun generatePicture(pictureFormat: String, uuid: String, username: String): String {
+            return replacePlaceholders(pictureFormat, uuid, username)
+        }
+
+        /**
+         * フォーマット中の<uuid>と<username>をプレイヤーの値に置き換える
+         *
+         * @param format プレースホルダーを含むフォーマット
+         * @param uuid プレイヤーのUUID
+         * @param username プレイヤー名
+         * @return 置換後の文字列
+         */
+        private fun replacePlaceholders(format: String, uuid: String, username: String): String {
+            return format
                 .replace("<uuid>", uuid)
                 .replace("<username>", username)
         }

@@ -95,7 +95,7 @@ The `roles` scope returns group names from [LuckPerms](https://luckperms.net/), 
 | `sub` | String | Subject Identifier - Player UUID |
 | `name` | String | Player display name |
 | `preferred_username` | String | OIDC standard username (same as player name) |
-| `picture` | String | Player avatar image URL (Crafthead API) |
+| `picture` | String | Player avatar image URL generated from the `pictureFormat` configuration (Crafthead API by default) |
 | `email` | String | Generated email address based on `emailFormat` configuration |
 | `email_verified` | Boolean | Always `false` (generated addresses are not verified) |
 | `roles` | Array\<String\> | LuckPerms group names assigned to the player |

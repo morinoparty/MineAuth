@@ -51,8 +51,18 @@ data class ServerConfig(
     // OIDC email クレーム用フォーマット（nullの場合はemailクレームを返さない）
     // プレースホルダー: <uuid>, <username>
     // 例: "<uuid>+<username>@example.com"
-    val emailFormat: String? = null
-)
+    val emailFormat: String? = null,
+
+    // OIDC picture クレーム用フォーマット（UserInfoとID Tokenの両方で使用）
+    // プレースホルダー: <uuid>, <username>
+    // 例: "https://crafthead.net/avatar/<uuid>"
+    val pictureFormat: String = DEFAULT_PICTURE_FORMAT
+) {
+    companion object {
+        // Crafthead API - Minecraftスキンからアバター画像を取得する（従来の固定値と同じURL）
+        const val DEFAULT_PICTURE_FORMAT = "https://crafthead.net/avatar/<uuid>"
+    }
+}
 
 /**
  * JWT/OIDC設定
