@@ -1,0 +1,4 @@
+# esbuild（Panda CSS が設定ファイルの読み込みに使う）はプラットフォーム別の optional dependency で
+# バイナリを入れるため、postinstall スクリプトを走らせなくても動く
+allowBuilds:
+  esbuild: false
