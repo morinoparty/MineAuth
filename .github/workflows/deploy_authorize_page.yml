@@ -1,0 +1,85 @@
+name: deploy authorize page
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - "templates/morinoparty-authorize/**"
+      - ".github/workflows/deploy_authorize_page.yml"
+
+permissions:
+  contents: read
+
+# 同じファイルへの書き込みが競合しないよう、デプロイは1つずつ実行する
+concurrency:
+  group: deploy-authorize-page
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 本番サーバーに書き込むため、Environment の保護ルール（承認・ブランチ制限）を使えるようにする
+    environment: production
+    defaults:
+      run:
+        working-directory: templates/morinoparty-authorize
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        name: Install pnpm
+        with:
+          package_json_file: templates/morinoparty-authorize/package.json
+          run_install: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '26'
+          cache: pnpm
+          cache-dependency-path: templates/morinoparty-authorize/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      # プレースホルダが無い HTML は MineAuth が使わずに JAR 同梱の画面へ戻すため、デプロイ前に検出する
+      - name: Check placeholder
+        run: grep -q '<script id="mineauth-model" type="application/json">__MINEAUTH_MODEL__</script>' dist/index.html
+
+      # MineAuth は web/authorize.html の更新を次のリクエストで反映するので、サーバーの再起動は不要
+      - name: Upload to Pelican servers
+        env:
+          PANEL_URL: ${{ vars.PELICAN_PANEL_URL }}
+          SERVER_IDS: ${{ vars.PELICAN_SERVER_IDS }}
+          API_KEY: ${{ secrets.PELICAN_CLIENT_API_KEY }}
+        run: |
+          if [ -z "$PANEL_URL" ] || [ -z "$SERVER_IDS" ] || [ -z "$API_KEY" ]; then
+            echo "::error::PELICAN_PANEL_URL, PELICAN_SERVER_IDS and PELICAN_CLIENT_API_KEY must be set"
+            exit 1
+          fi
+
+          failed=0
+          # カンマ区切りのサーバー ID を順に処理し、1台が失敗しても残りのサーバーへのデプロイは続ける
+          IFS=',' read -ra servers <<< "$SERVER_IDS"
+          for server in "${servers[@]}"; do
+            server="$(echo "$server" | xargs)"
+            [ -z "$server" ] && continue
+
+            echo "Deploying to $server"
+            if ! curl --fail-with-body -sS -X POST \
+              -H "Authorization: Bearer $API_KEY" \
+              -H "Accept: application/json" \
+              -H "Content-Type: text/plain" \
+              --data-binary @dist/index.html \
+              "${PANEL_URL%/}/api/client/servers/$server/files/write?file=%2Fplugins%2FMineAuth%2Fweb%2Fauthorize.html"; then
+              echo "::error::Failed to deploy to $server"
+              failed=1
+            fi
+          done
+
+          exit "$failed"

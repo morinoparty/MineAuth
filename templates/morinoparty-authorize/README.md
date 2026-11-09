@@ -23,6 +23,22 @@ plugins/MineAuth/
         └── *.avif
 ```
 
+MineAuth reloads `web/authorize.html` on the next request after the file changes, so a restart is not required.
+
+### Automatic Deployment
+
+The `deploy authorize page` workflow builds the page and uploads `dist/index.html` to each server through the Pelican Panel client API. It runs on pushes to `master` that change this directory, and can also be run manually. Cover images are not deployed by the workflow.
+
+Configure the `production` environment of the repository with the following values:
+
+| Name | Kind | Description |
+|------|------|-------------|
+| `PELICAN_PANEL_URL` | Variable | URL of the panel, such as `https://panel.example.com`. |
+| `PELICAN_SERVER_IDS` | Variable | Comma-separated server identifiers, such as `1a2b3c4d,5e6f7a8b`. |
+| `PELICAN_CLIENT_API_KEY` | Secret | Client API key of a user that can write files on every listed server. |
+
+Use a dedicated subuser that has only the file permissions, because a client API key can access every server that its user can access. If the key has an IP allowlist, GitHub-hosted runners cannot use it.
+
 ## Cover Images
 
 The page reads `assets/cover/covers.json` and displays one image at random on screens at least 1024px wide. When the file or the image cannot be loaded, the page displays a gradient instead.
