@@ -29,7 +29,7 @@ MineAuth reloads `web/authorize.html` on the next request after the file changes
 
 The `deploy authorize page` workflow builds the page and uploads `dist/index.html` to each server through the Pelican Panel client API. It runs on pushes to `master` that change this directory, and can also be run manually. Cover images are not deployed by the workflow.
 
-Configure the following secrets in the `production` environment of the repository:
+Configure the following repository secrets:
 
 | Name | Description |
 |------|-------------|
@@ -40,7 +40,7 @@ Configure the following secrets in the `production` environment of the repositor
 To set them from a file, copy `.env.example` to `.env`, fill in the values, and run the following command. `.env` is ignored by Git.
 
 ```bash
-gh secret set -f .env --env production
+gh secret set -f .env
 ```
 
 Use a dedicated subuser that has only the file permissions, because a client API key can access every server that its user can access. If the key has an IP allowlist, GitHub-hosted runners cannot use it.
