@@ -161,6 +161,38 @@ class UserInfoResponseTest {
     }
 
     @Nested
+    @DisplayName("generatePicture")
+    inner class GeneratePictureTest {
+
+        @Test
+        @DisplayName("Uses configured picture format with profile scope")
+        fun usesConfiguredPictureFormat() {
+            // pictureFormatを指定した場合、既定のCraftheadではなく指定したURLを返す
+            val response = UserInfoResponse.fromScopes(
+                sub = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve",
+                scopes = listOf("openid", "profile"),
+                pictureFormat = "https://avatar.example.com/<uuid>.png"
+            )
+
+            assertEquals("https://avatar.example.com/550e8400-e29b-41d4-a716-446655440000.png", response.picture)
+        }
+
+        @Test
+        @DisplayName("Generates picture with username placeholder")
+        fun generatesPictureWithUsernamePlaceholder() {
+            // <username>のプレースホルダーも置換される
+            val picture = UserInfoResponse.generatePicture(
+                pictureFormat = "https://minotar.net/helm/<username>",
+                uuid = "550e8400-e29b-41d4-a716-446655440000",
+                username = "Steve"
+            )
+
+            assertEquals("https://minotar.net/helm/Steve", picture)
+        }
+    }
+
+    @Nested
     @DisplayName("generateEmail")
     inner class GenerateEmailTest {
 

@@ -17,7 +17,8 @@ description: HTTP server, SSL, JWT, and OAuth configuration
       "keyStorePassword": "password",
       "privateKeyPassword": "password"
     },
-    "emailFormat": "<uuid>+<username>@example.com"  // Optional
+    "emailFormat": "<uuid>+<username>@example.com",  // Optional
+    "pictureFormat": "https://crafthead.net/avatar/<uuid>"  // Optional
   },
   "jwt": {
     "realm": "example.com",
@@ -40,6 +41,7 @@ description: HTTP server, SSL, JWT, and OAuth configuration
 | `port` | number | Yes | HTTP server port number |
 | `ssl` | object | No | SSL configuration (optional) |
 | `emailFormat` | string | No | Email address format for OIDC email scope. Supports `<uuid>` and `<username>` placeholders |
+| `pictureFormat` | string | No | Avatar image URL format for the OIDC `picture` claim. Supports `<uuid>` and `<username>` placeholders. Defaults to `https://crafthead.net/avatar/<uuid>` |
 
 ### Base URL Requirements
 
@@ -73,6 +75,19 @@ When `emailFormat` is set, the OIDC UserInfo endpoint will return `email` and `e
 
 Note: `email_verified` is always returned as `false` since these are generated addresses, not verified real email addresses.
 
+### Picture Format Configuration
+
+`pictureFormat` sets the URL returned as the `picture` claim when the `profile` scope is requested. The UserInfo endpoint and the ID token use the same value.
+
+**Placeholders:**
+- `<uuid>` - Player's UUID
+- `<username>` - Player's username
+
+**Example formats:**
+- `https://crafthead.net/avatar/<uuid>` (default) → `https://crafthead.net/avatar/550e8400-e29b-41d4-a716-446655440000`
+- `https://minotar.net/helm/<username>` → `https://minotar.net/helm/Steve`
+- `https://avatar.example.com/<uuid>.png` → `https://avatar.example.com/550e8400-e29b-41d4-a716-446655440000.png`
+
 ### SSL Configuration
 
 | Key | Type | Required | Description |
@@ -89,7 +104,7 @@ Note: `email_verified` is always returned as `false` since these are generated a
 
 The new values apply without a server restart:
 
-- OIDC Discovery, the UserInfo endpoint, and the OpenAPI document use the new `baseUrl` and `emailFormat`.
+- OIDC Discovery, the UserInfo endpoint, and the OpenAPI document use the new `baseUrl`, `emailFormat`, and `pictureFormat`.
 - New tokens carry the new `baseUrl` as `iss`, and MineAuth accepts only tokens whose `iss` is the new `baseUrl` or is listed in `trustedIssuers`. Tokens issued under a previous `baseUrl` are rejected, so users have to log in again unless you add the previous value to `trustedIssuers`. An issuer removed from `trustedIssuers` is rejected as soon as the reload finishes.
 - MineAuth connects to the database in the new settings first and closes the previous connection only after the schema is up to date.
 

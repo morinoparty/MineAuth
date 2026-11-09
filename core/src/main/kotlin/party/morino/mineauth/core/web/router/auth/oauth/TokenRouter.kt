@@ -794,7 +794,7 @@ object TokenRouter: KoinComponent {
                 if (hasProfileScope && playerName != null) {
                     withClaim("name", playerName)
                     withClaim("preferred_username", playerName)
-                    withClaim("picture", "${UserInfoResponse.AVATAR_BASE_URL}$sub")
+                    withClaim("picture", UserInfoResponse.generatePicture(config.server.pictureFormat, sub, playerName))
                 }
 
                 // emailスコープ: email, email_verified
