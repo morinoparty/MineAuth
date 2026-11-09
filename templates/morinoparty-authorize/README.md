@@ -29,13 +29,19 @@ MineAuth reloads `web/authorize.html` on the next request after the file changes
 
 The `deploy authorize page` workflow builds the page and uploads `dist/index.html` to each server through the Pelican Panel client API. It runs on pushes to `master` that change this directory, and can also be run manually. Cover images are not deployed by the workflow.
 
-Configure the `production` environment of the repository with the following values:
+Configure the following secrets in the `production` environment of the repository:
 
-| Name | Kind | Description |
-|------|------|-------------|
-| `PELICAN_PANEL_URL` | Variable | URL of the panel, such as `https://panel.example.com`. |
-| `PELICAN_SERVER_IDS` | Variable | Comma-separated server identifiers, such as `1a2b3c4d,5e6f7a8b`. |
-| `PELICAN_CLIENT_API_KEY` | Secret | Client API key of a user that can write files on every listed server. |
+| Name | Description |
+|------|-------------|
+| `PELICAN_PANEL_URL` | URL of the panel, such as `https://panel.example.com`. |
+| `PELICAN_SERVER_IDS` | Comma-separated server identifiers, such as `1a2b3c4d,5e6f7a8b`. |
+| `PELICAN_CLIENT_API_KEY` | Client API key of a user that can write files on every listed server. |
+
+To set them from a file, copy `.env.example` to `.env`, fill in the values, and run the following command. `.env` is ignored by Git.
+
+```bash
+gh secret set -f .env --env production
+```
 
 Use a dedicated subuser that has only the file permissions, because a client API key can access every server that its user can access. If the key has an IP allowlist, GitHub-hosted runners cannot use it.
 

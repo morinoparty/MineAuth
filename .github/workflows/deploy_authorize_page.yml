@@ -54,8 +54,8 @@ jobs:
       # MineAuth は web/authorize.html の更新を次のリクエストで反映するので、サーバーの再起動は不要
       - name: Upload to Pelican servers
         env:
-          PANEL_URL: ${{ vars.PELICAN_PANEL_URL }}
-          SERVER_IDS: ${{ vars.PELICAN_SERVER_IDS }}
+          PANEL_URL: ${{ secrets.PELICAN_PANEL_URL }}
+          SERVER_IDS: ${{ secrets.PELICAN_SERVER_IDS }}
           API_KEY: ${{ secrets.PELICAN_CLIENT_API_KEY }}
         run: |
           if [ -z "$PANEL_URL" ] || [ -z "$SERVER_IDS" ] || [ -z "$API_KEY" ]; then
