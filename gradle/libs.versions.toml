@@ -1,6 +1,6 @@
 [versions]
 arrow = "2.3.0.1"
-paper = "26.3.build.231-stable"
+paper = "26.3.build.243-stable"
 mccoroutine = "2.23.0"
 cloud = "2.2.0-SNAPSHOT"
 cloudPaper = "2.0.1"
@@ -8,7 +8,7 @@ koinVersion = "4.2.2"
 coroutine = "1.11.0"
 serialization = "1.12.0"
 ktor = "3.6.1"
-exposed = "1.6.0"
+exposed = "1.6.1"
 password4j = "1.8.4"
 javaUuidGenerator = "5.2.0"
 nimbus = "10.10"
@@ -18,13 +18,14 @@ ktlint = "14.2.0"
 mavenPublish = "0.37.0"
 mockk = "1.14.11"
 junit = "6.1.3"
-mockBukkit = "4.116.3"
 hikari = "7.1.0"
 mysql = "26.10.0"
 micrometer = "1.17.2"
 opentelemetry = "1.67.0"
 opentelemetry-instrumentation = "2.30.0-alpha-SNAPSHOT"
 allure = "2.35.5"
+# JitPack は最初にビルドしたタグの成果物を使い続けるので、必ず正確なタグを指定する
+fukurou = "v2.2.1"
 
 
 [libraries]
@@ -60,7 +61,7 @@ micrometer-registry-prometheus = { group = "io.micrometer", name = "micrometer-r
 opentelemetry-api = { group = "io.opentelemetry", name = "opentelemetry-api", version.ref = "opentelemetry" }
 opentelemetry-sdk = { group = "io.opentelemetry", name = "opentelemetry-sdk", version.ref = "opentelemetry" }
 opentelemetry-exporter-otlp = { group = "io.opentelemetry", name = "opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
-opentelemetry-semconv = { group = "io.opentelemetry.semconv", name = "opentelemetry-semconv", version = "1.44.0" }
+opentelemetry-semconv = { group = "io.opentelemetry.semconv", name = "opentelemetry-semconv", version = "1.45.0" }
 opentelemetry-ktor = { group = "io.opentelemetry.instrumentation", name = "opentelemetry-ktor-3.0", version.ref = "opentelemetry-instrumentation" }
 opentelemetry-extension-kotlin = { group = "io.opentelemetry", name = "opentelemetry-extension-kotlin", version.ref = "opentelemetry" }
 opentelemetry-micrometer = { group = "io.opentelemetry.instrumentation", name = "opentelemetry-micrometer-1.5", version.ref = "opentelemetry-instrumentation" }
@@ -100,13 +101,13 @@ griefprevention = { group = "com.github.TechFortress", name = "GriefPrevention",
 votingplugin = { group = "com.bencodez", name = "votingplugin", version = "7.1" }
 
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
-mock-bukkit = { group = "org.mockbukkit.mockbukkit", name = "mockbukkit-v1.21", version.ref = "mockBukkit" }
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher" }
 koin-test = { group = "io.insert-koin", name = "koin-test", version.ref = "koinVersion" }
 koin-test-junit5 = { group = "io.insert-koin", name = "koin-test-junit5", version.ref = "koinVersion" }
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.54.1.0" }
 ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", version.ref = "ktor" }
+fukurou = { group = "com.github.morinoparty", name = "fukurou", version.ref = "fukurou" }
 
 [plugins]
 run-paper = { id = "xyz.jpenilla.run-paper", version = "3.1.0" }
@@ -114,7 +115,7 @@ resource-factory = { id = "xyz.jpenilla.resource-factory", version = "1.4.0" }
 shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.4.21" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "2.4.21" }
-dokka = { id = "org.jetbrains.dokka", version = "2.2.0" }
+dokka = { id = "org.jetbrains.dokka", version = "2.3.0" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
 

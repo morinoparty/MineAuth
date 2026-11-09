@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
 /**
  * MinecraftMetricsのテスト
  * Bukkitの静的メソッドをmockkでモックしてゲージの登録と値を検証する
- * （MockBukkitはpaper-apiとのバージョン不整合があるため使用しない）
+ * （Bukkitサーバーは起動せず、静的メソッドをMockKで差し替える）
  */
 class MinecraftMetricsTest {
 

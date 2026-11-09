@@ -1,38 +1,30 @@
 package party.morino.mineauth.core.file.utils
 
-import com.nimbusds.jose.jwk.JWKSet
-import org.apache.commons.lang3.RandomStringUtils
-import org.bouncycastle.asn1.x500.X500Name
-import org.bouncycastle.cert.X509v3CertificateBuilder
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
-import org.bouncycastle.jce.provider.BouncyCastleProvider
+import arrow.core.getOrElse
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter
-import org.bouncycastle.operator.ContentSigner
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.util.io.pem.PemObject
-import org.bouncycastle.util.io.pem.PemWriter
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.JWTConfigData
 import java.io.File
-import java.math.BigInteger
+import java.io.IOException
+import java.security.GeneralSecurityException
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
-import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.SecureRandom
-import java.security.cert.CertificateFactory
+import java.security.interfaces.RSAPrivateKey
+import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.*
 
 /**
- * RSA鍵ペアとJWKsの管理ユーティリティ
- * 鍵の生成、証明書の作成、JWKsの生成を行う
+ * RSA鍵ペアの管理ユーティリティ
+ * 鍵の生成と読み込みを行い、証明書とJWKsは SigningKeyPublisher で署名鍵に揃える
  *
  * 生成されるファイルは plugins/MineAuth/generated/ に配置される
  */
@@ -43,13 +35,52 @@ object KeyUtils : KoinComponent {
     val generatedDir: File
         get() = plugin.dataFolder.resolve("generated")
 
+    /**
+     * 鍵ペアを用意し、公開用ファイルを署名鍵とkidに揃える
+     * 起動時と /mineauth reload の両方で呼ばれる
+     */
     fun init() {
         // generated ディレクトリを作成
         generatedDir.mkdirs()
 
         generateKeyPair()
-        generateCertificate(getKeys().first, getKeys().second)
-        loadJWKs()
+
+        // getKeys()は実際に署名に使っている鍵を返すので、reload時も署名と同じ鍵で比較できる
+        val (privateKey, publicKey) = getKeys()
+        warnIfKeyFilesChanged()
+
+        // JWTConfigData は ConfigLoader で既に登録済みで、reloadでは新しいkeyIdに置き換わっている
+        // トークンのkidも発行時に同じ値を取得するため、ここで揃えておけば一致する
+        val jwtConfigData: JWTConfigData = get()
+        SigningKeyPublisher(generatedDir, plugin.logger)
+            .publish(privateKey as RSAPrivateKey, publicKey as RSAPublicKey, jwtConfigData.keyId)
+            .getOrElse { error(it.message) }
+    }
+
+    /**
+     * ディスク上の鍵が署名に使っている鍵と異なる場合に警告する
+     *
+     * 署名鍵は起動時に一度だけ読み込むため、reloadでは差し替わらない。
+     * 差し替えたつもりで古い鍵のまま動き続けることのないよう、再起動が必要なことを管理者へ知らせる。
+     * 読み込めないファイルも再起動時に問題になるので同様に警告する（署名には影響しないのでreloadは失敗させない）。
+     */
+    private fun warnIfKeyFilesChanged() {
+        val keysOnDisk = try {
+            loadKeysFromDisk()
+        } catch (e: IOException) {
+            null
+        } catch (e: GeneralSecurityException) {
+            null
+        } catch (e: IllegalArgumentException) {
+            // Base64として不正な場合
+            null
+        }
+        if (keysOnDisk != getKeys()) {
+            plugin.logger.warning(
+                "privateKey.pem or publicKey.pem on disk differs from the signing key in use. " +
+                    "Key files are read once at startup, so restart the server to apply them."
+            )
+        }
     }
 
     private fun generateKeyPair() {
@@ -78,75 +109,6 @@ object KeyUtils : KoinComponent {
                 PemObject("PUBLIC KEY", keyPair.public.encoded)
             )
         }
-    }
-
-    private fun generateCertificate(privateKey: PrivateKey, publicKey: PublicKey) {
-        val certFile = generatedDir.resolve("certificate.pem")
-        if (certFile.exists()) {
-            return
-        }
-
-        val startDate = Date()
-        val endDate = Date(System.currentTimeMillis() + 365L * 24L * 60L * 60L * 1000L) // 1 year validity
-        val serialNumber = BigInteger.valueOf(System.currentTimeMillis())
-        val subjectDN = X500Name("CN=Test Certificate")
-        val issuerDN = subjectDN // self-signed
-
-        val certBuilder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
-            issuerDN, serialNumber, startDate, endDate, subjectDN, publicKey
-        )
-
-        val contentSigner: ContentSigner = JcaContentSignerBuilder("SHA256WithRSAEncryption").build(privateKey)
-
-        val certHolder = certBuilder.build(contentSigner)
-        val cert = JcaX509CertificateConverter().setProvider(BouncyCastleProvider()).getCertificate(certHolder)
-
-        val pemObject = PemObject("CERTIFICATE", cert.encoded)
-        val writer = certFile.writer()
-        PemWriter(writer).use { pemWriter ->
-            pemWriter.writeObject(pemObject)
-        }
-    }
-
-    private fun loadJWKs() {
-        val certificateFile = generatedDir.resolve("certificate.pem")
-        if (!certificateFile.exists()) {
-            plugin.logger.warning("cert file not found.")
-            return
-        }
-
-        val jwksFile = generatedDir.resolve("jwks.json")
-
-        // JWTConfigData は ConfigLoader で既に登録済み
-        val jwtConfigData: JWTConfigData = get()
-        val keyId = jwtConfigData.keyId
-
-        if (!jwksFile.exists()) {
-            plugin.logger.info("jwks file not found. Generating...")
-            generateJWKs(jwksFile, keyId)
-        }
-    }
-
-    private fun generateJWKs(jwksFile: File, keyId: UUID) {
-        val certificateFile = generatedDir.resolve("certificate.pem")
-        val (privateKey, _) = getKeys()
-
-        val randomPassword = RandomStringUtils.randomAlphabetic(16)
-        val keyStore = KeyStore.getInstance("JKS")
-        keyStore.load(null, null)
-        keyStore.setKeyEntry(
-            keyId.toString(),
-            privateKey,
-            randomPassword.toCharArray(),
-            arrayOf(
-                CertificateFactory.getInstance("X.509").generateCertificate(certificateFile.inputStream())
-            )
-        )
-
-        val rsaKey = com.nimbusds.jose.jwk.RSAKey.load(keyStore, keyId.toString(), randomPassword.toCharArray())
-        val jwkSet = JWKSet(rsaKey)
-
-        jwksFile.writeText(jwkSet.toString(true))
     }
 
     // 鍵ペアのキャッシュ（PEMファイルの読み込みは初回のみ）

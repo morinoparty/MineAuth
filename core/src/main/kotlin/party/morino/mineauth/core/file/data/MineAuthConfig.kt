@@ -28,7 +28,10 @@ data class MineAuthConfig(
     val observability: ObservabilityConfig = ObservabilityConfig(),
 
     // パスワードハッシュ設定
-    val password: PasswordConfig = PasswordConfig()
+    val password: PasswordConfig = PasswordConfig(),
+
+    // 流量制限設定（既存のconfig.jsonに無くても既定値で読み込めるようにする）
+    val rateLimit: RateLimitConfig = RateLimitConfig()
 )
 
 /**

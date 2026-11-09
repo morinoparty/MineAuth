@@ -20,5 +20,8 @@ data class AuthorizedData(
     // OIDC nonce: リプレイ攻撃防止用（Authentication Requestに含まれていた場合のみ）
     val nonce: String? = null,
     // 認証時刻（Unix timestamp ミリ秒）: ID Tokenのauth_timeクレームに使用
-    val authTime: Long = System.currentTimeMillis()
+    val authTime: Long = System.currentTimeMillis(),
+    // グラントID: 認可コードの発行時に生成し、アクセストークンとリフレッシュトークンのgrant_idクレームに使用
+    // 旧形式のリフレッシュトークンから復元したデータには存在しないためnullになる
+    val grantId: String? = null
 )

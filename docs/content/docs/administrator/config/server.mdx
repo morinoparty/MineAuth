@@ -36,10 +36,27 @@ description: HTTP server, SSL, JWT, and OAuth configuration
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `baseUrl` | string | Yes | Public URL of this server. It is used as the OIDC `issuer`, the `iss` claim of issued tokens, and the prefix of every endpoint published in OIDC Discovery. Set it to the proxy URL, including any path prefix, if you use a reverse proxy |
+| `baseUrl` | string | Yes | Public URL of this server. It is used as the OIDC `issuer`, the `iss` claim of issued tokens, and the prefix of every endpoint published in OIDC Discovery. Set it to the proxy URL, including any path prefix, if you use a reverse proxy. See [Base URL Requirements](#base-url-requirements) |
 | `port` | number | Yes | HTTP server port number |
 | `ssl` | object | No | SSL configuration (optional) |
 | `emailFormat` | string | No | Email address format for OIDC email scope. Supports `<uuid>` and `<username>` placeholders |
+
+### Base URL Requirements
+
+OpenID Connect defines the issuer as a URL that uses the https scheme and has no query or fragment components. MineAuth checks `baseUrl` every time it loads `config.json`.
+
+| Value | Example | Result |
+|-------|---------|--------|
+| https URL, with or without a path prefix | `https://api.example.com/main` | Accepted |
+| http URL on a loopback host (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`) | `http://localhost:8080` | Accepted, intended for development |
+| URL with a scheme other than https on any other host | `http://api.example.com` | Accepted with a warning in the log. Many OpenID Connect clients reject such an issuer |
+| URL with a query or fragment, including an empty one | `https://api.example.com?tenant=a` | Rejected |
+| URL that cannot be parsed, has no scheme, or has no host | `api.example.com` | Rejected |
+
+A rejected value stops loading with an error that names the problem.
+
+- At startup, MineAuth fails to enable.
+- During `/mineauth reload`, the reload fails and the previous settings stay active. The HTTP server starts again with those settings, as described in [Reloading Settings](#reloading-settings). Correct `baseUrl` and run `/mineauth reload` again to apply the change.
 
 ### Email Format Configuration
 
@@ -66,6 +83,46 @@ Note: `email_verified` is always returned as `false` since these are generated a
 | `keyStorePassword` | string | Yes | Keystore password |
 | `privateKeyPassword` | string | Yes | Private key password |
 
+## Reloading Settings
+
+`/mineauth reload` stops the HTTP server, reads `config.json` again, reconnects to the database, and starts the HTTP server. Requests are refused while this runs, so clients see a short interruption.
+
+The new values apply without a server restart:
+
+- OIDC Discovery, the UserInfo endpoint, and the OpenAPI document use the new `baseUrl` and `emailFormat`.
+- New tokens carry the new `baseUrl` as `iss`, and MineAuth accepts only tokens whose `iss` is the new `baseUrl` or is listed in `trustedIssuers`. Tokens issued under a previous `baseUrl` are rejected, so users have to log in again unless you add the previous value to `trustedIssuers`. An issuer removed from `trustedIssuers` is rejected as soon as the reload finishes.
+- MineAuth connects to the database in the new settings first and closes the previous connection only after the schema is up to date.
+
+### When a Reload Fails
+
+MineAuth always tries to start the HTTP server again, so a mistake in `config.json` does not take the OAuth endpoints and plugin APIs down. The sender sees the first line of the error, and the error is logged at `SEVERE`. Correct the problem and run `/mineauth reload` again.
+
+When `config.json` cannot be parsed, for example because a value has the wrong type or the file is cut off, the log records only the error line described in [Parse Errors in config.json](#parse-errors-in-configjson), with no stack trace, and the sender sees the same line. Other errors are logged in full with the stack trace.
+
+| Failure | State after the reload |
+|---------|------------------------|
+| `config.json` cannot be read, parsed, or validated | The previous settings stay active |
+| A later step fails, such as rebuilding the JWK Set or connecting to the database | The new `config.json` is active, and the database connection stays on the previous settings |
+| The HTTP server cannot start, for example because the port is in use or the keystore cannot be read | The OAuth endpoints and plugin APIs are unavailable until a later `/mineauth reload` or a server restart succeeds |
+
+### Parse Errors in config.json
+
+The JSON parser describes an error in two parts. The first line gives the position of the error as an offset and a JSON path, such as `$.password.memory`. The rest quotes the `config.json` text around the error, which can contain the database password or the pepper.
+
+The first line can also quote part of the file, such as the token the parser found (`but had '...'`) or a key of a map like `database.properties` in the JSON path. MineAuth therefore rebuilds the line from parts that cannot contain file content and reports it as `config.json could not be parsed: ` followed by the result:
+
+- The offset is kept.
+- The JSON path keeps only property names that exist in the `config.json` format and array indexes. A map key is replaced with `<redacted>`, and the path ends there.
+- The parser's description is kept only when it quotes nothing but a syntax symbol such as `':'` or `'}'`, or `'EOF'`. Otherwise it is replaced with `<redacted>`.
+- When required fields are missing, their names are listed.
+
+No part of a value or a map key reaches the server log or the sender, either at startup or during `/mineauth reload`.
+
+- At startup, MineAuth fails to enable, and the server log shows this line in the enable error.
+- During `/mineauth reload`, the reload fails as described in [When a Reload Fails](#when-a-reload-fails) and the previous settings stay active.
+
+Use the offset and the JSON path to find the mistake in `config.json`, correct it, and restart the server or run `/mineauth reload` again.
+
 ## JWT Configuration
 
 | Key | Type | Required | Description |
@@ -83,6 +140,28 @@ Clients that verify ID tokens, such as better-auth 1.7 or later, fail to log in 
 
 After upgrading from a version that used `jwt.issuer`, tokens issued before the upgrade carry the old `iss` and are rejected, so users have to log in again once.
 :::
+
+## Signing Keys and the JWK Set
+
+MineAuth signs tokens with `generated/privateKey.pem` and puts `jwt.keyId` in the `kid` header of each token. Clients verify those tokens with the key that has the same `kid` in `generated/jwks.json`, which is served at `/.well-known/jwks.json`.
+
+MineAuth compares `generated/jwks.json` and `generated/certificate.pem` with the signing key and `jwt.keyId` every time it starts and on `/mineauth reload`. If either file is out of date, unreadable, or missing, MineAuth rebuilds both files. It logs a warning unless the files were simply missing. Files that already match are left untouched, so you do not need to delete or copy these two files yourself.
+
+### Rotating the Signing Key
+
+1. Stop the server.
+2. Replace `generated/privateKey.pem` and `generated/publicKey.pem` together. Both files must belong to the same key pair, or MineAuth fails to enable.
+3. Start the server. MineAuth logs a warning and rebuilds `generated/certificate.pem` and `generated/jwks.json`.
+
+The key files are read only once at startup. `/mineauth reload` keeps signing with the loaded key and logs a warning if the files on disk differ from it, so a restart is required to apply a new key.
+
+The rebuilt JWK Set contains only the new key. Tokens signed with the previous key can no longer be verified, by clients or by MineAuth, so users have to log in again.
+
+### Changing the Key ID
+
+A new `jwt.keyId` applies after a restart or `/mineauth reload`. MineAuth logs a warning and rebuilds both files, and new tokens carry the new `kid`. Clients can no longer find the key for tokens issued with the previous `kid`, while MineAuth still accepts those tokens because it verifies them with its local key.
+
+Always set `jwt.keyId` explicitly in `config.json`. If the key is left out, a random value is used on every load, so the JWK Set is rebuilt and a warning is logged each time.
 
 ## Running Multiple Servers Behind a Reverse Proxy
 
@@ -113,8 +192,13 @@ To call the API of one server with a token issued by another server:
 
 1. Copy the same `generated/privateKey.pem` and `generated/publicKey.pem` to every server and use the same `keyId`.
 2. List the other servers' `baseUrl` values in `trustedIssuers`.
+3. Restart each server. A server that already generated its own key rebuilds `generated/certificate.pem` and `generated/jwks.json` once, and later restarts leave them as they are.
 
 MineAuth verifies Bearer tokens with its local public key, so it does not need to fetch the JWK Set over HTTP.
+
+Rate limits count requests per client address, and MineAuth reads that address from `X-Forwarded-For` only when the connection comes from a trusted proxy. The default covers loopback and private addresses, so a proxy on a public address must be added to `rateLimit.trustedProxies`. Limits also apply to each server separately. See [Reverse Proxy Setup](/docs/administrator/config/rate-limit#reverse-proxy-setup).
+
+A TCP tunnel or port forwarder, such as playit.gg, frp, ngrok tcp, `ssh -R`, or socat, does not add `X-Forwarded-For`, and neither does Docker's userland proxy for IPv6 clients. When one of these connects from the same host or a private network, the default `trustedProxies` makes all players share one counter and lets clients choose the address they are counted under. Set `rateLimit.trustedProxies` to `[]` or to the exact address of your reverse proxy. See [TCP Tunnels and Port Forwarders](/docs/administrator/config/rate-limit#tcp-tunnels-and-port-forwarders).
 
 ## OAuth Configuration
 

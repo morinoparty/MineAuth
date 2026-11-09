@@ -24,6 +24,7 @@ object OAuthClientCreateDialog {
     private const val KEY_CLIENT_NAME = "client_name"
     private const val KEY_CLIENT_TYPE = "client_type"
     private const val KEY_REDIRECT_URI = "redirect_uri"
+    private const val KEY_INTROSPECTION_ALLOWED = "introspection_allowed"
 
     // 入力フィールドの幅
     private const val INPUT_WIDTH_NAME = 300
@@ -56,7 +57,7 @@ object OAuthClientCreateDialog {
                                 )
                             )
                         )
-                        .inputs(buildInputs())
+                        .inputs(buildInputs(player))
                         .build()
                 )
                 .type(
@@ -74,9 +75,11 @@ object OAuthClientCreateDialog {
 
     /**
      * 入力フィールドを構築する
+     *
+     * @param player 表示対象のプレイヤー（権限に応じて表示する入力を変える）
      */
-    private fun buildInputs(): List<DialogInput> {
-        return listOf(
+    private fun buildInputs(player: Player): List<DialogInput> {
+        val commonInputs = listOf<DialogInput>(
             // クライアント名（テキスト入力）
             DialogInput.text(KEY_CLIENT_NAME, Component.text("クライアント名"))
                 .width(INPUT_WIDTH_NAME)
@@ -111,6 +114,19 @@ object OAuthClientCreateDialog {
                 .multiline(TextDialogInput.MultilineOptions.create(MAX_LINES_URI, HEIGHT_URI))
                 .build()
         )
+
+        // 許可する権限を持たないプレイヤーには選択肢を見せない（応答に含まれていてもハンドラーが拒否する）
+        if (!player.hasPermission(OAuthClientCreateHandler.INTROSPECTION_PERMISSION)) {
+            return commonInputs
+        }
+
+        // トークンイントロスペクションの許可（既定はオフ。Publicクライアントで選択すると作成時の検証で拒否する）
+        return commonInputs + DialogInput.bool(
+            KEY_INTROSPECTION_ALLOWED,
+            Component.text("トークンイントロスペクションを許可（Confidentialのみ）")
+        )
+            .initial(false)
+            .build()
     }
 
     /**
@@ -125,13 +141,15 @@ object OAuthClientCreateDialog {
                         val clientName = view.getText(KEY_CLIENT_NAME)
                         val clientType = view.getText(KEY_CLIENT_TYPE)
                         val redirectUris = view.getText(KEY_REDIRECT_URI)
+                        val introspectionAllowed = view.getBoolean(KEY_INTROSPECTION_ALLOWED)
 
                         // 非同期で作成処理を実行
                         OAuthClientCreateHandler.handleCreate(
                             player,
                             clientName ?: "",
                             clientType ?: "public",
-                            redirectUris ?: ""
+                            redirectUris ?: "",
+                            introspectionAllowed ?: false
                         )
                     },
                     ClickCallback.Options.builder()

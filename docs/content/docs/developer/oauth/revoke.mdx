@@ -15,6 +15,12 @@ POST /oauth2/revoke
 
 Client authentication is required. Only confidential clients can revoke tokens.
 
+Supported authentication methods:
+- `client_secret_post`: Include `client_id` and `client_secret` in the request body
+- `client_secret_basic`: Use HTTP Basic authentication header
+
+See [Client Authentication](./error-responses#client-authentication) and [Request Parameters](./error-responses#request-parameters) for how malformed credentials, empty values, and repeated parameters are handled.
+
 ## Request
 
 ### Content-Type
@@ -48,18 +54,22 @@ client_secret=your-client-secret
 
 ### Success Response
 
-The server responds with HTTP status code 200 even if the token was invalid, already revoked, or issued to another client. This prevents information leakage about the token's validity.
+The server responds with HTTP status code 200 even if the token was invalid, already revoked, issued to another client, or not a kind of token this endpoint revokes. This prevents information leakage about the token's validity.
 
 ```http
 HTTP/1.1 200 OK
 ```
 
+A 200 response therefore means that the revocation was recorded, or that there was nothing this client could revoke. It is never returned when the server failed to record a revocation.
+
 ### Error Response
 
-| Error Code | Description |
-|------------|-------------|
-| `invalid_request` | Missing required parameter |
-| `invalid_client` | Client authentication failed |
+| Error Code | Status | Description |
+|------------|--------|-------------|
+| `invalid_request` | 400 | Missing required parameter |
+| `invalid_client` | 401 | Client authentication failed |
+| `temporarily_unavailable` | 429, 503 | Client authentication is blocked after repeated failures (429), or the server had no capacity to verify the client secret (503). See [Rate Limited](./error-responses#rate-limited) and [Server Busy](./error-responses#server-busy) |
+| `server_error` | 500 | The client registration could not be read, or the revocation could not be recorded in full. In the second case, the token or other tokens of its grant may still be valid. In both cases, the client should retry |
 
 Example error response:
 
@@ -76,21 +86,46 @@ Example error response:
 
 The server verifies that the token was issued to the requesting client. Attempts to revoke tokens belonging to other clients are silently ignored to prevent information leakage.
 
+### Accepted Tokens
+
+Only access tokens and refresh tokens can be revoked here. ID tokens and service account tokens are ignored with a 200 response. Service account tokens are revoked by the `service token` and `service delete` commands.
+
+The signature and issuer are always verified. Expired tokens are accepted for up to 30 days after their expiry, which matches the refresh token lifetime, so a client can still record the revocation of a token that has just expired. A token that expired earlier than that is ignored.
+
+The kind is determined from the token itself. `token_type_hint` is accepted but does not change the result.
+
 ### Cascading Revocation
 
-When a refresh token is revoked, associated access tokens derived from it should also be considered revoked. The server maintains a revoked token list to enforce this.
+Each authorization starts a [grant](/docs/developer/oauth/refresh-token-rotation#grants). The access tokens and refresh tokens issued from one authorization code and from all later rotations share a `grant_id` claim.
+
+Revoking a **refresh token** revokes its whole grant, as RFC 7009 Section 2.1 recommends:
+
+- Every access token and refresh token of the grant stops working immediately, including tokens issued after the presented one. They are rejected as Bearer tokens, reported as `active: false` by [introspection](./introspect), and refused at the token endpoint.
+- The [reuse grace period](/docs/developer/oauth/refresh-token-rotation#reuse-grace-period) ends immediately. If the refresh token was already rotated, presenting it again returns `invalid_grant` instead of the cached response, and this holds whichever token of the rotation the client revoked.
+- The client needs a new authorization to obtain tokens again.
+
+Revoking an **access token** revokes only that token. The refresh token and the other access tokens of the grant keep working.
+
+A `200` response means that every part of the revocation was recorded. If any part could not be recorded, the endpoint answers `server_error`. Revocation is idempotent, so the client can safely retry the same request.
+
+#### Tokens Without a Grant
+
+Tokens issued before grants were introduced have no `grant_id` claim. Revoking one of them applies only to that token: a pending grace period response is discarded, but tokens already issued from it keep working. A rotation of the token that is still in progress and has not yet recorded the token as used is rejected and issues nothing. These tokens disappear within 30 days, because a refresh token receives a new `grant_id` when it is rotated and an unused one expires.
 
 ### Token Validation After Revocation
 
-Once a token is revoked, it cannot be used for:
+Once a token or its grant is revoked, the token cannot be used for:
 - Accessing protected resources (access tokens)
 - Obtaining new access tokens (refresh tokens)
 
 ## Implementation Notes
 
-- The server uses a database table (`revoked_tokens`) to track revoked tokens
-- Revoked token records are automatically cleaned up after their expiration time
-- Token validation checks the revocation list for every protected request
+- The server tracks revoked tokens in the `revoked_tokens` table and revoked grants in the `revoked_grants` table
+- Token validation checks both tables for every protected request. If the server cannot read them, the token is treated as revoked
+- The token endpoint checks the same tables when it rotates a refresh token. If it cannot read them, it answers `server_error` instead of `invalid_grant`, so that the client keeps its refresh token and can retry. See [Server Errors](/docs/developer/oauth/refresh-token-rotation#server-errors)
+- A background task removes records that are no longer needed once an hour:
+  - A `revoked_tokens` record is removed one day after the token's expiration time, which is well past the 3-second allowance for clock differences on Bearer tokens
+  - A `revoked_grants` record is removed 31 days after the revocation, which is the 30-day refresh token lifetime plus one day. The period starts at the revocation and does not depend on the presented token, because rotation means the newest token of a grant can outlive any older one
 
 ## References
 

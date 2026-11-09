@@ -48,6 +48,17 @@ class OAuthScopeTest {
     }
 
     @Nested
+    @DisplayName("resolveGranted")
+    inner class ResolveGrantedTest {
+
+        @Test
+        @DisplayName("Stays strict without openid")
+        fun staysStrictWithoutOpenid() {
+            assertEquals(listOf("unknown"), OAuthScope.resolveGranted("profile unknown").leftOrNull()?.unknownValues)
+        }
+    }
+
+    @Nested
     @DisplayName("normalize")
     inner class NormalizeTest {
 
