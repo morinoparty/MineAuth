@@ -47,8 +47,9 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew build -x test
+      # テストも必須チェックに含める（-x test のままだと、テストが落ちても PR が緑になり Dependabot の自動マージも通ってしまう）
+      - name: Build and test with Gradle
+        run: ./gradlew build
 
       # plugin.yml の libraries は Paper がサーバー起動時に Maven Central のミラー (Google) から取得する。
       # ミラーへの反映は Maven Central より遅れるため、未反映のバージョンが入ると起動できなくなる
