@@ -1,16 +1,26 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
+import arrow.core.raise.either
+import arrow.core.raise.ensure
+import arrow.core.raise.ensureNotNull
 import arrow.core.right
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.runBlocking
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
+import party.morino.mineauth.core.MineAuth
+import party.morino.mineauth.core.repository.OAuthClientError
+import party.morino.mineauth.core.utils.Argon2Gate
 import party.morino.mineauth.core.web.components.auth.ClientData
+import party.morino.mineauth.core.web.ratelimit.ClientIpKey
 import java.security.MessageDigest
 import java.util.*
+import java.util.regex.PatternSyntaxException
 
 object OAuthValidation : KoinComponent {
 
@@ -28,45 +38,69 @@ object OAuthValidation : KoinComponent {
 
     /**
      * Validate the redirect URI.
-     * 登録されたredirect_uriを正規表現パターンとして使用して検証する
-     * 末尾に/.*を追加してサブパスもマッチさせる
+     * 登録されたredirect_uriのいずれかと照合して検証する
+     * http・httpsなどの登録値は正規表現パターンとして、スキームに . や + を含む登録値は文字列として比較し、
+     * どちらも登録値そのものに加えてサブパスも一致させる（詳細はmatchesRedirectUri）
      *
      * @param clientData クライアントデータ
      * @param redirectUri 検証するリダイレクトURI
      * @return 有効な場合true
      */
     fun validateRedirectUri(clientData: ClientData, redirectUri: String): Boolean {
-        val registeredUri = clientData.redirectUri
+        // RFC 6749 Section 3.1.2: フラグメントを含むURIは登録値に関係なく受け付けない
+        // Ktorがデコードした後の値を見るため、%23 で送られたものもここで拒否される
+        if ('#' in redirectUri) {
+            return false
+        }
 
+        // 登録済みURIのいずれかに一致すれば有効とする
+        return clientData.redirectUris.any { registeredUri -> matchesRedirectUri(registeredUri, redirectUri) }
+    }
+
+    // RFC 3986 Section 3.1 のスキームのうち、正規表現として特別な意味を持つ . か + を含むもの（先頭の^は任意）
+    private val REGEX_UNSAFE_SCHEME = Regex("""^\^?[A-Za-z][A-Za-z0-9\-]*[.+][A-Za-z0-9+.\-]*:""")
+
+    /**
+     * 1件の登録URIとリクエストのリダイレクトURIを照合する
+     *
+     * まず完全一致を確認し、一致しなければ登録値のスキームで比較方法を分ける。
+     * スキームに . や + を含む登録値（逆ドメイン形式のカスタムスキームなど）は文字列としてのみ比較し、
+     * 登録値のサブパスも一致とする。先頭の^は無視する。
+     * 正規表現として評価すると h.tp://evil.example/cb が http://evil.example/cb に一致し、
+     * 登録時のスキーム制限を抜けて認可コードを平文で送れてしまうため。
+     * それ以外の登録値は正規表現パターンとして評価し、登録値そのものとサブパスに一致させる。
+     *
+     * @param registeredUri 登録済みのリダイレクトURI（http・httpsは正規表現パターン可）
+     * @param redirectUri 検証するリダイレクトURI
+     * @return 一致する場合true
+     */
+    private fun matchesRedirectUri(registeredUri: String, redirectUri: String): Boolean {
         // 完全一致チェック（最も一般的なケース）
         if (registeredUri == redirectUri) {
             return true
         }
 
+        if (REGEX_UNSAFE_SCHEME.containsMatchIn(registeredUri)) {
+            // 先頭の^は正規表現のアンカーであり、文字列として比較するときはURIの一部ではない
+            val literalUri = registeredUri.removePrefix("^")
+            return redirectUri == literalUri || redirectUri.startsWith(literalUri.removeSuffix("/") + "/")
+        }
+
         // 登録URIを正規表現パターンに変換
-        // 末尾に/がなければ追加し、.*を付けてサブパスを許可
+        // 末尾が/の登録値は.*を付けてサブパスを許可する
+        // それ以外は(/.*)?を付け、正規表現で登録したパターンそのものに一致するURIとサブパスの両方を許可する
         val pattern = if (registeredUri.endsWith("/")) {
             registeredUri + ".*"
         } else {
-            registeredUri + "/.*"
+            registeredUri + "(/.*)?"
         }
 
         return try {
             Regex(pattern).matches(redirectUri)
-        } catch (e: Exception) {
+        } catch (e: PatternSyntaxException) {
+            // 正規表現として解釈できない登録値は完全一致でのみ使える
             false
         }
-    }
-
-    /**
-     * スコープ文字列を検証する
-     * RFC 6749 Section 3.3: リクエストされたスコープが許可リストに含まれているか確認
-     *
-     * @param scopeString スペース区切りのスコープ文字列
-     * @return 全てのスコープが有効な場合true
-     */
-    fun validateScope(scopeString: String): Boolean {
-        return OAuthScope.isValid(scopeString)
     }
 
     fun validatePKCE(codeChallenge: String?, codeChallengeMethod: String?): Boolean {
@@ -104,13 +138,25 @@ object OAuthValidation : KoinComponent {
         return codeChallenge == base64
     }
 
-    fun buildErrorRedirectUri(redirectUri: String, error: String, errorDescription: String, state: String): String {
+    /**
+     * 認可エンドポイントのエラーリダイレクト先を組み立てる
+     * 検証済みのredirect_uriにのみ使うこと（未検証の値を渡すとオープンリダイレクタになる）
+     *
+     * @param redirectUri 検証済みのリダイレクトURI
+     * @param error エラーコード
+     * @param errorDescription エラーの説明（許可されない文字はここで取り除く）
+     * @param state リクエストのstate。リクエストに無かった場合はnull
+     * @return エラーパラメータを付加したURI
+     */
+    fun buildErrorRedirectUri(redirectUri: String, error: String, errorDescription: String, state: String?): String {
         val uri = URLBuilder()
         uri.takeFrom(redirectUri)
         uri.parameters.apply {
             append("error", error)
-            append("error_description", errorDescription)
-            append("state", state)
+            // 全ての呼び出し元を一度に守るため、呼び出し側ではなくここで無害化する
+            sanitizeErrorDescription(errorDescription)?.let { append("error_description", it) }
+            // RFC 6749 Section 4.1.2.1: stateはリクエストに含まれていた場合のみ返す
+            state?.let { append("state", it) }
         }
         return uri.buildString()
     }
@@ -126,60 +172,114 @@ object OAuthValidation : KoinComponent {
     }
 
     /**
-     * Authorization: Basic ヘッダーからclient_idとclient_secretを取得する
+     * Authorizationヘッダーの値をBasic認証のクレデンシャルとして解釈する
      * RFC 6749 Section 2.3.1 (client_secret_basic) 準拠
      *
-     * @return Pair(client_id, client_secret) または null（ヘッダーが存在しない/不正な場合）
+     * ヘッダーがない場合やBasic以外のスキームは「Basic認証を使っていない」としてnullを返す。
+     * Basicを名乗っているのに解釈できない場合は、client_id欠如へ流さず認証失敗として扱う
+     * （RFC 6749 Section 5.2: ヘッダーで認証を試みたクライアントには401を返す）。
+     *
+     * @param authHeader Authorizationヘッダーの値
+     * @return Pair(client_id, client_secret)、Basic認証でない場合はnull、または認証エラー
      */
-    fun RoutingContext.extractBasicCredentials(): Pair<String, String>? {
-        val authHeader = call.request.header(HttpHeaders.Authorization) ?: return null
-        if (!authHeader.startsWith("Basic ", ignoreCase = true)) return null
-        return try {
-            // Base64デコードして "client_id:client_secret" 形式を分割
-            val decoded = String(Base64.getDecoder().decode(authHeader.substring(6)), Charsets.UTF_8)
-            val colonIndex = decoded.indexOf(':')
-            if (colonIndex < 0) return null
-            val id = decoded.substring(0, colonIndex)
-            val secret = decoded.substring(colonIndex + 1)
-            Pair(id, secret)
+    fun extractBasicCredentials(authHeader: String?): Either<ClientAuthFailure, Pair<String, String>?> {
+        if (authHeader == null) return null.right()
+        // スキーム名を比較する（"Basic" のみでトークンがないヘッダーも不正なBasicとして検出するため）
+        if (!authHeader.substringBefore(' ').equals("Basic", ignoreCase = true)) return null.right()
+
+        val malformed = ClientAuthFailure(
+            OAuthErrorCode.INVALID_CLIENT,
+            "Malformed Basic authorization header"
+        ).left()
+
+        // Base64デコードして "client_id:client_secret" 形式を分割
+        val decoded = try {
+            String(Base64.getDecoder().decode(authHeader.substringAfter(' ', "").trim()), Charsets.UTF_8)
         } catch (e: IllegalArgumentException) {
-            null
+            return malformed
         }
+        val colonIndex = decoded.indexOf(':')
+        if (colonIndex < 0) return malformed
+
+        // Basicのユーザー名は常にクライアントIDになるため、空のユーザー名は解釈できないものとして扱う
+        val id = decoded.substring(0, colonIndex)
+        if (id.isBlank()) return malformed
+
+        return Pair(id, decoded.substring(colonIndex + 1)).right()
     }
 
     /**
-     * フォームパラメータとBasic認証ヘッダーからクライアントクレデンシャルを抽出する
-     * RFC 6749 Section 2.3: 認証方式の併用禁止チェックを含む
+     * Authorizationヘッダーとフォームパラメータからクライアントクレデンシャルを抽出する
+     *
+     * RFC 6749 Section 2.3: 認証方式の併用を禁止する。第2の認証方式になるのは本文のclient_secretのみで、
+     * 本文のclient_idは識別用（RFC 6749 Section 3.2.1）なのでBasic認証と同時に送られても併用にはならない。
+     *
+     * @param authHeader Authorizationヘッダーの値
+     * @param formParameters フォームパラメータ
+     * @param requireClientAuthentication クライアント認証が必須のエンドポイントならtrue。
+     *   トークンエンドポイントはPublicクライアントも受け付けるので、client_idの欠落は単なるパラメータ不足として扱う
+     * @return 抽出されたクレデンシャル、または認証エラー
+     */
+    fun extractClientCredentials(
+        authHeader: String?,
+        formParameters: Parameters,
+        requireClientAuthentication: Boolean = false
+    ): Either<ClientAuthFailure, ClientCredentials> = either {
+        // 解釈できないBasicヘッダーは、本文の内容に関わらず認証失敗として返す
+        val basicCredentials = extractBasicCredentials(authHeader).bind()
+        val bodyClientId = formParameters.readClientAuthParameter("client_id").bind()
+        val bodyClientSecret = formParameters.readClientAuthParameter("client_secret").bind()
+
+        if (basicCredentials == null) {
+            // client_secret_post、またはclient_idのみを送るPublicクライアント
+            val clientId = ensureNotNull(bodyClientId) {
+                if (requireClientAuthentication) {
+                    // RFC 6749 Section 5.2: 認証情報が1つも無いリクエストはinvalid_client
+                    ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication required")
+                } else {
+                    ClientAuthFailure(OAuthErrorCode.INVALID_REQUEST, "Missing required parameter: client_id")
+                }
+            }
+            return@either ClientCredentials(clientId, bodyClientSecret)
+        }
+
+        val (basicClientId, basicClientSecret) = basicCredentials
+        ensure(bodyClientSecret == null) {
+            ClientAuthFailure(
+                OAuthErrorCode.INVALID_REQUEST,
+                "Multiple client authentication methods are not allowed"
+            )
+        }
+        // 本文のclient_idがBasicで認証するクライアントと別物を指すリクエストは受け付けない
+        ensure(bodyClientId == null || bodyClientId == basicClientId) {
+            ClientAuthFailure(OAuthErrorCode.INVALID_REQUEST, "client_id does not match the Basic credentials")
+        }
+
+        // クライアントIDは常にBasicのユーザー名を使う。secretが空文字の場合はPublicクライアントとして扱う
+        ClientCredentials(basicClientId, basicClientSecret.ifEmpty { null })
+    }
+
+    /**
+     * リクエストのAuthorizationヘッダーとフォームパラメータからクライアントクレデンシャルを抽出する
      *
      * @param formParameters フォームパラメータ
+     * @param requireClientAuthentication クライアント認証が必須のエンドポイントならtrue
      * @return 抽出されたクレデンシャル、または認証エラー
      */
     fun RoutingContext.extractClientCredentials(
-        formParameters: Parameters
-    ): Either<ClientAuthFailure, ClientCredentials> {
-        val basicCredentials = extractBasicCredentials()
+        formParameters: Parameters,
+        requireClientAuthentication: Boolean = false
+    ): Either<ClientAuthFailure, ClientCredentials> =
+        extractClientCredentials(call.request.header(HttpHeaders.Authorization), formParameters, requireClientAuthentication)
 
-        // RFC 6749 Section 2.3: 認証方式の併用を禁止
-        val hasBodyCredentials = formParameters["client_id"] != null || formParameters["client_secret"] != null
-        if (basicCredentials != null && hasBodyCredentials) {
-            return ClientAuthFailure(
-                OAuthErrorCode.INVALID_REQUEST,
-                "Multiple client authentication methods are not allowed"
-            ).left()
-        }
-
-        // client_secret_post → client_secret_basic の優先順でクレデンシャルを取得
-        val clientId = formParameters["client_id"] ?: basicCredentials?.first
-            ?: return ClientAuthFailure(
-                OAuthErrorCode.INVALID_REQUEST,
-                "Missing required parameter: client_id"
-            ).left()
-
-        // Basic認証でsecretが空文字の場合はPublicクライアントとして扱う
-        val clientSecret = (formParameters["client_secret"] ?: basicCredentials?.second)?.ifEmpty { null }
-
-        return ClientCredentials(clientId, clientSecret).right()
-    }
+    /**
+     * クライアント認証用のパラメータを読み取り、失敗をクライアント認証の失敗情報に変換する
+     *
+     * @param name パラメータ名
+     * @return パラメータの値（省略時はnull）、または認証エラー
+     */
+    private fun Parameters.readClientAuthParameter(name: String): Either<ClientAuthFailure, String?> =
+        readSingleParameter(name).mapLeft { ClientAuthFailure(it.errorCode, it.message) }
 
     /**
      * Confidentialクライアントを認証する
@@ -189,37 +289,28 @@ object OAuthValidation : KoinComponent {
      * IntrospectRouter/RevokeRouter向け（Confidentialクライアントのみ許可）
      *
      * @param credentials 抽出済みのクレデンシャル
-     * @return 認証済みのConfidentialClientData、または認証エラー
+     * @param source リクエストの接続元（Argon2Gateで接続元ごとの検証の枠を割り当てるキー）
+     * @return 認証済みのConfidentialClientData、または認証エラー（種類でバックオフに数えるかを区別する）
      */
-    fun authenticateConfidentialClient(
-        credentials: ClientCredentials
+    suspend fun authenticateConfidentialClient(
+        credentials: ClientCredentials,
+        source: ClientIpKey
     ): Either<ClientAuthFailure, ClientData.ConfidentialClientData> {
-        // Confidentialクライアントはclient_secret必須
-        if (credentials.clientSecret == null) {
-            return ClientAuthFailure(
-                OAuthErrorCode.INVALID_REQUEST,
-                "Missing required parameter: client_secret"
-            ).left()
-        }
+        // RFC 6749 Section 5.2: 認証情報なしはinvalid_client（authenticateClientと同じ応答に揃える）
+        // 何も照合していないので推測の試行としては数えない（ログアウト時にrevokeを呼ぶPublicクライアントの利用者を巻き込まない）
+        val clientSecret = credentials.clientSecret
+            ?: return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication required").left()
 
-        // クライアントデータをDBから取得
-        val clientData = try {
-            ClientData.getClientData(credentials.clientId)
-        } catch (e: Exception) {
-            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client not found").left()
-        }
+        // クライアントデータをDBから取得（存在しないclient_idは推測の試行として数え、DBの障害は数えない）
+        val clientData = findClientToAuthenticate(credentials.clientId).getOrElse { return it.left() }
 
-        // Confidentialクライアントのみ許可
+        // Confidentialクライアントのみ許可（シークレットを照合していないので数えない）
         if (clientData !is ClientData.ConfidentialClientData) {
             return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client type mismatch").left()
         }
 
         // Argon2idによる定数時間比較でシークレットを検証（タイミング攻撃対策）
-        if (!clientData.verifySecret(credentials.clientSecret)) {
-            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed").left()
-        }
-
-        return clientData.right()
+        return verifyClientSecret(clientData, clientSecret, source).map { clientData }
     }
 
     /**
@@ -230,35 +321,103 @@ object OAuthValidation : KoinComponent {
      * TokenRouter向け（両タイプのクライアントをサポート）
      *
      * @param credentials 抽出済みのクレデンシャル
-     * @return 認証済みのClientData、または認証エラー
+     * @param source リクエストの接続元（Argon2Gateで接続元ごとの検証の枠を割り当てるキー）
+     * @return 認証済みのClientData、または認証エラー（種類でバックオフに数えるかを区別する）
      */
-    fun authenticateClient(
-        credentials: ClientCredentials
+    suspend fun authenticateClient(
+        credentials: ClientCredentials,
+        source: ClientIpKey
     ): Either<ClientAuthFailure, ClientData> {
-        // クライアントデータをDBから取得
-        val clientData = try {
-            ClientData.getClientData(credentials.clientId)
-        } catch (e: Exception) {
-            return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client not found").left()
-        }
+        // クライアントデータをDBから取得（存在しないclient_idは推測の試行として数え、DBの障害は数えない）
+        val clientData = findClientToAuthenticate(credentials.clientId).getOrElse { return it.left() }
 
         // DB上のクライアントタイプに基づいて認証を分岐（secretの有無ではなく登録タイプで判定）
-        when (clientData) {
+        return when (clientData) {
             is ClientData.ConfidentialClientData -> {
                 // RFC 6749 Section 2.3.1: Confidentialクライアントはclient_secret必須
-                if (credentials.clientSecret == null) {
-                    return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication required").left()
-                }
+                // 何も照合していないので推測の試行としては数えない
+                val clientSecret = credentials.clientSecret
+                    ?: return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication required").left()
                 // Argon2idによる定数時間比較で検証（タイミング攻撃対策）
-                if (!clientData.verifySecret(credentials.clientSecret)) {
-                    return ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client authentication failed").left()
-                }
+                verifyClientSecret(clientData, clientSecret, source).map { clientData }
             }
-            is ClientData.PublicClientData -> {
-                // Publicクライアント: client_secretが送られても無視する
-            }
+            // Publicクライアント: client_secretが送られても無視する
+            is ClientData.PublicClientData -> clientData.right()
+        }
+    }
+
+    /**
+     * クライアント認証のために、提示されたclient_idのクライアントをDBから取得する
+     * 存在しないことを確認できた場合だけをclient_idの推測として扱い、DBを読めなかった場合はサーバーの障害として返す
+     *
+     * @param clientId 提示されたクライアントID
+     * @return クライアントデータ、または認証エラー
+     */
+    private suspend fun findClientToAuthenticate(clientId: String): Either<ClientAuthFailure, ClientData> =
+        when (val found = ClientData.findClientDataInDb(clientId)) {
+            is Either.Left -> clientLookupFailed(clientId, found.value).left()
+            is Either.Right -> found.value?.right() ?: clientNotFound().left()
         }
 
-        return clientData.right()
+    /**
+     * 提示されたclient_idのクライアントが存在しない場合の失敗情報
+     * client_idの総当たりにあたるので、推測の試行として数える
+     * DBを読めなかった場合はこれを使わず、clientLookupFailedで返すこと
+     *
+     * @return 認証エラー
+     */
+    private fun clientNotFound(): ClientAuthFailure =
+        ClientAuthFailure(OAuthErrorCode.INVALID_CLIENT, "Client not found", ClientAuthFailureKind.CREDENTIALS_REJECTED)
+
+    /**
+     * クライアントをDBから読めなかった場合の失敗情報
+     *
+     * 認証情報を照合していないので推測の試行としては数えず（NOT_VERIFIED）、server_errorの500で再試行を促す。
+     * invalid_clientで返すと、DBの障害の間に届いたリクエストが全て推測として数えられ、正規のクライアントの接続元までブロックされる。
+     * 管理者が障害に気づけるようSEVEREで記録する。シークレットは記録しない
+     *
+     * @param clientId 提示されたクライアントID
+     * @param error DBの読み取りの失敗
+     * @return 認証エラー
+     */
+    private fun clientLookupFailed(clientId: String, error: OAuthClientError): ClientAuthFailure {
+        // client_idはリクエスト由来なので、改行などでログを偽装されないよう無害化してから出力する
+        get<MineAuth>().logger.severe(
+            "Failed to read the OAuth client for client authentication: client_id=${sanitizeErrorDescription(clientId)}, error=$error"
+        )
+        return ClientAuthFailure(OAuthErrorCode.SERVER_ERROR, "The client could not be looked up. Retry later")
+    }
+
+    /**
+     * Argon2Gateの許可を得てから、クライアントシークレットを照合する
+     * DBの読み込みを終えてから呼ぶので、許可を持つのはハッシュの計算の間だけになる
+     *
+     * @param clientData 照合するConfidentialクライアント
+     * @param clientSecret 提示されたシークレット
+     * @param source リクエストの接続元（接続元ごとの検証の枠を割り当てるキー）
+     * @return 一致した場合はRight。一致しない場合と、許可を得られず照合しなかった場合は種類の異なる失敗情報
+     */
+    private suspend fun verifyClientSecret(
+        clientData: ClientData.ConfidentialClientData,
+        clientSecret: String,
+        source: ClientIpKey
+    ): Either<ClientAuthFailure, Unit> {
+        // ゲートはプロセス全体で1つなので、保持せず呼び出しごとにKoinから取得する
+        // 1つの接続元が同時に待機・実行できる検証は限られるので、大量の同時リクエストで他の接続元を待たせない
+        val matched = get<Argon2Gate>().withPermit(source) { clientData.verifySecret(clientSecret) }.getOrElse {
+            return ClientAuthFailure(
+                OAuthErrorCode.TEMPORARILY_UNAVAILABLE,
+                "The server is busy. Retry later",
+                ClientAuthFailureKind.VERIFIER_BUSY
+            ).left()
+        }
+        if (!matched) {
+            return ClientAuthFailure(
+                OAuthErrorCode.INVALID_CLIENT,
+                "Client authentication failed",
+                ClientAuthFailureKind.CREDENTIALS_REJECTED
+            ).left()
+        }
+        return Unit.right()
     }
 }

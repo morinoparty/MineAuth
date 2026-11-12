@@ -2,5 +2,3 @@
 # バイナリを入れるため、postinstall スクリプトを走らせなくても動く
 allowBuilds:
   esbuild: false
-minimumReleaseAgeExclude:
-  - '@morinoparty/chlorophyll-react@0.4.9'

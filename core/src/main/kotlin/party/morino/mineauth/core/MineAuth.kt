@@ -1,9 +1,11 @@
 package party.morino.mineauth.core
 
 import com.github.shynixn.mccoroutine.bukkit.SuspendingJavaPlugin
+import kotlinx.coroutines.runBlocking
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 import org.bukkit.plugin.ServicePriority
+import org.bukkit.scheduler.BukkitTask
 import org.incendo.cloud.annotations.AnnotationParser
 import org.incendo.cloud.bukkit.CloudBukkitCapabilities
 import org.incendo.cloud.execution.ExecutionCoordinator
@@ -30,8 +32,12 @@ import party.morino.mineauth.core.commands.parser.ClientIdParser
 import party.morino.mineauth.core.commands.parser.ServiceNameParser
 import party.morino.mineauth.core.file.load.FileUtils
 import party.morino.mineauth.core.integration.IntegrationInitializer
+import party.morino.mineauth.core.utils.Argon2Gate
 import party.morino.mineauth.core.web.WebServer
 import party.morino.mineauth.core.web.router.auth.oauth.RefreshTokenResponseCache
+import party.morino.mineauth.core.repository.RevocationRecordCleanup
+import party.morino.mineauth.core.web.router.auth.oauth.RedeemedCodeStore
+import party.morino.mineauth.core.web.router.auth.oauth.TokenStateValidator
 import party.morino.mineauth.core.web.router.common.server.PluginInfoService
 import party.morino.mineauth.core.web.router.common.server.PluginInfoServiceImpl
 
@@ -39,9 +45,19 @@ open class MineAuth: SuspendingJavaPlugin() {
     companion object {
         // MineAuth本体のエンドポイントを公開する名前空間（/api/v1/plugins/mineauth）
         const val CORE_NAMESPACE = "mineauth"
+
+        // 失効レコードのクリーンアップの間隔（1時間）。Bukkitのタイマーは20tickで1秒
+        private const val REVOCATION_CLEANUP_PERIOD_TICKS = 20L * 60 * 60
+
+        // 初回のクリーンアップまでの待ち時間（1分）。再起動が多いサーバーでも実行されるよう、1時間は待たない
+        private const val REVOCATION_CLEANUP_DELAY_TICKS = 20L * 60
     }
 
     private lateinit var plugin: MineAuth
+
+    // 失効レコードのクリーンアップのタイマー（データベースを閉じる前に止めるために保持する）
+    private var revocationCleanupTask: BukkitTask? = null
+
     override suspend fun onEnableAsync() {
         println("MineAuth is enabling...")
         plugin = this
@@ -50,12 +66,27 @@ open class MineAuth: SuspendingJavaPlugin() {
         registerApi()
         FileUtils.loadFiles()
         FileUtils.settingDatabase()
+        startRevocationCleanup()
         IntegrationInitializer.initialize()
         Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
             logger.info("MineAuth is enabled!")
             WebServer.settingServer()
             WebServer.startServer()
         })
+    }
+
+    /**
+     * 失効レコードの定期クリーンアップを開始する
+     * データベース接続に依存するため接続の後に呼び出し、メインスレッドを止めないよう非同期のタイマーで実行する
+     */
+    private fun startRevocationCleanup() {
+        val cleanup = RevocationRecordCleanup(logger)
+        revocationCleanupTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
+            plugin,
+            Runnable { runBlocking { cleanup.run() } },
+            REVOCATION_CLEANUP_DELAY_TICKS,
+            REVOCATION_CLEANUP_PERIOD_TICKS
+        )
     }
 
     /**
@@ -92,8 +123,14 @@ open class MineAuth: SuspendingJavaPlugin() {
             single<PluginDirectory> { PluginDirectoryImpl() }
             single { DatabaseConnector() }
             single<PluginInfoService> { PluginInfoServiceImpl() }
+            // Bearer認証とイントロスペクションで共有するトークン状態の検証
+            single { TokenStateValidator() }
             // リフレッシュトークンローテーションのreuse grace period用キャッシュ
             single { RefreshTokenResponseCache() }
+            // 認可コードのリプレイ検知用の使用済み記録
+            single { RedeemedCodeStore() }
+            // Argon2の同時実行数を制限するゲート（メモリの保護なので、設定の再読み込みでは作り直さない）
+            single { Argon2Gate() }
         }
 
         getOrNull() ?: GlobalContext.startKoin {
@@ -107,6 +144,7 @@ open class MineAuth: SuspendingJavaPlugin() {
             return
         }
         WebServer.stopServer()
+        revocationCleanupTask?.cancel()
         FileUtils.closeDatabase()
     }
 

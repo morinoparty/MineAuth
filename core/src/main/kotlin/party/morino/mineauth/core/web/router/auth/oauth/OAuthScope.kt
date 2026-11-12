@@ -1,5 +1,9 @@
 package party.morino.mineauth.core.web.router.auth.oauth
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+
 /**
  * OAuth2.0/OIDCで許可されるスコープの定義
  * RFC 6749 Section 3.3 準拠
@@ -16,11 +20,17 @@ enum class OAuthScope(val value: String) {
     // カスタムスコープ: プラグインAPIへのアクセスを許可する
     PLUGIN("plugin"),
     // カスタムスコープ: LuckPermsのロール情報を返す
-    ROLES("roles");
+    ROLES("roles"),
+    // OIDC Core Section 11: リフレッシュトークンの要求を表す
+    // MineAuthは要求の有無にかかわらずリフレッシュトークンを発行するので、受理するだけで追加のクレームは返さない
+    OFFLINE_ACCESS("offline_access");
 
     companion object {
+        // スコープ値からenumを引くためのマップ（許可リストの判定も兼ねる）
+        private val BY_VALUE = entries.associateBy { it.value }
+
         // 許可されたスコープ値のセット（高速なルックアップ用）
-        private val ALLOWED_VALUES = entries.map { it.value }.toSet()
+        private val ALLOWED_VALUES = BY_VALUE.keys
 
         /**
          * スコープ文字列をパースしてリストに変換する
@@ -68,5 +78,35 @@ enum class OAuthScope(val value: String) {
         fun normalize(scopeString: String): String {
             return parse(scopeString).joinToString(" ")
         }
+
+        /**
+         * 要求されたスコープから、実際に付与するスコープを決める
+         *
+         * openidを含むリクエストはOIDCのリクエストなので、OIDC Core 1.0 Section 3.1.2.1 に従い
+         * 認識できない値を無視する。この場合はopenid自体が必ず残るため失敗しない。
+         * openidを含まない素のOAuthリクエストは、RFC 6749 Section 3.3 で認められている厳格な扱いを保ち、
+         * 認識できない値が1つでもあれば失敗させる。
+         *
+         * 付与結果はトークンレスポンスのscopeとして返るので、リクエストの順序を保ったまま重複を除く
+         *
+         * @param requested スペース区切りのスコープ文字列
+         * @return 付与するスコープ、または付与できない理由
+         */
+        fun resolveGranted(requested: String): Either<InvalidScope, Set<OAuthScope>> {
+            val values = parse(requested)
+            // RFC 6749 Section 3.3: 空のスコープは付与するものが無いので失敗にする
+            if (values.isEmpty()) return InvalidScope(emptyList()).left()
+            val unknownValues = findInvalidScopes(requested)
+            if (OPENID.value !in values && unknownValues.isNotEmpty()) return InvalidScope(unknownValues).left()
+            return values.mapNotNull(BY_VALUE::get).toSet().right()
+        }
+
+        /**
+         * 付与したスコープをスペース区切りの文字列に変換する
+         *
+         * @param scopes 付与したスコープ
+         * @return スペース区切りのスコープ文字列
+         */
+        fun format(scopes: Set<OAuthScope>): String = scopes.joinToString(" ") { it.value }
     }
 }

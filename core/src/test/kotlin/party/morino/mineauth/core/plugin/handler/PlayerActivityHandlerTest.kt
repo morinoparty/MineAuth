@@ -8,7 +8,7 @@ import kotlin.test.assertNull
 
 /**
  * PlayerActivityHandlerの純粋関数部分のテスト
- * Bukkitに依存するエンドポイント本体はMockBukkitが必要なため対象外
+ * Bukkitに依存するエンドポイント本体はBukkitサーバーが必要なため対象外
  */
 class PlayerActivityHandlerTest {
 

@@ -27,17 +27,11 @@ The page is displayed in Japanese when the browser language is Japanese and in E
 
 ## Setting Up the Development Environment
 
-`@morinoparty/chlorophyll-react` is published to GitHub Packages, so pnpm needs a token with the `read:packages` scope. pnpm does not expand environment variables in credentials of the repository `.npmrc`, so the token has to be configured in the user-level `~/.npmrc`.
-
-```ini title="~/.npmrc"
-@morinoparty:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-```
-
-A GitHub CLI token that has the `read:packages` scope can be reused.
+`@morinoparty/chlorophyll-react` is published to the public npm registry, so no registry or token configuration is needed. Install the dependencies with pnpm.
 
 ```bash
-export NODE_AUTH_TOKEN=$(gh auth token)
+cd core/src/main/frontend
+pnpm install
 ```
 
 ## Building
@@ -64,4 +58,4 @@ pnpm dev
 
 ## CI
 
-The Gradle workflows set up pnpm and Node.js with `registry-url: https://npm.pkg.github.com` and pass `GITHUB_TOKEN` as `NODE_AUTH_TOKEN` with the `packages: read` permission. The `chlorophyll-react` package must grant read access to this repository in its package settings ("Manage Actions access").
+The Gradle workflows set up pnpm and Node.js before running Gradle. No registry authentication is required because all dependencies are installed from the public npm registry.

@@ -7,6 +7,7 @@ import io.papermc.paper.registry.data.dialog.action.DialogAction
 import io.papermc.paper.registry.data.dialog.body.DialogBody
 import io.papermc.paper.registry.data.dialog.input.DialogInput
 import io.papermc.paper.registry.data.dialog.input.SingleOptionDialogInput
+import io.papermc.paper.registry.data.dialog.input.TextDialogInput
 import io.papermc.paper.registry.data.dialog.type.DialogType
 import net.kyori.adventure.text.event.ClickCallback
 import net.kyori.adventure.text.Component
@@ -23,6 +24,7 @@ object OAuthClientCreateDialog {
     private const val KEY_CLIENT_NAME = "client_name"
     private const val KEY_CLIENT_TYPE = "client_type"
     private const val KEY_REDIRECT_URI = "redirect_uri"
+    private const val KEY_INTROSPECTION_ALLOWED = "introspection_allowed"
 
     // 入力フィールドの幅
     private const val INPUT_WIDTH_NAME = 300
@@ -31,7 +33,12 @@ object OAuthClientCreateDialog {
 
     // 入力フィールドの最大長
     private const val MAX_LENGTH_NAME = 64
-    private const val MAX_LENGTH_URI = 255
+    // 複数URIを改行区切りで入力するため、1件分より長くしておく
+    private const val MAX_LENGTH_URI = 2048
+
+    // リダイレクトURI入力欄の行数と高さ（複数URIを1行に1つずつ入力する）
+    private const val MAX_LINES_URI = 8
+    private const val HEIGHT_URI = 96
 
     /**
      * ダイアログを表示する
@@ -50,7 +57,7 @@ object OAuthClientCreateDialog {
                                 )
                             )
                         )
-                        .inputs(buildInputs())
+                        .inputs(buildInputs(player))
                         .build()
                 )
                 .type(
@@ -68,9 +75,11 @@ object OAuthClientCreateDialog {
 
     /**
      * 入力フィールドを構築する
+     *
+     * @param player 表示対象のプレイヤー（権限に応じて表示する入力を変える）
      */
-    private fun buildInputs(): List<DialogInput> {
-        return listOf(
+    private fun buildInputs(player: Player): List<DialogInput> {
+        val commonInputs = listOf<DialogInput>(
             // クライアント名（テキスト入力）
             DialogInput.text(KEY_CLIENT_NAME, Component.text("クライアント名"))
                 .width(INPUT_WIDTH_NAME)
@@ -97,12 +106,27 @@ object OAuthClientCreateDialog {
             ).width(INPUT_WIDTH_TYPE).build(),
 
             // リダイレクトURI（テキスト入力）
-            DialogInput.text(KEY_REDIRECT_URI, Component.text("リダイレクトURI"))
+            // 複数登録できるよう複数行入力にし、1行に1つのURIを書いてもらう
+            DialogInput.text(KEY_REDIRECT_URI, Component.text("リダイレクトURI（1行に1つ）"))
                 .width(INPUT_WIDTH_URI)
                 .initial("http://localhost:8080/callback")
                 .maxLength(MAX_LENGTH_URI)
+                .multiline(TextDialogInput.MultilineOptions.create(MAX_LINES_URI, HEIGHT_URI))
                 .build()
         )
+
+        // 許可する権限を持たないプレイヤーには選択肢を見せない（応答に含まれていてもハンドラーが拒否する）
+        if (!player.hasPermission(OAuthClientCreateHandler.INTROSPECTION_PERMISSION)) {
+            return commonInputs
+        }
+
+        // トークンイントロスペクションの許可（既定はオフ。Publicクライアントで選択すると作成時の検証で拒否する）
+        return commonInputs + DialogInput.bool(
+            KEY_INTROSPECTION_ALLOWED,
+            Component.text("トークンイントロスペクションを許可（Confidentialのみ）")
+        )
+            .initial(false)
+            .build()
     }
 
     /**
@@ -116,14 +140,16 @@ object OAuthClientCreateDialog {
                         // コールバック内で入力値を取得して処理
                         val clientName = view.getText(KEY_CLIENT_NAME)
                         val clientType = view.getText(KEY_CLIENT_TYPE)
-                        val redirectUri = view.getText(KEY_REDIRECT_URI)
+                        val redirectUris = view.getText(KEY_REDIRECT_URI)
+                        val introspectionAllowed = view.getBoolean(KEY_INTROSPECTION_ALLOWED)
 
                         // 非同期で作成処理を実行
                         OAuthClientCreateHandler.handleCreate(
                             player,
                             clientName ?: "",
                             clientType ?: "public",
-                            redirectUri ?: ""
+                            redirectUris ?: "",
+                            introspectionAllowed ?: false
                         )
                     },
                     ClickCallback.Options.builder()

@@ -1,7 +1,6 @@
 package party.morino.mineauth.core.commands
 
 import arrow.core.Either
-import com.auth0.jwt.JWT
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.incendo.cloud.annotations.Argument
@@ -13,6 +12,7 @@ import party.morino.mineauth.core.dialog.ServiceAccountCreateDialog
 import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.file.utils.JwtProvider
 import party.morino.mineauth.core.model.ServiceName
+import party.morino.mineauth.core.model.TokenKind
 import party.morino.mineauth.core.repository.AccountError
 import party.morino.mineauth.core.repository.AccountRepository
 import party.morino.mineauth.core.repository.AccountType
@@ -189,7 +189,7 @@ class ServiceAccountCommand : KoinComponent {
         val now = Date()
 
         // JwtProviderのキャッシュ済みアルゴリズムを使用して署名
-        val token = JWT.create()
+        val token = JwtProvider.newToken(TokenKind.SERVICE)
             .withIssuer(jwtConfigData.issuer)
             .withExpiresAt(Date(now.time + TOKEN_LIFETIME_MS))
             .withIssuedAt(now)
@@ -197,7 +197,6 @@ class ServiceAccountCommand : KoinComponent {
             .withClaim("account_id", account.accountId)
             .withClaim("account_type", "service")
             .withClaim("identifier", account.identifier)
-            .withClaim("token_type", "service_token")
             .sign(JwtProvider.algorithm)
 
         // トークンハッシュを計算してDBに保存

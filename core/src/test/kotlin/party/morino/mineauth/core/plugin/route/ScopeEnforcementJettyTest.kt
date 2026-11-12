@@ -21,11 +21,17 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.koin.core.context.startKoin
+import org.koin.core.context.stopKoin
+import org.koin.dsl.module
 import party.morino.mineauth.api.CallerType
+import party.morino.mineauth.core.file.data.JWTConfigData
 import party.morino.mineauth.core.plugin.annotation.EndpointAccess
 import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
@@ -33,6 +39,7 @@ import party.morino.mineauth.core.plugin.annotation.PathSegment
 import party.morino.mineauth.core.plugin.dispatch.NamespaceTable
 import party.morino.mineauth.core.plugin.dispatch.PluginEndpointDispatcher
 import party.morino.mineauth.core.plugin.execution.DefaultMethodExecutionHandlerFactory
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.reflect.typeOf
 
@@ -43,6 +50,19 @@ import kotlin.reflect.typeOf
  * JWTPrincipalをbearerプロバイダから注入し、AuthenticationHandlerのスコープ判定だけを確認する
  */
 class ScopeEnforcementJettyTest {
+
+    @BeforeEach
+    fun setUp() {
+        // 認証エラー時のWWW-AuthenticateヘッダーはKoinのJWTConfigDataからrealmを取得する
+        startKoin {
+            modules(module { single { JWTConfigData(realm = "MineAuth", keyId = UUID.randomUUID()) } })
+        }
+    }
+
+    @AfterEach
+    fun tearDown() {
+        stopKoin()
+    }
 
     private class Handler {
         fun secret(): String = "secret"
@@ -122,6 +142,9 @@ class ScopeEnforcementJettyTest {
         val body = response.bodyAsText()
         assertTrue(body.contains("\"code\":\"insufficient_scope\""), body)
         assertTrue(body.contains("\"required_scope\":\"plugin\""), body)
+        val challenge = response.headers[HttpHeaders.WWWAuthenticate].orEmpty()
+        assertTrue(challenge.startsWith("Bearer realm=\"MineAuth\", error=\"insufficient_scope\""), challenge)
+        assertTrue(challenge.endsWith("scope=\"plugin\""), challenge)
     }
 
     @Test
@@ -135,6 +158,8 @@ class ScopeEnforcementJettyTest {
     @Test
     @DisplayName("Missing token on an authenticated endpoint is 401")
     fun missingTokenIsUnauthorized() = withServer { client, url ->
-        assertEquals(HttpStatusCode.Unauthorized, client.get(url).status)
+        val response = client.get(url)
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+        assertEquals("Bearer realm=\"MineAuth\"", response.headers[HttpHeaders.WWWAuthenticate])
     }
 }
