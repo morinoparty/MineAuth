@@ -1,0 +1,118 @@
+---
+title: Authorization Endpoint
+description: Authorization endpoint behavior, parameters, and validation order
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The authorization endpoint starts the Authorization Code flow with PKCE. It validates the request, displays the login page, and redirects to the client with an authorization code after the player signs in.
+
+## Endpoint
+
+```
+GET  /oauth2/authorize
+POST /oauth2/authorize
+```
+
+Both methods accept the same parameters and behave the same way. `GET` reads them from the query string. `POST` reads them from the form body (`application/x-www-form-urlencoded`), as required by OpenID Connect Core 1.0 Section 3.1.2.1.
+
+A `POST` that contains `username` or `password` is treated as the submission of the login form. Any other `POST` is an authorization request and displays the login page. A login submission passes through the same validation as an authorization request, so the values sent back by the form are not trusted.
+
+## Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `client_id` | Yes | The client identifier. |
+| `redirect_uri` | Yes | Must match a redirect URI registered for the client. |
+| `response_type` | Yes | Must be `code`. |
+| `state` | Yes | Opaque value returned to the client. See below. |
+| `scope` | Yes | Space-separated scopes. See [Scopes](./scopes). |
+| `code_challenge` | Yes | The PKCE code challenge. |
+| `code_challenge_method` | Yes | Must be `S256`. |
+| `nonce` | No | Copied into the ID Token. |
+| `prompt` | No | See [prompt](#prompt). |
+
+A parameter sent without a value, or with a value that contains only whitespace, is treated as if it were omitted (RFC 6749 Section 3.1).
+
+A parameter that appears more than once is rejected, even when one of its values is empty, because MineAuth cannot tell which value the client meant (RFC 6749 Section 3.1). This applies to the parameters in the table above, `request`, `request_uri`, `username`, and `password`. Other parameters are not read, so repeating them has no effect.
+
+RFC 6749 only recommends `state`, but MineAuth requires it to protect the redirect against cross-site request forgery. A request without `state` fails with `invalid_request`.
+
+## Validation Order
+
+The request is checked in the following order, and the first failure determines the response.
+
+| Order | Check | Error | Response |
+|-------|-------|-------|----------|
+| 1 | `client_id` or `redirect_uri` is missing, repeated, or invalid | None | `400` with no redirect |
+| 2 | Any other parameter read by this endpoint is repeated | `invalid_request` | Redirect |
+| 3 | `request` is present | `request_not_supported` | Redirect |
+| 4 | `request_uri` is present | `request_uri_not_supported` | Redirect |
+| 5 | `prompt` contains `none` with another value | `invalid_request` | Redirect |
+| 6 | `prompt` is `none` | `login_required` | Redirect |
+| 7 | `response_type` is missing | `invalid_request` | Redirect |
+| 8 | `response_type` is not `code` | `unsupported_response_type` | Redirect |
+| 9 | `state` is missing | `invalid_request` | Redirect |
+| 10 | `scope` is missing or is not accepted (see [Scopes](./scopes#scope-validation)) | `invalid_scope` | Redirect |
+| 11 | `code_challenge` is missing, or `code_challenge_method` is not `S256` | `invalid_request` | Redirect |
+
+MineAuth never redirects to a `redirect_uri` that it has not validated against the registered client, as required by RFC 6749 Section 4.1.2.1. Other errors are returned to the validated `redirect_uri`. See [Error Responses](./error-responses#authorization-endpoint-errors) for the format.
+
+A repeated parameter is rejected before any value is checked. For example, `prompt=login&prompt=none` and `request=&request=eyJ...` both fail with `invalid_request`. When `state` itself is repeated, the error redirect has no `state`, because there is no single value to return.
+
+`username` and `password` are checked only for repetition here. Whitespace is not treated as omitted for these two parameters, because a password made up of spaces is a valid value.
+
+## Login Rate Limits
+
+A login submission that passes the checks above and contains `username` and `password` is then checked against the login limits, before the password is evaluated. When the submission is limited, the password is not evaluated, and the response is a redirect to the validated `redirect_uri` with `error=temporarily_unavailable`, as RFC 6749 Section 4.1.2.1 specifies.
+
+```
+?error=temporarily_unavailable&error_description=Too+many+login+attempts.+Retry+after+30+seconds&state=...
+```
+
+The redirect also carries a `Retry-After` header with the wait in seconds. Browsers do not pass that header on to the client when they follow the redirect, so `error_description` states the wait as well.
+
+The client should show the player a message and start the flow again after the wait. See [Rate Limiting](/docs/administrator/config/rate-limit) for the limits.
+
+The same error is returned when the server is already checking as many passwords as it allows, or when the player's address already has two password checks waiting or running, and no slot became free within about 2 seconds. See [Share per Client Address](/docs/administrator/config/rate-limit#share-per-client-address). In that case the password was not evaluated, the attempt does not count as a failed login, `Retry-After` is 1 second, and the description reads as follows.
+
+```
+?error=temporarily_unavailable&error_description=The+server+is+busy.+Retry+later&state=...
+```
+
+## prompt
+
+| Value | Behavior |
+|-------|----------|
+| `none` | Fails with `login_required`, because MineAuth keeps no login session and cannot authenticate silently. |
+| `login` | Displays the login page. Every authorization request already requires signing in. |
+| `consent` | Displays the login page, which also lists the requested permissions. |
+| `select_account` | Displays the login page, where any account can be entered. |
+
+Combining `none` with any other value fails with `invalid_request`, and so does repeating the `prompt` parameter. Other values are ignored.
+
+## Unsupported Parameters
+
+Request objects are not supported. A request that contains `request` or `request_uri` is rejected instead of being processed from its plain parameters, as required by OpenID Connect Core 1.0 Section 6. Repeating either parameter fails with `invalid_request`.
+
+## Security Headers
+
+Every response from this endpoint, including error pages and redirects, carries the following headers.
+
+```
+Content-Security-Policy: frame-ancestors 'none'
+X-Frame-Options: DENY
+Cache-Control: no-store
+```
+
+The first two headers stop other sites from embedding the login page in a frame, which prevents clickjacking (RFC 9700 Section 4.16). The endpoint therefore cannot be displayed in an iframe.
+
+<Callout type="warn">
+  Reverse proxies must not remove these headers.
+</Callout>
+
+## References
+
+- [RFC 6749 - Authorization Endpoint](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1)
+- [RFC 9700 - Clickjacking](https://datatracker.ietf.org/doc/html/rfc9700#section-4.16)
+- [OpenID Connect Core 1.0 - Authentication Request](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest)

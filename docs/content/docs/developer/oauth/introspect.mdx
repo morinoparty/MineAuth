@@ -4,7 +4,13 @@ description: Token introspection endpoint specification based on RFC 7662
 icon: Search
 ---
 
+import { Callout } from 'fumadocs-ui/components/callout';
+
 The Token Introspection endpoint allows resource servers to query the authorization server about the state of a token and retrieve associated metadata.
+
+<Callout type="warn">
+  **Breaking change:** a client now needs a permission to use this endpoint. After upgrading, every client receives `403 unauthorized_client` here until a server administrator grants the permission. See [Upgrading](#upgrading).
+</Callout>
 
 ## Endpoint
 
@@ -14,11 +20,51 @@ POST /oauth2/introspect
 
 ## Authentication
 
-Client authentication is required. Only confidential clients can introspect tokens.
+Client authentication is required. Only confidential clients can authenticate at this endpoint, and they also need the [permission](#permission) described below.
 
 Supported authentication methods:
 - `client_secret_post`: Include `client_id` and `client_secret` in the request body
 - `client_secret_basic`: Use HTTP Basic authentication header
+
+See [Client Authentication](./error-responses#client-authentication) and [Request Parameters](./error-responses#request-parameters) for how malformed credentials, empty values, and repeated parameters are handled.
+
+## Permission
+
+Authentication alone does not give access to this endpoint. RFC 7662 Section 4 recommends that protected resources are specifically authorized, because otherwise any registered client could read the metadata of tokens issued to other clients.
+
+A client does not have the permission until a server administrator grants it. These commands require the `mineauth.client.introspection` permission node:
+
+```
+/mineauth client introspection allow <clientId>
+/mineauth client introspection deny <clientId>
+```
+
+- The permission can also be turned on when a confidential client is created with the `/mineauth client create` dialog. This option also requires `mineauth.client.introspection`, so `mineauth.client.create` alone cannot grant the permission.
+- `/mineauth client info <clientId>` shows the current state.
+- A change applies from the next request. No restart or reload is needed.
+- Public clients cannot hold the permission, because they cannot authenticate at this endpoint.
+
+The endpoint checks client authentication first, then the permission, and only then the token. A client without the permission receives the same `403` response for every token, so it learns nothing about the token. The rejection is explicit rather than `active: false`, because reporting every token as inactive would look like an outage.
+
+### What an Authorized Client Can See
+
+An authorized client can introspect any token, including tokens issued to other clients. Responses are not limited by audience. The `aud` claim of a MineAuth token holds the client ID of the relying party the token was issued to, so the tokens a resource server receives never name that resource server, and limiting responses by `aud` would report all of them as inactive.
+
+Grant the permission only to services you trust with the metadata of every token, which includes the player UUID, player name and scopes.
+
+## Upgrading
+
+This is a breaking change. Earlier versions let every confidential client use this endpoint.
+
+1. At the first start after upgrading, MineAuth adds the `introspection_allowed` column to the `oauth_clients` table. No manual database work is needed, but the database user must be allowed to alter the table. Existing clients keep their data and start without the permission.
+2. From then on, every client that calls this endpoint receives `403 unauthorized_client`, even if its credentials are correct. Tokens themselves are not affected, so Bearer authentication keeps working.
+3. Grant the permission to each client that relies on this endpoint:
+
+   ```
+   /mineauth client introspection allow <clientId>
+   ```
+
+The `error_description` of the `403` response contains this command with the client ID filled in, and the server logs it as a warning, so you can see which clients need the permission.
 
 ## Request
 
@@ -34,8 +80,8 @@ application/x-www-form-urlencoded
 |-----------|----------|-------------|
 | `token` | Yes | The token to introspect |
 | `token_type_hint` | No | A hint about the type of the token (`access_token` or `refresh_token`) |
-| `client_id` | Yes | The client identifier |
-| `client_secret` | Yes | The client secret |
+| `client_id` | With `client_secret_post` | The client identifier |
+| `client_secret` | With `client_secret_post` | The client secret |
 
 ### Example Request
 
@@ -73,13 +119,33 @@ When the token is valid and active, the response includes metadata about the tok
 
 ### Inactive Token
 
-For invalid, expired, or revoked tokens, the response only contains the `active` field set to `false`.
+For any token that is not active, the response only contains the `active` field set to `false`.
 
 ```json
 {
   "active": false
 }
 ```
+
+### When a Token Is Active
+
+A token is reported as active only when its signature, issuer and expiry are valid, its kind is one of those below, and it passes the state checks for that kind. For access tokens and service account tokens, these are the same checks MineAuth applies when the token is presented as a Bearer token, including the 3-second allowance for clock differences, so the two results cannot differ.
+
+| Token kind | `typ` header | State checks | `token_type` in the response |
+|------------|--------------|--------------|------------------------------|
+| Access token | `at+jwt` | The client exists and the `jti` is not revoked | `Bearer` |
+| Refresh token | `rt+jwt` | The client exists and the `jti` is not revoked | Omitted |
+| Service account token | `service+jwt` | The account exists and the token has not been revoked or reissued | `Bearer` |
+
+Refresh tokens cannot be used as Bearer tokens. This endpoint applies the same 3-second allowance to them, but the token endpoint applies none, so a refresh token can be reported as active for up to 3 seconds after the token endpoint stops accepting it.
+
+ID tokens and tokens of an unknown kind are always reported as `active: false`, because they do not represent access to a resource. If the server cannot read the token state, for example during a database failure, the token is also reported as `active: false`.
+
+Tokens issued before the `typ` header was introduced have `typ: JWT` and are classified by their `token_type` claim, so they stay active until they expire. Service account tokens are valid for one year, so older ones can be presented for that long.
+
+In addition to the checks in the table, an access token or refresh token with a `grant_id` claim is reported as `active: false` once its [grant](./refresh-token-rotation#grants) has been revoked, even if its own `jti` was never revoked. A grant is revoked when a refresh token of that grant is revoked or reused after the grace period, or when its authorization code is replayed. Tokens without the claim were issued before grants were introduced and are checked by their `jti` only.
+
+Introspecting a service account token does not count as using it, so its last used time is not updated.
 
 ### Response Fields
 
@@ -89,7 +155,7 @@ For invalid, expired, or revoked tokens, the response only contains the `active`
 | `scope` | string | Space-separated list of scopes |
 | `client_id` | string | Client identifier the token was issued to |
 | `username` | string | Minecraft player name associated with the token |
-| `token_type` | string | Token type (`Bearer` for access tokens) |
+| `token_type` | string | `Bearer` for access tokens and service account tokens. Omitted for refresh tokens |
 | `exp` | number | Token expiration time (Unix timestamp in seconds) |
 | `iat` | number | Token issued at time (Unix timestamp in seconds) |
 | `nbf` | number | Token not-before time (Unix timestamp in seconds) |
@@ -100,17 +166,35 @@ For invalid, expired, or revoked tokens, the response only contains the `active`
 
 ### Error Response
 
-| Error Code | Description |
-|------------|-------------|
-| `invalid_request` | Missing required parameter or multiple authentication methods used |
-| `invalid_client` | Client authentication failed or client type mismatch |
+| Error Code | Status | Description |
+|------------|--------|-------------|
+| `invalid_request` | 400 | Missing required parameter or multiple authentication methods used |
+| `invalid_client` | 401 | Client authentication failed or client type mismatch |
+| `unauthorized_client` | 403 | The client authenticated successfully but does not have the [permission](#permission) |
+| `temporarily_unavailable` | 429, 503 | Client authentication is blocked after repeated failures (429), or the server had no capacity to verify the client secret (503). See [Rate Limited](./error-responses#rate-limited) and [Server Busy](./error-responses#server-busy) |
+| `server_error` | 500 | The client registration could not be read. The client should retry |
+
+At this endpoint `unauthorized_client` uses status `403`, because the client is authenticated and the request itself is valid. The `400` listed in [Error Codes](./error-responses#error-codes) applies to the token endpoint.
+
+Example of a rejected client:
+
+```json
+{
+  "error": "unauthorized_client",
+  "error_description": "This client is not allowed to introspect tokens. A server administrator must grant the permission with: /mineauth client introspection allow your-client-id"
+}
+```
 
 ## Security Considerations
 
-- The introspection endpoint always returns HTTP 200 OK, even for inactive tokens, to prevent information leakage
-- Only confidential clients are authorized to use this endpoint
+- For a client with the permission, the introspection endpoint always returns HTTP 200 OK, even for inactive tokens, to prevent information leakage
+- Only confidential clients that a server administrator has granted the permission can use this endpoint
+- A client without the permission is rejected before the token is examined
+- An authorized client can introspect tokens issued to any client
 - Expired tokens are reported as inactive (`active: false`)
-- Revoked tokens are reported as inactive (`active: false`)
+- Revoked tokens are reported as inactive (`active: false`), including revoked or reissued service account tokens
+- Tokens whose client or service account was deleted are reported as inactive (`active: false`)
+- Tokens of a revoked grant are reported as inactive (`active: false`)
 
 ## References
 

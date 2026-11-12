@@ -144,6 +144,8 @@ See the contributor documentation for the full span and attribute catalog.
 - Span names never contain identifiers; UUID values in span names are automatically masked as an additional safeguard
 - Player UUIDs may appear as the `mineauth.player.uuid` span attribute (pseudonymous identifier, required for correlation)
 - Usernames, passwords, client secrets, tokens, authorization codes, and PKCE verifiers are never recorded
+- `url.path` on HTTP server spans holds the route template, such as `/api/v1/plugins/vault/balance/{player}`, instead of the concrete path
+- `url.query` on HTTP server spans keeps the parameter names and replaces every value with `REDACTED`, on every route. For example, `GET /oauth2/end_session?id_token_hint=eyJ...&state=abc` is recorded as `id_token_hint=REDACTED&state=REDACTED`. A trace shows which parameters a request sent, but not the ID token, `state`, `nonce`, or `code_challenge` values. A parameter sent without `=` is kept as it is
 
 ### Supported Backends
 

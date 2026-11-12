@@ -5,7 +5,7 @@ description: OAuth 2.0 scope definitions and validation
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-MineAuth validates requested scopes according to RFC 6749 Section 3.3. Only scopes defined below are accepted; requesting an unknown scope will result in an `invalid_scope` error.
+MineAuth validates requested scopes according to RFC 6749 Section 3.3 and OpenID Connect Core 1.0 Section 3.1.2.1. How an unknown scope value is handled depends on whether the request includes `openid`.
 
 ## Supported Scopes
 
@@ -16,24 +16,41 @@ MineAuth validates requested scopes according to RFC 6749 Section 3.3. Only scop
 | `email` | Returns `email`, `email_verified`. Requires `emailFormat` configuration. |
 | `plugin` | Grants access to plugin data APIs. |
 | `roles` | Returns `roles` (LuckPerms group names). |
+| `offline_access` | The standard way to request a refresh token. It adds no claims, and MineAuth issues a refresh token whether or not it is requested. |
+
+`offline_access` is listed in `scopes_supported` in the discovery document.
 
 ## Scope Validation
 
-Scopes are validated at the authorization endpoint (`/oauth2/authorize`). If any of the requested scopes are not in the supported list, the server responds with an `invalid_scope` error redirect.
+Scopes are validated at the [authorization endpoint](./authorization) (`/oauth2/authorize`).
+
+| Requested `scope` | Result |
+|-------------------|--------|
+| `openid offline_access` | Granted as requested. |
+| `openid unknown_scope` | `openid` is granted and `unknown_scope` is dropped. |
+| `profile unknown_scope` | Fails with `invalid_scope`. |
+| `unknown_scope` | Fails with `invalid_scope`. |
+| Missing or empty | Fails with `invalid_scope`. |
+
+A request that includes `openid` is an OIDC request, so values that MineAuth does not understand are ignored. A request without `openid` is a plain OAuth 2.0 request, and any unknown value fails the whole request.
+
+A failed request results in an error redirect.
 
 ```
-GET /oauth2/authorize?response_type=code&client_id=...&scope=openid+unknown_scope&...
+GET /oauth2/authorize?response_type=code&client_id=...&scope=profile+unknown_scope&...
 ```
-
-The redirect will include:
 
 ```
 ?error=invalid_scope&error_description=Invalid+scope(s):+unknown_scope&state=...
 ```
 
+## Granted Scope
+
+The granted scope is the requested scope without dropped values and without duplicates. The authorization page lists only the granted scope, and the login submission resolves it again on the server, so changing the form cannot grant an unknown value.
+
 ## Scope in Token Response
 
-The token endpoint returns the granted scopes in the `scope` field of the token response, as specified by RFC 6749 Section 5.1.
+The token endpoint returns the granted scopes in the `scope` field of the token response, as specified by RFC 6749 Section 5.1. A client must read this field, because it can differ from the requested scope. Refreshing a token keeps the granted scope.
 
 ```json
 {

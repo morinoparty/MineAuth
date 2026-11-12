@@ -54,7 +54,6 @@ dependencies {
     testImplementation(libs.bundles.junit.jupiter)
     testImplementation(libs.bundles.koin.test)
     testImplementation(libs.mockk)
-    testImplementation(libs.mock.bukkit)
     testImplementation(libs.ktor.server.test.host)
     // OpenTelemetryのテスト用（InMemorySpanExporter / InMemoryMetricReader）
     testImplementation(libs.opentelemetry.sdk.testing)
@@ -67,6 +66,8 @@ dependencies {
     // コルーチンのテスト用（runTest / TestScheduler）
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.bundles.exposed)
+    // マイグレーションのテスト用（本番ではPaperサーバーに同梱されたドライバを使う）
+    testImplementation(libs.sqlite.jdbc)
     testImplementation(libs.koin.core)
     testImplementation(libs.arrow.core)
     testImplementation(libs.bundles.ktor.server)
@@ -77,6 +78,18 @@ dependencies {
     testImplementation(libs.hikari)
     testImplementation(libs.luckperms.api)
     testImplementation(kotlin("stdlib-jdk8"))
+}
+
+// ゲームテスト（fukurou）: 本物の Paper サーバーに shadowJar を入れ、JUnit から HTTP とコンソールで確かめる。
+// Xvfb・xdotool・xmodmap が無いホストでは動かないため、check / build / test には繋がず :core:gameTest で明示的に実行する
+val gameTest: SourceSet = sourceSets.create("gameTest")
+
+dependencies {
+    // fukurou は JUnit 6 の suspend テストに必要な kotlin-reflect と kotlinx-coroutines も持ち込む
+    "gameTestImplementation"(libs.fukurou)
+    "gameTestImplementation"(libs.bundles.junit.jupiter)
+    // OIDC Discovery と JWK Set のレスポンスを読む
+    "gameTestImplementation"(libs.kotlinx.serialization.json)
 }
 
 
@@ -123,7 +136,6 @@ val runtimeLibraries =
     }
 
 // 認可画面（React + Chlorophyll）のフロントエンド
-// @morinoparty/chlorophyll-react は GitHub Packages にあるため、pnpm の認証設定が必要（docs 参照）
 val frontendDir = layout.projectDirectory.dir("src/main/frontend")
 
 // 依存パッケージのインストール。lockfile が変わったときだけ実行する
@@ -206,6 +218,39 @@ tasks {
         downloadPlugins {
             downloadPlugins.from(plugins)
         }
+    }
+}
+
+// fukurou のゲームテスト。どのタスクからも依存させない（./gradlew build と :core:test の挙動を変えないため）
+tasks.register<Test>("gameTest") {
+    group = "verification"
+    description = "Runs the in-game tests on a real Paper server with fukurou (needs Xvfb, xdotool and xmodmap)"
+    testClassesDirs = gameTest.output.classesDirs
+    classpath = gameTest.runtimeClasspath
+    useJUnitPlatform()
+
+    // テスト対象は本番と同じ shadowJar（Paper の libraries で依存を取得させる構成ごと確かめる）
+    dependsOn(tasks.shadowJar)
+    val pluginJar = tasks.shadowJar.flatMap { it.archiveFile }
+    inputs.file(pluginJar)
+    // -Pfukurou.* をすべて -D としてテストの JVM に渡す。-Pfukurou.plugin.mineauth を渡せば JAR を差し替えられる
+    val forwarded = providers.gradlePropertiesPrefixedBy("fukurou.")
+    jvmArgumentProviders.add(
+        CommandLineArgumentProvider {
+            val properties = mapOf("fukurou.plugin.mineauth" to pluginJar.get().asFile.absolutePath) + forwarded.get()
+            properties.map { (key, value) -> "-D$key=$value" }
+        },
+    )
+
+    // fukurou はテストを 1 件ずつ実行する前提なので、テストの JVM は 1 つにする
+    maxParallelForks = 1
+    // 結果は実サーバーとネットワークに依存するため、入力が同じでも毎回実行し、ビルドキャッシュからも復元しない
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("The game tests start a real Paper server") { true }
+    testLogging {
+        showStandardStreams = true
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
 

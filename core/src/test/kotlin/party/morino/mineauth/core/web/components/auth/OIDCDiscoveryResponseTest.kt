@@ -39,6 +39,29 @@ class OIDCDiscoveryResponseTest {
         }
 
         @Test
+        @DisplayName("Uses base URL with path as issuer and endpoint prefix")
+        fun usesBaseUrlWithPathAsIssuer() {
+            val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com/main/")
+            assertEquals("https://api.example.com/main", response.issuer)
+            assertEquals("https://api.example.com/main/oauth2/authorize", response.authorizationEndpoint)
+            assertEquals("https://api.example.com/main/.well-known/jwks.json", response.jwksUri)
+        }
+
+        @Test
+        @DisplayName("Includes revocation endpoint")
+        fun includesRevocationEndpoint() {
+            val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com")
+            assertEquals("https://api.example.com/oauth2/revoke", response.revocationEndpoint)
+        }
+
+        @Test
+        @DisplayName("Declares request_uri parameter as unsupported")
+        fun declaresRequestUriUnsupported() {
+            val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com")
+            assertEquals(false, response.requestUriParameterSupported)
+        }
+
+        @Test
         @DisplayName("Always includes plugin scope")
         fun includesPluginScope() {
             val response = OIDCDiscoveryResponse.fromBaseUrl("https://api.example.com")

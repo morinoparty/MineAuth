@@ -22,9 +22,13 @@ MineAuth uses OpenTelemetry for distributed tracing and metrics. This page descr
 
 Updating `http.route` and setting span attributes both require the OpenTelemetry context that holds the server span. Inside the request handler coroutine `Context.current()` is **not** reliable — under the Jetty engine an authentication interceptor can switch threads and leave `Context.current()` without the server span, so `HttpServerRoute.update` would silently no-op. To avoid this, the sanitizer captures `Context.current()` at `RoutingRoot.RoutingCallStarted` (where it is guaranteed to hold the server span) and stashes it in `call.attributes`. `ApplicationCall.otelServerContext()` reads it back, so the dispatcher never depends on the handler-thread context. `RoutingCall.attributes` is the same bag across the routing pipeline, so the value survives into the handler.
 
-### `url.path` templating
+### `url.path` templating and `url.query` redaction
 
 `KtorServerTelemetry` records `url.path` as the concrete request path (e.g. `/api/v1/plugins/vault/balance/_Steve`), which embeds player names — PII under the rules below. An `attributesExtractor { onEnd { … } }` on the telemetry plugin overwrites `url.path` with the resolved route template stashed in `call.attributes` (`OTEL_ROUTE_TEMPLATE`), so `url.path` becomes `/api/v1/plugins/vault/balance/{player}` and never carries the concrete identifier.
+
+The same extractor overwrites `url.query`. The library records the raw query string, which carries `id_token_hint` on `GET /oauth2/end_session` (a signed ID token that can include the name, email, and roles) and `state`, `nonce`, and `code_challenge` on `GET /oauth2/authorize`. `redactQueryValues` keeps each parameter name and replaces its value with `REDACTED`, so the query becomes `id_token_hint=REDACTED&state=REDACTED`. This applies to every route. Attributes set in `onEnd` replace the values the library set when the span started, so the exported span holds only the redacted form.
+
+Both overrides live in `redactUrlAttributes()` (`UrlAttributeRedaction.kt`), which `WebServer` calls inside `install(KtorServerTelemetry) { … }`. Tests that install `KtorServerTelemetry` should call the same function instead of copying the extractor.
 
 When observability is disabled there is no route state on the context, and `HttpServerRoute.update`, `Span.setAttribute`, and the attribute extractor all become no-ops, so these calls are always safe.
 
@@ -45,7 +49,7 @@ When observability is disabled there is no route state on the context, and `Http
 | `db.<table>.<operation>` | Repositories, `OAuthService` | `db.system.name`, `db.collection.name`, `db.operation.name` |
 | `mineauth.plugin.handler` | `RouteExecutor` (all addon routes) | `mineauth.handler.class`, `mineauth.endpoint.path`, `mineauth.endpoint.method` |
 
-In addition, `respondOAuthError` records `mineauth.oauth.error_code` and sets the span status to `ERROR` on the current span for every OAuth error response.
+In addition, `respondOAuthError` and `markRateLimited` (used by every rate limited response) record `mineauth.oauth.error_code` and set the span status to `ERROR` on the current span for every OAuth error response.
 
 ### Addon request enrichment
 

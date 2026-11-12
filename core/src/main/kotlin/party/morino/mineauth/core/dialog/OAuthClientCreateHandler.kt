@@ -2,6 +2,7 @@ package party.morino.mineauth.core.dialog
 
 import arrow.core.Either
 import com.github.shynixn.mccoroutine.bukkit.launch
+import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.entity.Player
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -11,7 +12,7 @@ import party.morino.mineauth.core.repository.ClientType
 import party.morino.mineauth.core.repository.OAuthClientCreationResult
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
-import java.net.URI
+import party.morino.mineauth.core.utils.RedirectUriValidator
 
 /**
  * OAuthクライアント作成処理を行うハンドラ
@@ -20,26 +21,44 @@ import java.net.URI
 object OAuthClientCreateHandler : KoinComponent {
     private val plugin: MineAuth by inject()
 
+    // トークンイントロスペクションの権限を変更するための権限ノード
+    // 作成時の選択にも同じノードを要求し、mineauth.client.create だけで権限を自己付与できないようにする
+    internal const val INTROSPECTION_PERMISSION = "mineauth.client.introspection"
+
     /**
      * クライアント作成を処理する
      * @param player 実行したプレイヤー
      * @param clientName クライアント名
      * @param clientType クライアント種別（"public" or "confidential"）
-     * @param redirectUri リダイレクトURI
+     * @param redirectUriInput リダイレクトURIの入力値（改行区切りで複数指定できる）
+     * @param introspectionAllowed トークンイントロスペクションを許可するか（Confidentialクライアントのみ選択できる）
      */
     fun handleCreate(
         player: Player,
         clientName: String,
         clientType: String,
-        redirectUri: String
+        redirectUriInput: String,
+        introspectionAllowed: Boolean
     ) {
         // コルーチンスコープで非同期処理を実行
         plugin.launch {
-            // バリデーション
-            val validationResult = validate(clientName, clientType, redirectUri)
-            if (validationResult is Either.Left) {
-                player.sendRichMessage("<red>${validationResult.value}</red>")
-                return@launch
+            // バリデーション（成功時は整形済みのリダイレクトURI一覧を得る）
+            val redirectUris = when (
+                val validationResult = validate(
+                    clientName,
+                    clientType,
+                    redirectUriInput,
+                    introspectionAllowed,
+                    // ダイアログの応答はクライアントが組み立てるため、選択肢の表示制御だけに頼らずここで判定する
+                    canGrantIntrospection = player.hasPermission(INTROSPECTION_PERMISSION)
+                )
+            ) {
+                is Either.Left -> {
+                    // 拒否理由には入力されたURIが含まれるため、MiniMessageのタグとして解釈させない
+                    player.sendRichMessage("<red>${MiniMessage.miniMessage().escapeTags(validationResult.value)}</red>")
+                    return@launch
+                }
+                is Either.Right -> validationResult.value
             }
 
             // プレイヤーのアカウントを取得または作成
@@ -59,8 +78,9 @@ object OAuthClientCreateHandler : KoinComponent {
             val result = OAuthClientRepository.create(
                 clientName = clientName,
                 clientType = type,
-                redirectUri = redirectUri,
-                issuerAccountId = account.accountId
+                redirectUris = redirectUris,
+                issuerAccountId = account.accountId,
+                introspectionAllowed = introspectionAllowed
             )
 
             // 結果の表示
@@ -73,12 +93,17 @@ object OAuthClientCreateHandler : KoinComponent {
 
     /**
      * 入力値のバリデーション
+     *
+     * @param canGrantIntrospection 実行者がトークンイントロスペクションを許可できるか
+     * @return 成功時は整形済みのリダイレクトURI一覧、失敗時はエラーメッセージ
      */
-    private fun validate(
+    internal fun validate(
         clientName: String,
         clientType: String,
-        redirectUri: String
-    ): Either<String, Unit> {
+        redirectUriInput: String,
+        introspectionAllowed: Boolean,
+        canGrantIntrospection: Boolean
+    ): Either<String, List<String>> {
         // クライアント名のチェック
         if (clientName.isBlank()) {
             return Either.Left("クライアント名を入力してください")
@@ -92,47 +117,22 @@ object OAuthClientCreateHandler : KoinComponent {
             return Either.Left("無効なクライアント種別です")
         }
 
-        // リダイレクトURIのチェック
-        if (redirectUri.isBlank()) {
-            return Either.Left("リダイレクトURIを入力してください")
-        }
-        if (!isValidRedirectUri(redirectUri)) {
-            return Either.Left("無効なリダイレクトURI形式です")
-        }
-
-        return Either.Right(Unit)
-    }
-
-    /**
-     * リダイレクトURIの形式チェック
-     * 認可時の検証（OAuthValidation.validateRedirectUri）が正規表現パターンを
-     * サポートしているため、通常のURIに加えて正規表現パターンも受け付ける
-     */
-    private fun isValidRedirectUri(uri: String): Boolean {
-        // 通常のURIとしてパースできればOK（最も一般的なケース）
-        val isPlainUri = try {
-            val parsed = URI(uri)
-            // スキームとホストが存在することを確認
-            parsed.scheme != null && parsed.host != null
-        } catch (e: Exception) {
-            false
-        }
-        if (isPlainUri) {
-            return true
+        // Publicクライアントはイントロスペクションエンドポイントで認証できないため、権限を持てない
+        // 黙って無視すると許可したつもりになるので、作成せずに理由を伝える
+        if (introspectionAllowed && ClientType.fromValue(clientType) != ClientType.CONFIDENTIAL) {
+            return Either.Left(
+                "トークンイントロスペクションはConfidentialクライアントにのみ許可できます。" +
+                    "種別をConfidentialにするか、チェックを外してください"
+            )
         }
 
-        // 正規表現パターンとして受け付ける場合は、オープンリダイレクトを防ぐため
-        // http(s)スキームで始まるパターンのみ許可する（先頭の^は任意）
-        if (!uri.removePrefix("^").startsWith("http")) {
-            return false
+        // 許可するコマンドと同じ権限ノードを要求する（作成権限だけで個別認可を迂回させない）
+        if (introspectionAllowed && !canGrantIntrospection) {
+            return Either.Left("トークンイントロスペクションを許可するには $INTROSPECTION_PERMISSION 権限が必要です")
         }
-        return try {
-            // 正規表現としてコンパイルできることを確認
-            Regex(uri)
-            true
-        } catch (e: Exception) {
-            false
-        }
+
+        // リダイレクトURIのチェック（1件ずつ検証し、拒否理由をそのまま表示する）
+        return RedirectUriValidator.parseAndValidate(redirectUriInput).mapLeft { it.message }
     }
 
     /**
@@ -174,7 +174,14 @@ object OAuthClientCreateHandler : KoinComponent {
         }
 
         player.sendRichMessage("")
-        player.sendRichMessage("<gray>リダイレクトURI:</gray> <white>${result.client.redirectUri}</white>")
+        player.sendRichMessage("<gray>リダイレクトURI:</gray>")
+        result.client.redirectUris.forEach { uri -> player.sendRichMessage("  <white>$uri</white>") }
         player.sendRichMessage("<gray>クライアント種別:</gray> <white>${result.client.clientType.value}</white>")
+
+        // 権限を持てるのはConfidentialクライアントだけなので、Publicクライアントには表示しない
+        if (result.client.clientType == ClientType.CONFIDENTIAL) {
+            val state = if (result.client.introspectionAllowed) "許可" else "拒否"
+            player.sendRichMessage("<gray>トークンイントロスペクション:</gray> <white>$state</white>")
+        }
     }
 }

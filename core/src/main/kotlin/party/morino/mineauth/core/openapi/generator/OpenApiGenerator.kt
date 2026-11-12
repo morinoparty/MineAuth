@@ -1,6 +1,7 @@
 package party.morino.mineauth.core.openapi.generator
 
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
 import party.morino.mineauth.core.MineAuth
 import party.morino.mineauth.core.file.data.MineAuthConfig
@@ -25,7 +26,6 @@ class OpenApiGenerator : KoinComponent {
     private val plugin: MineAuth by inject()
     private val metadataRegistry: EndpointMetadataRegistry by inject()
     private val pathItemGenerator: PathItemGenerator by inject()
-    private val config: MineAuthConfig by inject()
 
     private val corePathsGenerator = CorePathsGenerator()
 
@@ -47,7 +47,8 @@ class OpenApiGenerator : KoinComponent {
             info = generateInfo(),
             servers = listOf(
                 Server(
-                    url = config.server.baseUrl,
+                    // 設定は /mineauth reload で置き換わるため、保持せず生成のたびに取得する
+                    url = get<MineAuthConfig>().server.baseUrl,
                     description = "MineAuth API Server"
                 )
             ),
@@ -131,7 +132,7 @@ class OpenApiGenerator : KoinComponent {
      */
     private fun generateComponents(): Components {
         // baseUrlから末尾のスラッシュを除去して正規化
-        val baseUrl = config.server.baseUrl.trimEnd('/')
+        val baseUrl = get<MineAuthConfig>().server.baseUrl.trimEnd('/')
 
         return Components(
             securitySchemes = mapOf(
@@ -147,7 +148,8 @@ class OpenApiGenerator : KoinComponent {
                                 "profile" to "Returns name, preferred_username, picture",
                                 "email" to "Returns email, email_verified",
                                 "plugin" to "Grants access to plugin data APIs",
-                                "roles" to "Returns LuckPerms group names"
+                                "roles" to "Returns LuckPerms group names",
+                                "offline_access" to "Requests a refresh token. Adds no claims"
                             )
                         )
                     )

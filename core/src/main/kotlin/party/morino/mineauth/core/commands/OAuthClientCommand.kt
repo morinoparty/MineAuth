@@ -1,15 +1,21 @@
 package party.morino.mineauth.core.commands
 
 import arrow.core.Either
+import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.incendo.cloud.annotations.Argument
 import org.incendo.cloud.annotations.Command
 import org.incendo.cloud.annotations.Permission
+import org.incendo.cloud.annotation.specifier.Greedy
 import party.morino.mineauth.core.dialog.OAuthClientCreateDialog
+import party.morino.mineauth.core.dialog.OAuthClientCreateHandler
 import party.morino.mineauth.core.model.ClientId
+import party.morino.mineauth.core.repository.ClientType
+import party.morino.mineauth.core.repository.OAuthClientData
 import party.morino.mineauth.core.repository.OAuthClientError
 import party.morino.mineauth.core.repository.OAuthClientRepository
+import party.morino.mineauth.core.utils.RedirectUriValidator
 
 /**
  * OAuthクライアント管理コマンド
@@ -103,7 +109,11 @@ class OAuthClientCommand {
                         "${client.clientId}</click></yellow> <dark_gray>(クリックでコピー)</dark_gray>"
                 )
                 sender.sendRichMessage("<gray>クライアント種別:</gray> <white>${client.clientType.value}</white>")
-                sender.sendRichMessage("<gray>リダイレクトURI:</gray> <white>${client.redirectUri}</white>")
+                sender.sendRichMessage("<gray>リダイレクトURI:</gray>")
+                client.redirectUris.forEach { uri -> sender.sendRichMessage("  <white>$uri</white>") }
+                sender.sendRichMessage(
+                    "<gray>トークンイントロスペクション:</gray> <white>${introspectionStateLabel(client)}</white>"
+                )
                 sender.sendRichMessage("<gray>作成日時:</gray> <white>${client.createdAt}</white>")
                 sender.sendRichMessage("<gray>更新日時:</gray> <white>${client.updatedAt}</white>")
             }
@@ -176,6 +186,159 @@ class OAuthClientCommand {
                     "<gray>新しいシークレット:</gray> <yellow><click:copy_to_clipboard:'$newSecret'>" +
                         "$newSecret</click></yellow> <dark_gray>(クリックでコピー)</dark_gray>"
                 )
+            }
+        }
+    }
+
+    /**
+     * Confidentialクライアントにトークンイントロスペクションを許可する
+     * 変更は次のリクエストから有効になる（クライアント認証のたびにDBから読み直すため）
+     */
+    @Command("client introspection allow <clientId>")
+    @Permission(OAuthClientCreateHandler.INTROSPECTION_PERMISSION)
+    suspend fun allowIntrospection(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId
+    ) {
+        updateIntrospectionAllowed(sender, clientId, allowed = true)
+    }
+
+    /**
+     * Confidentialクライアントのトークンイントロスペクションを拒否する
+     * 変更は次のリクエストから有効になる（クライアント認証のたびにDBから読み直すため）
+     */
+    @Command("client introspection deny <clientId>")
+    @Permission(OAuthClientCreateHandler.INTROSPECTION_PERMISSION)
+    suspend fun denyIntrospection(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId
+    ) {
+        updateIntrospectionAllowed(sender, clientId, allowed = false)
+    }
+
+    /**
+     * トークンイントロスペクションの利用権限を更新し、結果を通知する共通処理
+     *
+     * @param sender 実行者（結果を通知する）
+     * @param clientId 対象クライアント
+     * @param allowed 許可する場合true
+     */
+    private suspend fun updateIntrospectionAllowed(
+        sender: CommandSender,
+        clientId: ClientId,
+        allowed: Boolean
+    ) {
+        val result = OAuthClientRepository.setIntrospectionAllowed(clientId.value, allowed)
+
+        when (result) {
+            is Either.Left -> {
+                when (result.value) {
+                    is OAuthClientError.NotFound ->
+                        sender.sendRichMessage("<red>クライアントが見つかりません: ${clientId.value}</red>")
+                    is OAuthClientError.InvalidCredentials ->
+                        sender.sendRichMessage("<red>このクライアントはPublicタイプのため、トークンイントロスペクションの権限を持てません</red>")
+                    else ->
+                        sender.sendRichMessage("<red>トークンイントロスペクションの権限の更新に失敗しました</red>")
+                }
+            }
+            is Either.Right -> {
+                val state = if (allowed) "許可" else "拒否"
+                sender.sendRichMessage(
+                    "<green>クライアント「${result.value.clientName}」のトークンイントロスペクションを${state}しました</green>"
+                )
+            }
+        }
+    }
+
+    /**
+     * client info に表示するトークンイントロスペクションの権限の状態を返す
+     *
+     * @param client 対象クライアント
+     * @return 表示用の文字列
+     */
+    private fun introspectionStateLabel(client: OAuthClientData): String = when {
+        // Publicクライアントはイントロスペクションエンドポイントで認証できないため、権限の対象にならない
+        client.clientType != ClientType.CONFIDENTIAL -> "対象外（Publicクライアント）"
+        client.introspectionAllowed -> "許可"
+        else -> "拒否"
+    }
+
+    /**
+     * OAuthクライアントにリダイレクトURIを追加する
+     * URIには : や / が含まれるため、残りの引数をまとめて1つのURIとして受け取る
+     */
+    @Command("client redirect add <clientId> <uri>")
+    @Permission("mineauth.client.redirect")
+    suspend fun addRedirectUri(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId,
+        @Argument("uri") @Greedy uri: String
+    ) {
+        updateRedirectUris(sender, clientId) { current ->
+            // 既に登録済みなら一覧を変えずにエラーにする
+            if (uri in current) {
+                Either.Left("このリダイレクトURIは登録済みです: $uri")
+            } else {
+                // 追加するURIだけを検証する（以前の規則で登録された値が残っていても追加できるようにする）
+                RedirectUriValidator.validateAddition(current, uri.trim()).mapLeft { it.message }
+            }
+        }
+    }
+
+    /**
+     * OAuthクライアントからリダイレクトURIを削除する
+     * 認可できないクライアントが生まれないよう、最後の1件は削除できない
+     */
+    @Command("client redirect remove <clientId> <uri>")
+    @Permission("mineauth.client.redirect")
+    suspend fun removeRedirectUri(
+        sender: CommandSender,
+        @Argument("clientId") clientId: ClientId,
+        @Argument("uri") @Greedy uri: String
+    ) {
+        updateRedirectUris(sender, clientId) { current ->
+            when {
+                uri !in current -> Either.Left("このリダイレクトURIは登録されていません: $uri")
+                current.size == 1 -> Either.Left("最後のリダイレクトURIは削除できません")
+                else -> Either.Right(current - uri)
+            }
+        }
+    }
+
+    /**
+     * リダイレクトURIの一覧を読み出し、変更して保存する共通処理
+     *
+     * @param sender 実行者（結果を通知する）
+     * @param clientId 対象クライアント
+     * @param transform 現在の一覧から新しい一覧を作る関数（失敗時はエラーメッセージ）
+     */
+    private suspend fun updateRedirectUris(
+        sender: CommandSender,
+        clientId: ClientId,
+        transform: (List<String>) -> Either<String, List<String>>
+    ) {
+        val client = when (val found = OAuthClientRepository.findById(clientId.value)) {
+            is Either.Left -> {
+                sender.sendRichMessage("<red>クライアントが見つかりません: ${clientId.value}</red>")
+                return
+            }
+            is Either.Right -> found.value
+        }
+
+        val newUris = when (val transformed = transform(client.redirectUris)) {
+            is Either.Left -> {
+                // 拒否理由には入力されたURIが含まれるため、MiniMessageのタグとして解釈させない
+                sender.sendRichMessage("<red>${MiniMessage.miniMessage().escapeTags(transformed.value)}</red>")
+                return
+            }
+            is Either.Right -> transformed.value
+        }
+
+        when (val updated = OAuthClientRepository.update(clientId.value, redirectUris = newUris)) {
+            is Either.Left -> sender.sendRichMessage("<red>リダイレクトURIの更新に失敗しました</red>")
+            is Either.Right -> {
+                sender.sendRichMessage("<green>クライアント「${updated.value.clientName}」のリダイレクトURIを更新しました</green>")
+                updated.value.redirectUris.forEach { uri -> sender.sendRichMessage("  <white>$uri</white>") }
             }
         }
     }

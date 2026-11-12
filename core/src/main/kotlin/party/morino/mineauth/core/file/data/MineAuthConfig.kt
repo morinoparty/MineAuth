@@ -28,7 +28,10 @@ data class MineAuthConfig(
     val observability: ObservabilityConfig = ObservabilityConfig(),
 
     // パスワードハッシュ設定
-    val password: PasswordConfig = PasswordConfig()
+    val password: PasswordConfig = PasswordConfig(),
+
+    // 流量制限設定（既存のconfig.jsonに無くても既定値で読み込めるようにする）
+    val rateLimit: RateLimitConfig = RateLimitConfig()
 )
 
 /**
@@ -48,16 +51,32 @@ data class ServerConfig(
     // OIDC email クレーム用フォーマット（nullの場合はemailクレームを返さない）
     // プレースホルダー: <uuid>, <username>
     // 例: "<uuid>+<username>@example.com"
-    val emailFormat: String? = null
-)
+    val emailFormat: String? = null,
+
+    // OIDC picture クレーム用フォーマット（UserInfoとID Tokenの両方で使用）
+    // プレースホルダー: <uuid>, <username>
+    // 例: "https://crafthead.net/avatar/<uuid>"
+    val pictureFormat: String = DEFAULT_PICTURE_FORMAT
+) {
+    companion object {
+        // Crafthead API - Minecraftスキンからアバター画像を取得する（従来の固定値と同じURL）
+        const val DEFAULT_PICTURE_FORMAT = "https://crafthead.net/avatar/<uuid>"
+    }
+}
 
 /**
  * JWT/OIDC設定
  */
 @Serializable
 data class JwtConfig(
-    // JWTのissuer（通常はbaseUrlと同じ）
-    val issuer: String = "https://api.example.com",
+    // 非推奨: issuerは常にserver.baseUrlから作るため、この値は使わない
+    // OIDCではDiscoveryのissuerとトークンのissが一致している必要があり、別々に設定できると食い違うため
+    // 既存のconfig.jsonとの互換性のためにキーだけ残している
+    val issuer: String? = null,
+
+    // 自サーバー以外に受け付けるトークンのiss（署名鍵を共有する他サーバーのbaseUrl）
+    // 例: ["https://api.example.com/lobby", "https://api.example.com/res"]
+    val trustedIssuers: List<String> = emptyList(),
 
     // JWTのrealm
     val realm: String = "example.com",
