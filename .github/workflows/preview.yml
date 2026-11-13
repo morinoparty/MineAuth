@@ -17,12 +17,12 @@ permissions:
 
 env:
   AWS_EC2_METADATA_DISABLED: true
-  AWS_REGION: auto
+  AWS_REGION: ${{ secrets.MORINOPARTY_CI_AWS_REGION }}
   AWS_CLI_FILE_ENCODING: UTF-8
   AWS_DEFAULT_S3_SIGNATURE_VERSION: s3v4
-  S3_UPLOAD_BUCKET: ${{ secrets.S3_UPLOAD_BUCKET }}
-  S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-  PREVIEW_BASE_URL: https://moripa-ci.nikomaru.dev/mineauth
+  S3_UPLOAD_BUCKET: ${{ secrets.MORINOPARTY_CI_S3_UPLOAD_BUCKET }}
+  S3_ENDPOINT: ${{ secrets.MORINOPARTY_CI_S3_ENDPOINT }}
+  S3_PUBLIC_URL: ${{ secrets.MORINOPARTY_CI_S3_PUBLIC_URL }}
   PROJECT_NAME: MineAuth
 
 jobs:
@@ -309,8 +309,8 @@ jobs:
           retention-days: 1
 
   # S3 アップロードジョブ（JAR・Docs・レポート）
-  # Dependabot が起動した pull_request ではリポジトリの Actions secrets が渡されず
-  # Bitwarden のアクセストークンが空になって失敗するため、Dependabot の PR ではスキップする
+  # Dependabot が起動した pull_request では Actions secrets が渡されず
+  # S3 の認証情報が空になって失敗するため、Dependabot の PR ではスキップする
   # （後続の comment ジョブも needs 経由で自動的にスキップされる）
   upload-s3:
     needs: [setup, build-gradle, build-docs, game-test]
@@ -319,6 +319,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
+      # 書き込み用の認証情報は PR のコードを実行するビルドジョブには渡さず、このジョブだけで使う
+      AWS_ACCESS_KEY_ID: ${{ secrets.MORINOPARTY_CI_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.MORINOPARTY_CI_AWS_SECRET_ACCESS_KEY }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -344,35 +347,52 @@ jobs:
           output-dir: ${{ github.workspace }}/upload/fukurou
           upload: "false"
 
-      - name: Get secrets from Bitwarden
-        uses: bitwarden/sm-action@v2
-        with:
-          access_token: ${{ secrets.NIKOMARU_BITWARDEN_SECRET_MANAGER_ACCESS_TOKEN }}
-          secrets: |
-            37e4d53a-a898-4e9f-b067-b49900deaf4f > AWS_ACCESS_KEY_ID
-            4d92b739-40fc-467f-97fa-b49900deb52c > AWS_SECRET_ACCESS_KEY
+      # rclone の最新リリースを入れる (apt の 1.60 は R2 への転送で NotImplemented が多発する)。
+      # 取得したバイナリは actions のキャッシュに保存され、アクション自体の更新は Dependabot が行う
+      - uses: AnimMouse/setup-rclone@26ef2133e09fd383329a1d4c1fbe6a71db1976c9 # v1.12.0
 
-      - name: Upload to S3 (parallel)
+      # aws s3 cp はファイルごとの処理が遅く、--only-show-errors では進捗も出ないため rclone で送る。
+      # rclone は単一プロセスで接続を再利用しながら高い並列数で転送し、5 秒ごとに進捗をログに出す
+      - name: Upload to S3
+        env:
+          RCLONE_CONFIG_S3_TYPE: s3
+          RCLONE_CONFIG_S3_PROVIDER: Cloudflare
+          RCLONE_CONFIG_S3_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_S3_REGION: ${{ env.AWS_REGION }}
+          RCLONE_CONFIG_S3_ENDPOINT: ${{ env.S3_ENDPOINT }}
+          RCLONE_CONFIG_S3_NO_CHECK_BUCKET: "true"
         run: |
-          # AWS CLIの並列リクエスト数を増やす
-          aws configure set default.s3.max_concurrent_requests 50
+          # secret が空のまま進むと、誤ったキーにアップロードしたり PR コメントの URL が壊れたりするため止める
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION S3_ENDPOINT S3_UPLOAD_BUCKET S3_PUBLIC_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is empty (check the MORINOPARTY_CI_* organization secrets)"
+              exit 1
+            fi
+          done
 
-          S3_BASE="s3://${{ env.S3_UPLOAD_BUCKET }}/mineauth/${{ env.COMMIT_SHORT_SHA }}"
-          S3_OPTS="--endpoint-url ${S3_ENDPOINT} --only-show-errors"
+          # xargs から起動する sh でも参照できるよう export する。
+          # docs の BASE_PATH (/mineauth/<sha>/docs) と揃えるため、プレフィックスは小文字の mineauth にする
+          export PREFIX="mineauth/${COMMIT_SHORT_SHA}"
 
-          # JAR・Docs・レポートを並列でアップロード
-          aws s3 cp ./upload/jars $S3_BASE/jars $S3_OPTS --recursive &
-          aws s3 cp ./upload/junit $S3_BASE/junit $S3_OPTS --recursive &
-          aws s3 cp ./upload/detekt $S3_BASE/detekt $S3_OPTS --recursive &
-          aws s3 cp ./upload/allure $S3_BASE/allure $S3_OPTS --recursive &
-          aws s3 cp ./upload/docs $S3_BASE/docs $S3_OPTS --recursive &
-          # ゲームテストが成果物を残せなかった場合はビューアーが無いので、ある場合だけ上げる
-          if [ -d ./upload/fukurou ]; then
-            aws s3 cp ./upload/fukurou $S3_BASE/fukurou $S3_OPTS --recursive &
-          fi
+          # JAR・Docs・レポート・fukurou のビューアー（ある場合）をまとめて 1 プロセスで送る
+          rclone copy ./upload "s3:${S3_UPLOAD_BUCKET}/${PREFIX}" \
+            --transfers=32 --checkers=32 --stats=5s --stats-one-line -v
 
-          # 全ての並列アップロードを待機
-          wait
+          # 公開ドメインはディレクトリの URL から index.html を自動で解決しない。
+          # docs のリンクは末尾スラッシュ (trailingSlash: true) なので、各 index.html を
+          # 末尾スラッシュのキーとしても置き、リンク先や直接開いた URL が 404 にならないようにする
+          find ./upload/docs -name index.html -print0 \
+            | xargs -0 -P 16 -I {} sh -c '
+                relative="${1#./upload/docs/}"
+                aws s3api put-object \
+                  --bucket "$S3_UPLOAD_BUCKET" \
+                  --key "$PREFIX/docs/${relative%index.html}" \
+                  --body "$1" \
+                  --content-type "text/html; charset=utf-8" \
+                  --endpoint-url "$S3_ENDPOINT" > /dev/null
+              ' _ {}
+
           echo "S3 upload completed"
 
   # コメント作成ジョブ
@@ -399,13 +419,13 @@ jobs:
 
       - name: Create comment file
         env:
-          JAR_BASE_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/jars"
-          JUNIT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
-          ALLURE_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/allure/index.html"
-          DETEKT_REPORT_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
-          DOCS_PREVIEW_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
-          DOKKA_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
-          FUKUROU_VIEWER_URL: "${{ env.PREVIEW_BASE_URL }}/${{ env.COMMIT_SHORT_SHA }}/fukurou/index.html"
+          JAR_BASE_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/jars"
+          JUNIT_REPORT_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/junit/index.html"
+          ALLURE_REPORT_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/allure/index.html"
+          DETEKT_REPORT_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/detekt/detekt.html"
+          DOCS_PREVIEW_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs/index.html"
+          DOKKA_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/docs/dokka/index.html"
+          FUKUROU_VIEWER_URL: "${{ env.S3_PUBLIC_URL }}/mineauth/${{ env.COMMIT_SHORT_SHA }}/fukurou/index.html"
           ATTESTATION_URL: "${{ needs.build-gradle.outputs.attestation_url }}"
           LIMIT_TIME: ${{ env.LIMIT_TIME }}
         run: |
