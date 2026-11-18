@@ -155,7 +155,7 @@ jobs:
           subject-path: './gradle-artifacts/jars/*.jar'
 
       - name: Upload Gradle artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gradle-artifacts
           path: ./gradle-artifacts
@@ -232,7 +232,7 @@ jobs:
           report_paths: './core/build/test-results/gameTest/TEST-*.xml'
 
       # result.json とサーバーのログ。サーバーやクライアントの JAR は含まれない（fukurou/ui がこの名前で集める）
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: fukurou-paper-${{ env.MINECRAFT_VERSION }}
@@ -302,7 +302,7 @@ jobs:
         run: pnpm run build
 
       - name: Upload docs artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-artifacts
           path: ./docs/out
