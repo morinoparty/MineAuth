@@ -115,7 +115,7 @@ jobs:
 
       - name: Publish test results
         id: publish-test-results
-        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
+        uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce # v6.7.1
         if: success() || failure()
         with:
           report_paths: './**/build/test-results/test/TEST-*.xml'
@@ -225,7 +225,7 @@ jobs:
 
       - name: Publish game test results
         id: publish-game-test-results
-        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
+        uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce # v6.7.1
         if: success() || failure()
         with:
           check_name: Game test report
