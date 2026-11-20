@@ -40,10 +40,10 @@ class ShopHandler : KoinComponent {
     private val config: QuickShopConfig by inject()
 
     companion object {
-        /** QuickShop-Hikari 6.3.0.0 で ShopManager に登録される買取ショップ種別の識別子（BuyingType#identifier） */
+        /** QuickShop-Hikari 6.3.0.x で ShopManager に登録される買取ショップ種別の識別子（BuyingType#identifier） */
         private const val SHOP_TYPE_BUYING = "BUYING"
 
-        /** QuickShop-Hikari 6.3.0.0 で ShopManager に登録される販売ショップ種別の識別子（SellingType#identifier） */
+        /** QuickShop-Hikari 6.3.0.x で ShopManager に登録される販売ショップ種別の識別子（SellingType#identifier） */
         private const val SHOP_TYPE_SELLING = "SELLING"
     }
 
@@ -141,7 +141,7 @@ class ShopHandler : KoinComponent {
         // 設定を適用
         // price()/price(U) はスター投影下で型情報が失われるため、Double で扱える getPrice/setPrice を意図的に使う
         shop.price = setting.price
-        // 6.3.0.0でShopType(enum)は廃止され、ShopManagerに登録済みのIShopTypeを識別子で解決する方式になった
+        // 6.3.0系でShopType(enum)は廃止され、ShopManagerに登録済みのIShopTypeを識別子で解決する方式になった
         val shopTypeId = if (setting.mode == ShopMode.BUY) SHOP_TYPE_BUYING else SHOP_TYPE_SELLING
         shop.shopType(quickShopAPI.shopManager.shopTypeOrDefault(shopTypeId))
 
