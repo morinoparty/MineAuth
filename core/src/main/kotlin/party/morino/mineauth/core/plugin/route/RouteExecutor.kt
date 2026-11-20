@@ -20,6 +20,7 @@ import party.morino.mineauth.core.plugin.annotation.EndpointMetadata
 import party.morino.mineauth.core.plugin.annotation.HttpMethodType
 import party.morino.mineauth.core.plugin.execution.ExecutionError
 import party.morino.mineauth.core.plugin.execution.MethodExecutionHandlerFactory
+import party.morino.mineauth.core.plugin.serialization.isKotlinUnitValue
 import party.morino.mineauth.core.web.BearerChallenge
 import party.morino.mineauth.core.web.telemetry.TelemetryAttributes
 import party.morino.mineauth.core.web.telemetry.withSpan
@@ -129,13 +130,14 @@ class RouteExecutor(
             result
         }
 
-        when (value) {
-            null -> call.respond(HttpStatusCode.NoContent)
-            is Unit -> call.respond(HttpStatusCode.OK)
+        when {
+            value == null -> call.respond(HttpStatusCode.NoContent)
+            // 別のKotlinランタイム由来のUnitも `is Unit` では拾えないため名前で判定する
+            value.isKotlinUnitValue() -> call.respond(HttpStatusCode.OK)
             // ハンドラーが明示的に返した304（Tier-B: ボディ生成前に短絡済み）
-            is Response.NotModified -> respondNotModified(call, value.etag, value.cacheControl, value.headers)
+            value is Response.NotModified -> respondNotModified(call, value.etag, value.cacheControl, value.headers)
             // Responseラッパー（ヘッダー・ETag・条件付き304の制御付き）
-            is Response.Ok<*> -> respondResponseOk(call, value, metadata)
+            value is Response.Ok<*> -> respondResponseOk(call, value, metadata)
             else -> respondSerialized(call, value, metadata)
         }
     }
@@ -160,9 +162,11 @@ class RouteExecutor(
 
         val directives = CacheDirectives(etag, ok.cacheControl, ok.headers)
         val status = HttpStatusCode.fromValue(ok.status.code)
-        when (val body = ok.body) {
-            null -> { directives.applyTo(call); call.respond(HttpStatusCode.NoContent) }
-            is Unit -> { directives.applyTo(call); call.respond(status) }
+        val body = ok.body
+        when {
+            body == null -> { directives.applyTo(call); call.respond(HttpStatusCode.NoContent) }
+            // 別のKotlinランタイム由来のUnitも名前で判定する
+            body.isKotlinUnitValue() -> { directives.applyTo(call); call.respond(status) }
             else -> respondSerialized(call, body, metadata, status, directives)
         }
     }
