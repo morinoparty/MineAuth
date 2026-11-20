@@ -4,6 +4,7 @@ import org.bukkit.OfflinePlayer
 import org.bukkit.entity.Player
 import org.koin.core.component.KoinComponent
 import party.morino.mineauth.core.openapi.model.Schema
+import party.morino.mineauth.core.plugin.serialization.isKotlinUnit
 import java.util.UUID
 import kotlin.reflect.KAnnotatedElement
 import kotlin.reflect.KClass
@@ -206,7 +207,8 @@ class SchemaGenerator : KoinComponent {
             ?: return null
 
         // Unitの場合はレスポンスボディなし
-        if (classifier == Unit::class) {
+        // アドオンが別のKotlinランタイムを参照していても判定できるよう、名前で比較する
+        if (classifier.isKotlinUnit()) {
             return null
         }
 

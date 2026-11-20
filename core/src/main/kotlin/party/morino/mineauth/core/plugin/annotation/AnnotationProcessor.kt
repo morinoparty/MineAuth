@@ -30,6 +30,7 @@ import party.morino.mineauth.api.auth.Principal
 import party.morino.mineauth.api.http.ConditionalRequest
 import party.morino.mineauth.api.http.HttpError
 import party.morino.mineauth.core.plugin.serialization.PluginSerialization
+import party.morino.mineauth.core.plugin.serialization.isKotlinUnitOrNothing
 import party.morino.mineauth.core.plugin.serialization.toResolvableJavaType
 import java.util.UUID
 import kotlin.reflect.KClass
@@ -658,7 +659,8 @@ class AnnotationProcessor : KoinComponent {
     ): Boolean {
         val erasure = responseType.jvmErasure
         // Unit/Nothingは直列化されずステータスのみ返すため検証対象外（本体経路扱いでよい）
-        if (erasure == Unit::class || erasure == Nothing::class) return true
+        // アドオンが別のKotlinランタイムを参照していても判定できるよう、名前で比較する
+        if (erasure.isKotlinUnitOrNothing()) return true
 
         // 標準パス：MineAuth本体のランタイムで解決を試みる
         // 予期しない例外（不正なKType・リフレクション失敗等）も「本体では解決不能」として扱い、
