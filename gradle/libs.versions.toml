@@ -22,7 +22,7 @@ hikari = "7.1.0"
 mysql = "26.10.0"
 micrometer = "1.17.2"
 opentelemetry = "1.67.0"
-opentelemetry-instrumentation = "2.32.0-alpha"
+opentelemetry-instrumentation = "2.33.1-alpha"
 allure = "2.35.5"
 # JitPack は最初にビルドしたタグの成果物を使い続けるので、必ず正確なタグを指定する
 fukurou = "v2.2.1"
