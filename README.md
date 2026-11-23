@@ -28,4 +28,7 @@ Docs: https://mineauth.plugin.morino.party
 ## 📄 License
 
 - Core / API: [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/)
-- Addons: [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)
+- Addons: each addon has its own `LICENSE`, chosen to match the plugin it integrates with
+  - Vault / VotingPlugin: [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+  - BetonQuest / GriefPrevention / PureTickets: [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)
+  - QuickShop-Hikari: [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html)
