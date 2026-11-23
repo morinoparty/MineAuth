@@ -309,13 +309,11 @@ jobs:
           retention-days: 1
 
   # S3 アップロードジョブ（JAR・Docs・レポート）
-  # Dependabot が起動した pull_request では Actions secrets が渡されず
-  # S3 の認証情報が空になって失敗するため、Dependabot の PR ではスキップする
-  # （後続の comment ジョブも needs 経由で自動的にスキップされる）
+  # Dependabot の実行には Actions secrets が渡されないため、S3 アップロードをスキップする
   upload-s3:
     needs: [setup, build-gradle, build-docs, game-test]
     # master への push はキャッシュを書き込むためだけに走らせるので、プレビューはアップロードしない
-    if: ${{ github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' }}
+    if: ${{ github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && !cancelled() && needs.setup.result == 'success' && needs.build-gradle.result == 'success' && needs.build-docs.result == 'success' && needs.game-test.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
@@ -399,7 +397,8 @@ jobs:
   comment:
     needs: [setup, build-gradle, game-test, upload-s3]
     runs-on: ubuntu-latest
-    if: ${{ github.event.action == 'opened' || github.event.action == 'synchronize' }}
+    # Dependabot の実行には Actions secrets が渡されないため、PR コメントをスキップする
+    if: ${{ github.actor != 'dependabot[bot]' && (github.event.action == 'opened' || github.event.action == 'synchronize') }}
     env:
       COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit_sha }}
     steps:
