@@ -14,6 +14,12 @@ import party.morino.mineauth.addons.quickshop.data.PaginatedShopsResponse
 import party.morino.mineauth.addons.quickshop.data.ShopData
 import party.morino.mineauth.addons.quickshop.data.ShopMode
 import party.morino.mineauth.addons.quickshop.data.ShopSetting
+import party.morino.mineauth.addons.quickshop.paging.ShopPage
+import party.morino.mineauth.addons.quickshop.stock.ShopStock
+import party.morino.mineauth.addons.quickshop.stock.ShopStockCache
+import party.morino.mineauth.addons.quickshop.stock.ShopStockResolver
+import party.morino.mineauth.addons.quickshop.stock.toRemaining
+import party.morino.mineauth.addons.quickshop.utils.coroutines.async
 import party.morino.mineauth.addons.quickshop.utils.coroutines.minecraft
 import party.morino.mineauth.api.CallerType
 import party.morino.mineauth.api.annotations.Authenticated
@@ -38,6 +44,8 @@ import party.morino.mineauth.api.model.bukkit.LocationData
 class ShopHandler : KoinComponent {
     private val quickShopAPI: QuickShopAPI by inject()
     private val config: QuickShopConfig by inject()
+    private val stockResolver: ShopStockResolver by inject()
+    private val stockCache: ShopStockCache by inject()
 
     companion object {
         /** QuickShop-Hikari 6.3.0.x で ShopManager に登録される買取ショップ種別の識別子（BuyingType#identifier） */
@@ -52,7 +60,8 @@ class ShopHandler : KoinComponent {
      * GET /shops?cursor={shopId}&limit={limit}
      *
      * cursorにはshopIdを指定し、そのIDより後のショップを返す（排他的カーソル）。
-     * allShopsでメモリ上の全ショップを1回で取得し、N+1問題を回避する。
+     * レスポンスの nextCursor を次の cursor に渡すと、hasMore が false になるまでで全ショップを辿れる。
+     * 在庫・空き容量はこのページのショップだけを数える（[ShopStockResolver]）。
      *
      * @param cursor カーソル（このshopIdより後のショップを返す。省略時は先頭から）
      * @param limit 取得件数（省略時はデフォルト値、最大値でクランプされる）
@@ -60,32 +69,23 @@ class ShopHandler : KoinComponent {
      */
     @Get("/shops")
     @Public
-    suspend fun listAllShops(@Query("cursor") cursor: Long?, @Query("limit") limit: Int?): PaginatedShopsResponse {
-        // limitパラメータのバリデーションと範囲制限
-        val resolvedLimit = resolveLimit(limit)
+    suspend fun listAllShops(@Query("cursor") cursor: Long?, @Query("limit") limit: Int?): PaginatedShopsResponse =
+        // limitパラメータのバリデーションと範囲制限（不正な値はスレッドを切り替える前に400で返す）
+        // ハンドラーのコンテキストにはディスパッチャが無く、メインスレッドから戻った後もメインスレッドで続いてしまうため、
+        // 非同期スレッドで実行し、メインスレッドが要る処理だけを切り替える
+        resolveLimit(limit).let { resolvedLimit ->
+            withContext(Dispatchers.async) {
+                // ショップ一覧のスナップショットはメインスレッドで取得する
+                val allShops = withContext(Dispatchers.minecraft) { quickShopAPI.shopManager.allShops.toList() }
+                val page = ShopPage.of(allShops, { it.shopId }, cursor, resolvedLimit)
 
-        // メインスレッドでショップ一覧のスナップショットを取得（スレッドセーフ）
-        val fetched = quickShopAPI.shopManager.allShops.asSequence().sortedBy { it.shopId }.let { seq -> // カーソルが指定されている場合、そのIDより後のショップのみ取得
-                    if (cursor != null) seq.filter { it.shopId > cursor } else seq
-                }.take(resolvedLimit + 1) // 1件多く取得してhasMoreを判定
-                .toList()
-
-        // limit+1件目が存在すれば次のページがある
-        val hasMore = fetched.size > resolvedLimit
-        val resultShops = if (hasMore) fetched.dropLast(1) else fetched
-
-        // ShopDataに変換
-        val shopDataList = resultShops.map { it.toShopData() }
-
-        // 次のカーソルは結果の最後のshopId
-        val nextCursor = if (hasMore) resultShops.lastOrNull()?.shopId?.toString() else null
-
-        return PaginatedShopsResponse(
-                shops = shopDataList,
-                nextCursor = nextCursor,
-                hasMore = hasMore,
-        )
-    }
+                PaginatedShopsResponse(
+                    shops = toShopDataList(page.items),
+                    nextCursor = page.nextCursor?.toString(),
+                    hasMore = page.hasMore,
+                )
+            }
+        }
 
     /**
      * ショップ詳細を取得する
@@ -93,10 +93,11 @@ class ShopHandler : KoinComponent {
      */
     @Get("/shops/{shopId}")
     @Public
-    suspend fun getShop(@Path("shopId") shopId: Long): ShopData {
-        val shop = findShopOrThrow(shopId)
-        return shop.toShopData()
-    }
+    suspend fun getShop(@Path("shopId") shopId: Long): ShopData =
+        // 存在しないショップはスレッドを切り替える前に404で返す
+        findShopOrThrow(shopId).let { shop ->
+            withContext(Dispatchers.async) { toShopDataList(listOf(shop)).single() }
+        }
 
     // ========================================
     // 認証必須エンドポイント
@@ -138,17 +139,22 @@ class ShopHandler : KoinComponent {
         ensureOwner(caller.offlinePlayer, shop)
         validateShopSetting(shop, setting)
 
-        // 設定を適用
-        // price()/price(U) はスター投影下で型情報が失われるため、Double で扱える getPrice/setPrice を意図的に使う
-        shop.price = setting.price
-        // 6.3.0系でShopType(enum)は廃止され、ShopManagerに登録済みのIShopTypeを識別子で解決する方式になった
-        val shopTypeId = if (setting.mode == ShopMode.BUY) SHOP_TYPE_BUYING else SHOP_TYPE_SELLING
-        shop.shopType(quickShopAPI.shopManager.shopTypeOrDefault(shopTypeId))
+        // 設定の適用は看板の更新などでワールドに触れるため、メインスレッドで行う
+        withContext(Dispatchers.minecraft) {
+            // price()/price(U) はスター投影下で型情報が失われるため、Double で扱える getPrice/setPrice を意図的に使う
+            shop.price = setting.price
+            // 6.3.0系でShopType(enum)は廃止され、ShopManagerに登録済みのIShopTypeを識別子で解決する方式になった
+            val shopTypeId = if (setting.mode == ShopMode.BUY) SHOP_TYPE_BUYING else SHOP_TYPE_SELLING
+            shop.shopType(quickShopAPI.shopManager.shopTypeOrDefault(shopTypeId))
 
-        // アイテムの個数を更新
-        val pendingItemStack = shop.item.clone()
-        pendingItemStack.amount = setting.perBulkAmount
-        shop.item = pendingItemStack
+            // アイテムの個数を更新
+            val pendingItemStack = shop.item.clone()
+            pendingItemStack.amount = setting.perBulkAmount
+            shop.item = pendingItemStack
+        }
+
+        // 販売・買取や取引単位が変わると在庫の数え方も変わるので、使い回している結果を捨てる
+        stockCache.invalidate(shopId)
     }
 
     // ========================================
@@ -157,24 +163,36 @@ class ShopHandler : KoinComponent {
 
     /**
      * ShopをShopDataに変換する
+     * 在庫・空き容量を数えてから、ショップの情報の読み出しはメインスレッドでまとめて行う（ショップごとにスレッドを切り替えない）
+     *
+     * @param shops 変換するショップ
+     * @return 同じ順のShopData
      */
-    private suspend fun Shop<*, *>.toShopData(): ShopData {
-        return ShopData(shopId = this.shopId, owner = if (this.isUnlimited) null else this.owner.uniqueId, mode = if (this.isSelling) ShopMode.SELL else ShopMode.BUY, stackingAmount = withContext(Dispatchers.minecraft) {
-            this@toShopData.shopStackingAmount
-        }, remaining = withContext(Dispatchers.minecraft) {
-            getRemaining(this@toShopData)
-        }, location = LocationData.fromLocation(this.bukkitLocation()), price = this.price, item = ItemStackData.fromItemStack(this.item))
+    private suspend fun toShopDataList(shops: List<Shop<*, *>>): List<ShopData> {
+        if (shops.isEmpty()) return emptyList()
+        val stocks = stockResolver.resolve(shops)
+        return withContext(Dispatchers.minecraft) {
+            shops.map { shop -> shop.toShopData(stocks[shop.shopId] ?: ShopStock.Unknown) }
+        }
     }
 
     /**
-     * ショップの残り在庫/空き容量を取得する
+     * ShopをShopDataに変換する（メインスレッドで呼ぶ）
+     *
+     * @param stock 数えた在庫・空き容量
      */
-    private fun getRemaining(shop: Shop<*, *>): Int {
-        return if (shop.isBuying) {
-            shop.remainingSpace
-        } else {
-            shop.remainingStock
-        }
+    private fun Shop<*, *>.toShopData(stock: ShopStock): ShopData {
+        return ShopData(
+            shopId = shopId,
+            owner = if (isUnlimited) null else owner.uniqueId,
+            mode = if (isSelling) ShopMode.SELL else ShopMode.BUY,
+            stackingAmount = shopStackingAmount,
+            remaining = stock.toRemaining(),
+            unlimited = stock == ShopStock.Unlimited,
+            location = LocationData.fromLocation(bukkitLocation()),
+            price = price,
+            item = ItemStackData.fromItemStack(item),
+        )
     }
 
     /**
@@ -203,7 +221,8 @@ class ShopHandler : KoinComponent {
      * @return ショップIDのリスト
      */
     private fun shopIdsFor(ownerUuid: UUID): List<Long> {
-        return quickShopAPI.shopManager.allShops.asSequence().filter { it.owner.uniqueId == ownerUuid }.map { it.shopId }.toList()
+        // inline の List 操作にし、/shops の cursor で 500 になっていた Sequence.filter へのラムダの受け渡しを避ける
+        return quickShopAPI.shopManager.allShops.filter { it.owner.uniqueId == ownerUuid }.map { it.shopId }
     }
 
     /**

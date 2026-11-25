@@ -3,12 +3,15 @@ package party.morino.mineauth.addons.quickshop
 import com.ghostchu.quickshop.api.QuickShopAPI
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.bukkit.plugin.Plugin
 import org.bukkit.plugin.java.JavaPlugin
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import party.morino.mineauth.addons.quickshop.config.QuickShopConfig
 import party.morino.mineauth.addons.quickshop.routes.ShopHandler
+import party.morino.mineauth.addons.quickshop.stock.ShopStockCache
+import party.morino.mineauth.addons.quickshop.stock.ShopStockResolver
 import party.morino.mineauth.api.EndpointRegistrationException
 import party.morino.mineauth.api.MineAuthApi
 
@@ -108,6 +111,12 @@ class QuickShopHikariAddon : JavaPlugin() {
                     single<QuickShopAPI> { QuickShopAPI.getInstance() }
                     // 設定をシングルトンとして登録
                     single { config }
+                    // チャンクチケットやスケジューラで使うプラグイン本体
+                    single<Plugin> { this@QuickShopHikariAddon }
+                    // 在庫・空き容量の短期キャッシュ（一覧の取得ごとにチャンクを読み込まないため）
+                    single { ShopStockCache(ttlMillis = config.stockCacheTtlSeconds * 1000) }
+                    // 在庫・空き容量を数える
+                    single { ShopStockResolver() }
                 }
             )
         }

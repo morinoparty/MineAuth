@@ -26,6 +26,11 @@ dependencies {
     compileOnly(kotlin("stdlib-jdk8"))
 
     compileOnly(libs.quickshop.api)
+    // 買取ショップのオーナーの所持金を数えるのに使う（無ければ空き容量だけで数える）
+    compileOnly(libs.vault.api)
+
+    testImplementation(libs.bundles.junit.jupiter)
+    testImplementation(kotlin("test"))
 }
 
 tasks {
@@ -70,6 +75,8 @@ sourceSets.main {
             // librariesはMineAuthコアから提供されるため宣言しない
             // （別クラスローダーでの重複ロードによるLinkageError防止）
             depend = listOf("MineAuth", "QuickShop-Hikari")
+            // 買取ショップのオーナーの所持金を数えるのに使う（無ければ空き容量だけで数える）
+            softDepend = listOf("Vault")
         }
     }
 }
