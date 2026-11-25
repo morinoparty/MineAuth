@@ -94,9 +94,9 @@ class ShopHandler : KoinComponent {
     @Get("/shops/{shopId}")
     @Public
     suspend fun getShop(@Path("shopId") shopId: Long): ShopData =
-        withContext(Dispatchers.async) {
-            val shop = findShopOrThrow(shopId)
-            toShopDataList(listOf(shop)).single()
+        // 存在しないショップはスレッドを切り替える前に404で返す
+        findShopOrThrow(shopId).let { shop ->
+            withContext(Dispatchers.async) { toShopDataList(listOf(shop)).single() }
         }
 
     // ========================================
