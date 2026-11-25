@@ -3,6 +3,8 @@ package party.morino.mineauth.addons.quickshop.stock
 import com.ghostchu.quickshop.api.shop.Shop
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.function.Consumer
+import java.util.function.Function
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -131,7 +133,14 @@ class ShopStockResolver : KoinComponent {
         skipped.forEach { decided[it.shop.shopId] = ShopStock.Unknown }
 
         // 数えるショップのチャンクにチケットを付け、数え終わるまで解放されないようにする
-        val held = toCount.map { it.chunk }.distinct().map { key -> hold(key) }
+        // 途中で失敗した場合は、それまでに付けたチケットを外してから例外を伝える
+        val held = mutableListOf<CompletableFuture<Chunk?>>()
+        try {
+            toCount.map { it.chunk }.distinct().forEach { key -> held += hold(key) }
+        } catch (e: Exception) {
+            release(held)
+            throw e
+        }
         return Classified(decided, toCount, held)
     }
 
@@ -152,10 +161,15 @@ class ShopStockResolver : KoinComponent {
             return CompletableFuture.completedFuture(chunk)
         }
         // 既存のチャンクだけを読み込み、まだ生成されていない場所に新しいチャンクを作らない
-        return world.getChunkAtAsync(key.x, key.z, false).thenApply { chunk: Chunk? ->
-            chunk?.addPluginChunkTicket(plugin)
-            chunk
-        }
+        // 他のラムダの受け渡しと同じく、invokedynamic を使わない object 式で渡す
+        return world.getChunkAtAsync(key.x, key.z, false).thenApply(
+            object : Function<Chunk?, Chunk?> {
+                override fun apply(chunk: Chunk?): Chunk? {
+                    chunk?.addPluginChunkTicket(plugin)
+                    return chunk
+                }
+            },
+        )
     }
 
     /**
@@ -166,9 +180,12 @@ class ShopStockResolver : KoinComponent {
      * @param held [hold] の結果
      */
     private fun release(held: List<CompletableFuture<Chunk?>>) {
-        held.forEach { future ->
-            future.thenAccept { chunk: Chunk? -> chunk?.removePluginChunkTicket(plugin) }
+        val removeTicket = object : Consumer<Chunk?> {
+            override fun accept(chunk: Chunk?) {
+                chunk?.removePluginChunkTicket(plugin)
+            }
         }
+        held.forEach { future -> future.thenAccept(removeTicket) }
     }
 
     /**

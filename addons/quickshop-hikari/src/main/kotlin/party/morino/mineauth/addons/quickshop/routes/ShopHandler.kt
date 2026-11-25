@@ -221,7 +221,7 @@ class ShopHandler : KoinComponent {
      * @return ショップIDのリスト
      */
     private fun shopIdsFor(ownerUuid: UUID): List<Long> {
-        // inline の List 操作にし、ラムダをオブジェクトとして標準ライブラリへ渡さない（/shops の cursor と同じ 500 を避ける）
+        // inline の List 操作にし、/shops の cursor で 500 になっていた Sequence.filter へのラムダの受け渡しを避ける
         return quickShopAPI.shopManager.allShops.filter { it.owner.uniqueId == ownerUuid }.map { it.shopId }
     }
 
