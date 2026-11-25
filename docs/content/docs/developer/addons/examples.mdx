@@ -61,6 +61,7 @@ GET /api/v1/plugins/quickshop/shops?cursor=12345&limit=200
       "mode": "SELL",
       "stackingAmount": 64,
       "remaining": 128,
+      "unlimited": false,
       "location": { "world": "world", "x": 100.0, "y": 64.0, "z": 200.0, "yaw": 0.0, "pitch": 0.0 },
       "price": 10.0,
       "item": { "type": { "name": "DIAMOND", "type": "item" }, "amount": 1, "lore": [], "meta": {} }
@@ -70,6 +71,30 @@ GET /api/v1/plugins/quickshop/shops?cursor=12345&limit=200
   "hasMore": true
 }
 ```
+
+To list every shop, pass `nextCursor` as the next `cursor` until `hasMore` is `false`. Shops are ordered by `shopId`, and the cursor is exclusive.
+
+#### Stock (`remaining` and `unlimited`)
+
+| Field | Description |
+|-------|-------------|
+| `remaining` | For `SELL` shops, the stock in trades (`stackingAmount` items each). For `BUY` shops, the number of trades the shop can still buy: the smaller of the free container space and what the owner can afford (owner balance via Vault, when Vault is installed). `-1` for unlimited shops. Omitted (`null`) when the stock could not be counted. |
+| `unlimited` | `true` for admin / unlimited shops, which have no stock limit (`owner` is omitted for them). |
+
+QuickShop-Hikari reports a stock of `0` for shops whose chunk is not loaded. The addon therefore loads those chunks with Paper's asynchronous chunk loading (the main thread is not blocked), keeps them loaded with a plugin chunk ticket while counting on the main thread, and releases them afterwards.
+
+Because a single `/shops` call can return up to `maxLimit` shops, counted results are cached per shop for a short time, and the number of chunks loaded per request is capped. Shops beyond the cap are returned without `remaining` and are counted on a later request. Clients should treat a missing `remaining` as "unknown", not as out of stock.
+
+#### Configuration
+
+`plugins/MineAuth-addon-quickshop-hikari/config.json` (missing keys use the defaults):
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `defaultLimit` | `200` | Page size when `limit` is omitted |
+| `maxLimit` | `1000` | Maximum page size (`limit` is clamped to it) |
+| `stockCacheTtlSeconds` | `120` | How long a counted stock is reused. `0` disables the cache |
+| `maxChunkLoadsPerRequest` | `32` | Maximum number of unloaded chunks loaded to count stock in one request. Shops in already loaded chunks do not count toward it |
 
 ## Vault Addon
 
