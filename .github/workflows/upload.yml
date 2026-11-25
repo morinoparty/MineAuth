@@ -88,14 +88,14 @@ jobs:
       # GitHub Attestations で署名（Core）
       - name: Attest Core JAR artifact
         id: attest-core
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: './core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar'
 
       # GitHub Attestations で署名（Addons - 動的に検出）
       - name: Attest Addon JAR artifacts
         id: attest-addons
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: './addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar'
 
