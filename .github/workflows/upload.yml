@@ -17,9 +17,9 @@ jobs:
       GITHUB_ACTOR: ${{ secrets.GITHUB_ACTOR }}
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -88,14 +88,14 @@ jobs:
       # GitHub Attestations で署名（Core）
       - name: Attest Core JAR artifact
         id: attest-core
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: './core/build/libs/MineAuth-core_${{ env.PLUGIN_VERSION }}.jar'
 
       # GitHub Attestations で署名（Addons - 動的に検出）
       - name: Attest Addon JAR artifacts
         id: attest-addons
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: './addons/*/build/libs/MineAuth-addon-*-${{ env.PLUGIN_VERSION }}.jar'
 
